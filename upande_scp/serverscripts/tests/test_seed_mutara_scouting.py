@@ -168,3 +168,21 @@ class TestLoadUnits(unittest.TestCase):
 		self.assertEqual(len([b for b in units if b.startswith("PH")]), 25)
 		self.assertEqual((units["P1-B9 - MUT"], units["P2-B9 - MUT"]), ("Corn", "Corn"))
 		self.assertFalse([b for b in units if b.startswith(("P3-", "P4-", "Avocado Block"))])
+
+
+class TestTrapReadings(unittest.TestCase):
+	def test_one_reading_a_week_building_through_the_window(self):
+		end = datetime.date(2026, 10, 29)
+		rows = S.trap_readings("Mutara - T01", "Aphids", end, S.WINDOW_DAYS, random.Random(3), ["E1"])
+		self.assertTrue(8 <= len(rows) <= 10)
+		self.assertTrue(all(r["date"].weekday() == 0 for r in rows))
+		self.assertEqual([r["date"] for r in rows], sorted(r["date"] for r in rows))
+		self.assertTrue(all(r["count"] >= 0 and r["pest"] == "Aphids" and r["trap"] == "Mutara - T01" for r in rows))
+		half = len(rows) // 2
+		self.assertGreater(sum(r["count"] for r in rows[half:]), sum(r["count"] for r in rows[:half]))
+
+	def test_deterministic(self):
+		end = datetime.date(2026, 10, 29)
+		a = S.trap_readings("T", "P", end, S.WINDOW_DAYS, random.Random(5), ["E1", "E2"])
+		b = S.trap_readings("T", "P", end, S.WINDOW_DAYS, random.Random(5), ["E1", "E2"])
+		self.assertEqual(a, b)

@@ -610,3 +610,203 @@ def refresh_caches(plan: list | None = None) -> None:
 		bump_geo_version()
 	except Exception:
 		pass
+
+
+# ------------------------------------------------------------------------- demo traps
+#
+#     bench --site mutara.local execute upande_scp.serverscripts.migrate.seed_mutara_scouting.seed_traps
+#
+# A few fixed traps so the maps show traps on their units: on surveyed pivot blocks a trap hangs
+# on a hexagon (Trap.unit = Triad); on avocado it hangs on a tree where the block has trees
+# (Trap.unit = Orchard Tree, its point = the trap's own location until the trees are surveyed) and
+# otherwise stands at a visit point (Trap.geojson only). Each trap gets a weekly reading over the
+# window, tagged TRAP_TAG. Re-running only re-links the units; readings are added once.
+
+TRAP_TAG = "mutara-demo-traps"
+PIVOT_TRAPS = 6
+AVOCADO_TRAPS = 4
+
+
+def trap_readings(trap: str, pest: str, end: datetime.date, window: int, rng, scouts: list) -> list:
+	"""One reading a week (Mondays) for one trap, oldest first: a count that builds through the
+	window with noise, sometimes zero. Pure."""
+	start = end - datetime.timedelta(days=window)
+	days = [start + datetime.timedelta(days=d) for d in range(window + 1)]
+	mondays = [d for d in days if d.weekday() == 0]
+	peak = rng.randint(6, 40)
+	out = []
+	for i, d in enumerate(mondays):
+		level = peak * (0.25 + 0.75 * i / max(1, len(mondays) - 1))
+		count = max(0, int(round(rng.gauss(level, level * 0.35))))
+		if rng.random() < 0.12:
+			count = 0
+		out.append({
+			"trap": trap, "pest": pest, "count": count, "date": d,
+			"time": datetime.time(rng.randint(7, 11), rng.choice(range(0, 60, 5)), 0),
+			"scout": rng.choice(scouts) if scouts else None,
+		})
+	return out
+
+
+def _block_crop_and_pest(block: str):
+	crop = frappe.db.sql(
+		"select crop_scouted from `tabScouting Entry` where block = %s and crop_scouted is not null"
+		" group by crop_scouted order by count(*) desc limit 1", (block,),
+	)
+	pest = frappe.db.sql(
+		"""select p.pest from `tabPests Scouting Entry` p join `tabScouting Entry` se on se.name = p.parent
+		   where se.block = %s group by p.pest order by sum(p.count) desc limit 1""", (block,),
+	)
+	return (crop[0][0] if crop else None), (pest[0][0] if pest else None)
+
+
+def _visit_point(block: str):
+	"""A located visit in the block (the median one by name), as (lng, lat)."""
+	r = frappe.db.sql(
+		"select longitude, latitude from `tabScouting Entry` where block = %s and latitude != ''"
+		" order by name limit 1 offset 40", (block,),
+	) or frappe.db.sql(
+		"select longitude, latitude from `tabScouting Entry` where block = %s and latitude != '' limit 1", (block,),
+	)
+	return (float(r[0][0]), float(r[0][1])) if r else None
+
+
+def _trap_sites(farm: str = FARM) -> list:
+	"""``[{number, block, unit_type, unit, lng, lat, crop, pest}]`` for the demo traps."""
+	sites = []
+	pivots = frappe.db.sql(
+		"""select t.block, count(*) n from `tabTriad` t where t.farm = %s
+		   and exists (select 1 from `tabScouting Entry` se where se.block = t.block limit 1)
+		   group by t.block order by t.block""", (farm,), as_dict=True,
+	)
+	for b in pivots[:: max(1, len(pivots) // PIVOT_TRAPS)][:PIVOT_TRAPS]:
+		crop, pest = _block_crop_and_pest(b.block)
+		if not pest:
+			continue
+		# The block's most scouted hexagon: where the scouts walk, so the trap sits on the heat.
+		tri = frappe.db.sql(
+			"select triad from `tabScouting Entry` where block = %s and triad is not null and triad != ''"
+			" group by triad order by count(*) desc limit 1", (b.block,),
+		)
+		if not tri:
+			continue
+		lng, lat = _ring_centroid(frappe.db.get_value("Triad", tri[0][0], "geojson"))
+		sites.append({"block": b.block, "unit_type": "Triad", "unit": tri[0][0], "lng": lng, "lat": lat, "crop": crop, "pest": pest})
+	# Avocado blocks with trees first (their traps hang on a tree), then visit-point blocks.
+	avo = frappe.db.sql_list(
+		"""select se.block from `tabScouting Entry` se
+		   where se.crop_scouted = 'Avocado' and se.block in (select name from tabWarehouse where custom_farm = %s)
+		   group by se.block order by (select count(*) from `tabOrchard Tree` o where o.block = se.block) desc, se.block""",
+		(farm,),
+	)
+	for block in avo[:AVOCADO_TRAPS]:
+		crop, pest = _block_crop_and_pest(block)
+		pt = _visit_point(block)
+		if not pest or not pt:
+			continue
+		tree = frappe.db.get_value("Orchard Tree", {"block": block}, "name", order_by="name")
+		sites.append({
+			"block": block, "unit_type": "Orchard Tree" if tree else "", "unit": tree or "",
+			"lng": pt[0], "lat": pt[1], "crop": crop, "pest": pest,
+		})
+	for i, s in enumerate(sites, start=1):
+		s["number"] = f"T{i:02d}"
+	return sites
+
+
+def seed_traps(farm: str = FARM, seed: int = 2026) -> dict:
+	"""Create / re-link the demo traps and, once, their weekly readings. Idempotent."""
+	from upande_scp.serverscripts.traps import trap_geometry as G
+
+	rng = random.Random(seed)
+	sites = _trap_sites(farm)
+	made, linked = [], []
+	for s in sites:
+		name = f"{farm} - {s['number']}"
+		geo = G.to_geojson(s["lat"], s["lng"])
+		if frappe.db.exists("Trap", name):
+			doc = frappe.get_doc("Trap", name)
+		else:
+			doc = frappe.new_doc("Trap")
+			doc.update({"farm": farm, "trap_number": s["number"], "location": "Outdoor", "type": "Delta"})
+			made.append(name)
+		doc.greenhouse = s["block"]
+		doc.unit_type = s["unit_type"]
+		doc.unit = s["unit"]
+		if not doc.geojson:
+			doc.geojson = json_dumps(geo)
+		doc.flags.ignore_permissions = True
+		doc.save()
+		s["trap"] = doc.name
+		if s["unit"]:
+			linked.append(f"{doc.name} -> {s['unit_type']} {s['unit']}")
+	readings = 0
+	if not frappe.db.sql("select 1 from `tabScouting Entry` where _user_tags like %s limit 1", (f"%{TRAP_TAG}%",)):
+		readings = _insert_trap_readings(sites, rng)
+	frappe.db.commit()
+	refresh_caches()
+	summary = {"traps": len(sites), "created": made, "linked": linked, "readings": readings}
+	print(summary)
+	return summary
+
+
+def json_dumps(v) -> str:
+	import json
+
+	return json.dumps(v)
+
+
+def _insert_trap_readings(sites: list, rng) -> int:
+	scouts = _scouts()
+	end = datetime.date.today()
+	rows = []
+	for s in sites:
+		for r in trap_readings(s["trap"], s["pest"], end, WINDOW_DAYS, rng, scouts):
+			rows.append({**r, **{k: s[k] for k in ("block", "crop", "lng", "lat")},
+			             "triad": s["unit"] if s["unit_type"] == "Triad" else None,
+			             "tree": s["unit"] if s["unit_type"] == "Orchard Tree" else None})
+	rows.sort(key=lambda r: (r["date"], r["time"], r["trap"]))
+	year = end.year
+	prefix = SERIES_PREFIX.format(year=year)
+	cur = frappe.db.sql("select current from tabSeries where name = %s", (prefix,))
+	start = int(cur[0][0]) if cur else 0
+	if not cur:
+		frappe.db.sql("insert into tabSeries (name, current) values (%s, 0)", (prefix,))
+	used: set = set()
+	entries, children = [], []
+	for i, r in enumerate(rows, start=1):
+		name = sce_name(year, start + i)
+		ts = datetime.datetime.combine(r["date"], r["time"])
+		entries.append((
+			name, ts, ts, "Administrator", "Administrator", 0, 0, "SCE-.YYYY.-", r["scout"], r["crop"],
+			r["block"], r["tree"], r["time"].strftime("%H:%M:%S"), r["date"],
+			f"{r['lat']:.6f}", f"{r['lng']:.6f}", r["triad"], f",{TRAP_TAG}",
+		))
+		children.append((_hash(used), ts, ts, "Administrator", "Administrator", 0, 1, name, "trap_scouting_entry",
+		                 "Scouting Entry", r["trap"], r["pest"], "Outdoor", r["count"]))
+	frappe.db.bulk_insert(
+		"Scouting Entry",
+		["name", "creation", "modified", "modified_by", "owner", "docstatus", "idx", "naming_series", "scouts_name",
+		 "crop_scouted", "block", "tree", "time_of_capture", "date_of_capture", "latitude", "longitude", "triad", "_user_tags"],
+		entries,
+	)
+	frappe.db.bulk_insert(
+		"Trap Scouting Entry",
+		["name", "creation", "modified", "modified_by", "owner", "docstatus", "idx", "parent", "parentfield", "parenttype",
+		 "trap", "pest", "location", "count"],
+		children,
+	)
+	frappe.db.sql("update tabSeries set current = %s where name = %s", (start + len(rows), prefix))
+	return len(rows)
+
+
+def clear_traps(farm: str = FARM) -> dict:
+	"""Remove the demo trap readings (the traps stay: other records may point at them)."""
+	frappe.db.sql(
+		"delete c from `tabTrap Scouting Entry` c join `tabScouting Entry` se on se.name = c.parent where se._user_tags like %s",
+		(f"%{TRAP_TAG}%",),
+	)
+	frappe.db.sql("delete from `tabScouting Entry` where _user_tags like %s", (f"%{TRAP_TAG}%",))
+	frappe.db.commit()
+	refresh_caches()
+	return {"cleared": True}

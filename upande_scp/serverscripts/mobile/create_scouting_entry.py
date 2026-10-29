@@ -15,7 +15,8 @@ def fetchTraps(greenhouse=None):
         traps = frappe.get_all(
             "Trap",
             filters=filters,
-            fields=["name", "farm", "greenhouse", "trap_number", "location", "type"],
+            # unit_type + unit: the hexagon / tree / bed the trap hangs on (Trap.unit).
+            fields=["name", "farm", "greenhouse", "trap_number", "location", "type", "unit_type", "unit"],
             order_by="trap_number asc"
         )
 

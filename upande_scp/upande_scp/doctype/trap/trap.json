@@ -12,6 +12,10 @@
   "trap_number",
   "location",
   "type",
+  "unit_section",
+  "unit_type",
+  "unit_column",
+  "unit",
   "location_section",
   "location_source",
   "location_fixes",
@@ -52,6 +56,30 @@
    "fieldtype": "Select",
    "label": "Type",
    "options": "General\nFCM\nMcPhail\nDelta\nFemtrack Lure\nCrytrack Lure\nCSR Trap"
+  },
+  {
+   "fieldname": "unit_section",
+   "fieldtype": "Section Break",
+   "label": "Unit"
+  },
+  {
+   "fieldname": "unit_type",
+   "fieldtype": "Select",
+   "label": "Unit Type",
+   "options": "\nTriad\nOrchard Tree\nBed",
+   "description": "What the trap hangs on: a hexagon (Triad), an orchard tree or a bed / row. The map draws the trap on that unit's geometry; without one it uses the location below."
+  },
+  {
+   "fieldname": "unit_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Dynamic Link",
+   "label": "Unit",
+   "options": "unit_type",
+   "depends_on": "eval:doc.unit_type",
+   "mandatory_depends_on": "eval:doc.unit_type"
   },
   {
    "fieldname": "location_section",
@@ -108,7 +136,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 12:00:00.000000",
+ "modified": "2026-10-29 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Trap",

@@ -191,25 +191,44 @@ def daily_refresh():
 
 @frappe.whitelist()
 def get_trap_locations(farm=None):
-    """{trap: {lat, lng, source, fixes, spread_m, flag}} for every trap that has
-    a fixed location. Maps draw a trap here instead of at its entries' average."""
-    filters = {"geojson": ["is", "set"]}
+    """{trap: {lat, lng, source, fixes, spread_m, flag, trap_number, unit_type, unit,
+    unit_geometry}} for every trap that has a place on the map. A trap hung on a unit
+    (Trap.unit) sits at that unit's centre and carries its geometry (hexagon, tree point,
+    bed line); otherwise it sits at its fixed location (Trap.geojson). Maps draw a trap here
+    instead of at its entries' average."""
+    from upande_scp.serverscripts.traps.trap_units import trap_unit_payload
+
+    filters = {}
     if farm:
         filters["farm"] = farm
+    fields = ["name", "trap_number", "geojson", "location_source", "location_fixes",
+              "location_spread_m", "location_flag"]
+    has_unit = frappe.db.has_column("Trap", "unit")
+    if has_unit:
+        fields += ["unit_type", "unit"]
     out = {}
     for t in frappe.get_all(
-        "Trap", filters=filters,
-        fields=["name", "geojson", "location_source", "location_fixes",
-                "location_spread_m", "location_flag"],
-        limit_page_length=0,
+        "Trap", filters=filters, or_filters=(
+            [["geojson", "is", "set"], ["unit", "is", "set"]] if has_unit else [["geojson", "is", "set"]]
+        ),
+        fields=fields, limit_page_length=0,
     ):
-        p = G.point_of(t.geojson)
-        if not p:
-            continue
+        u = trap_unit_payload(t) if has_unit and t.get("unit") else None
+        if u and u["lat"] is not None:
+            lat, lng = u["lat"], u["lng"]
+        else:
+            p = G.point_of(t.geojson) if t.geojson else None
+            if not p:
+                continue
+            lat, lng = p
         out[t.name] = {
-            "lat": p[0], "lng": p[1], "source": t.location_source or "",
+            "lat": lat, "lng": lng, "source": "Unit" if u and u["unit_geometry"] else (t.location_source or ""),
             "fixes": int(t.location_fixes or 0),
             "spread_m": float(t.location_spread_m or 0),
             "flag": t.location_flag or "",
+            "trap_number": t.trap_number or "",
+            "unit_type": u["unit_type"] if u else "",
+            "unit": u["unit"] if u else "",
+            "unit_geometry": u["unit_geometry"] if u else None,
         }
     return out

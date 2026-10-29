@@ -35,8 +35,9 @@ _BED_FIELDS = ["name", "bed", "greenhouse", "unit_type"]
 # Bumped whenever the payload's *shape* changes. The version digest is otherwise
 # derived purely from `modified` timestamps, so a phone holding a bundle from
 # before a new field existed would never learn it was missing one.
-_BUNDLE_SCHEMA = "v3-levels"
-_TRAP_FIELDS = ["name", "farm", "greenhouse", "trap_number", "location", "type"]
+_BUNDLE_SCHEMA = "v4-trap-units"
+# unit_type + unit: what the trap hangs on (a Triad, an Orchard Tree or a Bed).
+_TRAP_FIELDS = ["name", "farm", "greenhouse", "trap_number", "location", "type", "unit_type", "unit"]
 _WAREHOUSE_FIELDS = [
     "name",
     "warehouse_name",

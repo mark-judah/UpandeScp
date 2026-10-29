@@ -33,13 +33,17 @@ interface PanelProps {
   blocks: OpenFieldBlock[];
   plans: Record<string, BlockPlan>;
   onPlanChange: (block: string, plan: BlockPlan) => void;
+  /** planning data of the route crop; used for blocks with no crop of their own */
   boot: CreatorBootstrap | null;
+  /** planning data per crop (target catalogs, tank mixes, teams, stores): a block with a
+   *  crop uses its own crop's entry, null while that is loading, never the route crop's */
+  bootByCrop?: Record<string, CreatorBootstrap | null>;
   findings: Record<string, BlockFindings>;
   /** the plan's spray date-time, passed to the suggestions */
   when: string;
 }
 
-export function BlockPlanPanel({ blocks, plans, onPlanChange, boot, findings, when }: PanelProps) {
+export function BlockPlanPanel({ blocks, plans, onPlanChange, boot, bootByCrop, findings, when }: PanelProps) {
   const collapsed = shouldCollapse(blocks.length);
   const [open, setOpen] = useState<string>(blocks[0]?.name ?? "");
   const refs = useRef<Record<string, HTMLElement | null>>({});
@@ -121,7 +125,7 @@ export function BlockPlanPanel({ blocks, plans, onPlanChange, boot, findings, wh
                 block={b}
                 plan={plan}
                 onChange={(p) => onPlanChange(b.name, p)}
-                boot={boot}
+                boot={bootByCrop && b.crop ? bootByCrop[b.crop] ?? null : boot}
                 findings={findings[b.name]}
                 when={when}
                 onNext={collapsed && blocks[blocks.indexOf(b) + 1] ? () => next(b.name) : undefined}

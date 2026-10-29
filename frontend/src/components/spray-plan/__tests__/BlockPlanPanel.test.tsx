@@ -118,4 +118,27 @@ describe("BlockPlanPanel", () => {
     setup(["P1-B1"], { boot: null });
     expect(document.querySelector("[data-skeleton='plan']")).not.toBeNull();
   });
+
+  it("lists each block's own crop targets, not the route crop's, in a mixed selection", async () => {
+    const avo = { ...blk("Avocado Block A", "Avocado") };
+    const pot = { ...blk("P1-B1", "Potato") };
+    const blocks = [avo, pot];
+    const bootFor = (pests: string[]) => ({ ...BOOT, pest_catalog: pests.map((name) => ({ name })) });
+    render(
+      <BlockPlanPanel
+        blocks={blocks}
+        plans={Object.fromEntries(blocks.map((b) => [b.name, { ...emptyPlan(), classification: "Preventive" as const }]))}
+        onPlanChange={vi.fn()}
+        boot={bootFor(["Avocado Thrips"])}
+        bootByCrop={{ Avocado: bootFor(["Avocado Thrips"]), Potato: bootFor(["Late blight"]) }}
+        findings={{}}
+        when="2026-10-30 06:00:00"
+      />,
+    );
+    const [a, p] = screen.getAllByTestId("block-section");
+    expect(within(a).getByRole("button", { name: "Avocado Thrips" })).toBeInTheDocument();
+    expect(within(a).queryByRole("button", { name: "Late blight" })).toBeNull();
+    expect(within(p).getByRole("button", { name: "Late blight" })).toBeInTheDocument();
+    expect(within(p).queryByRole("button", { name: "Avocado Thrips" })).toBeNull();
+  });
 });

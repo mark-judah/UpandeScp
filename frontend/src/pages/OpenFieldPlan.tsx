@@ -32,6 +32,7 @@ export function OpenFieldPlan({ initialCrop }: { initialCrop?: string } = {}) {
   const [groups, setGroups] = useState<OpenFieldGroup[]>([]);
   const [loadingBlocks, setLoadingBlocks] = useState(true);
   const [boot, setBoot] = useState<CreatorBootstrap | null>(null);
+  const [bootByCrop, setBootByCrop] = useState<Record<string, CreatorBootstrap | null>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [plans, setPlans] = useState<Record<string, BlockPlan>>({});
   const [findings, setFindings] = useState<Record<string, BlockFindings>>({});
@@ -46,6 +47,7 @@ export function OpenFieldPlan({ initialCrop }: { initialCrop?: string } = {}) {
     fetchCreatorBootstrap(initialCrop)
       .then(setBoot)
       .catch((e) => toast.show(asStatement(errorText(e, "Could not load planning data.")), "err"));
+    setBootByCrop({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCrop]);
 
@@ -57,6 +59,22 @@ export function OpenFieldPlan({ initialCrop }: { initialCrop?: string } = {}) {
     () => selected.map((n) => byName.get(n)).filter((b): b is NonNullable<typeof b> => !!b),
     [selected, byName],
   );
+
+  // Planning data is per crop: a block's targets, tank mixes and suggestions follow the
+  // crop it grows, whatever crop route the page was opened from.
+  useEffect(() => {
+    const crops = [...new Set(blocks.map((b) => b.crop).filter((c): c is string => !!c))];
+    for (const c of crops.filter((c) => !(c in bootByCrop))) {
+      setBootByCrop((m) => ({ ...m, [c]: null }));
+      fetchCreatorBootstrap(c)
+        .then((r) => setBootByCrop((m) => ({ ...m, [c]: r })))
+        .catch((e) => {
+          setBootByCrop((m) => { const { [c]: _, ...rest } = m; return rest; });
+          toast.show(asStatement(errorText(e, `Could not load planning data for ${c}.`)), "err");
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocks]);
 
   const onSelect = useCallback((next: string[]) => {
     setSelected(next);
@@ -145,6 +163,7 @@ export function OpenFieldPlan({ initialCrop }: { initialCrop?: string } = {}) {
               plans={plans}
               onPlanChange={(n, p) => setPlans((prev) => ({ ...prev, [n]: p }))}
               boot={boot}
+              bootByCrop={bootByCrop}
               findings={findings}
               when={sprayDate}
             />

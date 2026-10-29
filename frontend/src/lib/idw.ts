@@ -374,8 +374,12 @@ export function renderRgba(
   cuts: Cuts,
   colors: [string, string, string],
   radiusM = 120,
+  /** Opacity per class (and for a scouted-clean 0): one colour at several strengths, as the open
+   *  field paints a pest in its own colour. Omitted: the original fixed alpha. */
+  alphas?: { low: number; mid: number; high: number; clean: number },
 ): Uint8ClampedArray {
   const rgb = colors.map((h) => [1, 3, 5].map((o) => parseInt(h.slice(o, o + 2), 16)));
+  const classAlpha = alphas ? [alphas.low, alphas.mid, alphas.high] : null;
   const out = new Uint8ClampedArray(grid.cols * grid.rows * 4);
   for (let r = 0; r < grid.rows; r++)
     for (let c = 0; c < grid.cols; c++) {
@@ -389,10 +393,13 @@ export function renderRgba(
         }
         continue;
       }
-      const col = rgb[classOf(v, cuts)];
+      const cls = classOf(v, cuts);
+      const col = rgb[cls];
       const t = Math.min(1, field.dist[i] / radiusM);
       out[o] = col[0]; out[o + 1] = col[1]; out[o + 2] = col[2];
-      out[o + 3] = Math.round(255 * (0.8 - 0.55 * t));
+      out[o + 3] = classAlpha && alphas
+        ? Math.round(255 * (v <= 0 ? alphas.clean : classAlpha[cls]) * (1 - 0.6 * t))
+        : Math.round(255 * (0.8 - 0.55 * t));
     }
   return out;
 }

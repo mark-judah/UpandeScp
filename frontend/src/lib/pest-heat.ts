@@ -23,6 +23,8 @@ export function computeField(
   fixedTraps: TrapLocations,
   tagOf: (props: any) => string,
   colors: [string, string, string],
+  /** Opacity per class: the open field paints one pest colour at several strengths. */
+  alphas?: { low: number; mid: number; high: number; clean: number },
 ): FieldResult {
   const pts = buildHeatPoints(entries, obs, fixedTraps);
   if (!pts.length) return { kind: "no-samples" };
@@ -35,7 +37,7 @@ export function computeField(
   const field = idwField(grid, samplesToGrid(grid, pts), { k: 8, power: 2, radiusM: FIELD_RADIUS_M });
   const cuts = DEFAULT_CUTS;
   return {
-    kind: "ok", grid, cuts, rgba: renderRgba(grid, field, cuts, colors, FIELD_RADIUS_M),
+    kind: "ok", grid, cuts, rgba: renderRgba(grid, field, cuts, colors, FIELD_RADIUS_M, alphas),
     blocks: summarizeByOwner(grid, field, cuts), samples: pts.length,
     traps: pts.filter((p) => p.trap).length, hits: pts.filter((p) => p.v > 0).length,
   };

@@ -32,7 +32,8 @@ MAX_PAGE = _gallery.MAX_PAGE
 
 _PHOTOS = """
 SELECT ph.image, ph.caption, ph.captured_on, se.scouts_name, {wh}, se.date_of_capture,
-       se.name, ph.subject, se.time_of_capture, se.greenhouse, se.block, se.bed, se.zone, se.tree
+       se.name, ph.subject, se.time_of_capture, se.greenhouse, se.block, se.bed, se.zone, se.tree,
+       se.triad, se.latitude, se.longitude
 FROM `tabScouting Entry Photo` ph
 JOIN `tabScouting Entry` se ON se.name = ph.parent
 WHERE ph.parenttype = 'Scouting Entry' AND {where}{extra}
@@ -150,6 +151,9 @@ def _photos(where: str, params: dict, extra: list, page: int, kinds: _Kinds) -> 
             "bed": r[11] or "",
             "zone": r[12] or "",
             "tree": r[13] or "",
+            "triad": r[14] or "",
+            "latitude": r[15] or "",
+            "longitude": r[16] or "",
             "time": hms(r[8])[:5],
             "trap": (d.get("trap") or {}).get("trap", ""),
             "trapLocation": (d.get("trap") or {}).get("location", ""),

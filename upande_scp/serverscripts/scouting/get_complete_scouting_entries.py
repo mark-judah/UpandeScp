@@ -311,7 +311,7 @@ def _build_month_entries(from_date, to_date, crop=None):
         scouting_entries = frappe.db.sql(
             f"""
             SELECT se.name, se.scouts_name, se.greenhouse, se.bed, se.zone, se.block,
-                   se.`row`, se.tree,
+                   se.`row`, se.tree, se.triad,
                    COALESCE(NULLIF(se.crop_scouted, ''), %(crop)s) AS crop_scouted,
                    se.time_of_capture,
                    se.date_of_capture, se.latitude, se.longitude
@@ -336,6 +336,7 @@ def _build_month_entries(from_date, to_date, crop=None):
                 "block",
                 "`row`",
                 "tree",
+                "triad",
                 "crop_scouted",
                 "time_of_capture",
                 "date_of_capture",
@@ -502,6 +503,7 @@ def get_entries_since(since=None, greenhouse=None, farm=None, limit=2000):
             "block",
             "`row`",
             "tree",
+            "triad",
             "crop_scouted",
             "time_of_capture",
             "date_of_capture",

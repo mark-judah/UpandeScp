@@ -15,6 +15,7 @@
   "block",
   "row",
   "tree",
+  "triad",
   "column_break_frpc",
   "time_of_capture",
   "date_of_capture",
@@ -116,6 +117,14 @@
    "fieldtype": "Link",
    "label": "Tree",
    "options": "Orchard Tree"
+  },
+  {
+   "depends_on": "eval:doc.block",
+   "description": "The hexagon (Triad) scouted, where the block is surveyed into triads. Data, not a Link: the Triad doctype ships with upande_core, which not every site has.",
+   "fieldname": "triad",
+   "fieldtype": "Data",
+   "label": "Triad",
+   "search_index": 1
   },
   {
    "fieldname": "column_break_frpc",
@@ -249,7 +258,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 20:00:00.000000",
+ "modified": "2026-10-29 08:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry",

@@ -15,6 +15,8 @@ export function AvocadoObservations({ crop }: { crop?: string } = {}) {
     const colorOf = (name: string) => (kind === "disease" ? diseaseColor(name) : pestColor(name));
     return {
       title: "Observations",
+      // Open-field observations are read from above: always 2D.
+      flat: true,
       subtitle: "Orchard trees · tinted by the dominant pest / disease observed",
       deriveColors: (data) => deriveObservationColors(data, kind, colorOf),
       patchObservation: pickedObs ? { kind, name: pickedObs } : null,

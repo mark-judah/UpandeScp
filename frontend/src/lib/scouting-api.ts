@@ -1259,10 +1259,17 @@ export function metaFromChunk(r: ChunkResponse): Partial<ScoutingMeta> {
 export interface TrapLocation {
   lat: number;
   lng: number;
-  source: "GPS estimate" | "Manual" | "";
+  /** "Unit" when the trap sits on the unit it hangs on (Trap.unit). */
+  source: "GPS estimate" | "Manual" | "Unit" | "";
   fixes: number;
   spread_m: number;
   flag: string;
+  trap_number?: string;
+  /** What the trap hangs on (Trap.unit_type + Trap.unit), "" when nothing. */
+  unit_type?: "Triad" | "Orchard Tree" | "Bed" | "";
+  unit?: string;
+  /** The unit's geometry: a hexagon (Polygon), a tree (Point) or a bed (LineString). */
+  unit_geometry?: { type: string; coordinates: unknown } | null;
 }
 export type TrapLocations = Record<string, TrapLocation>;
 

@@ -7,6 +7,7 @@ import { deriveTrapMarkers, pestTotals } from "./derive-traps";
 import { MapControlPanel } from "@/components/maps/MapControlPanel";
 import { useObservationColors } from "@/lib/observation-colors";
 import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
+import { trapPlacement } from "@/lib/trap-units";
 
 export function AvocadoTraps({ crop }: { crop?: string } = {}) {
   // Fixed trap locations (Trap.geojson); traps without one fall back to the
@@ -29,6 +30,7 @@ export function AvocadoTraps({ crop }: { crop?: string } = {}) {
       // Trees stay plain (unscouted colour); trap catches are the signal.
       deriveColors: () => new Map<string, string>(),
       deriveMarkers: (data) => deriveTrapMarkers(data, fixed, pestColor),
+      trapUnits: fixed,
       markerCard: (m, range, onClose) =>
         m.label ? (
           <TrapReadingCard
@@ -41,11 +43,7 @@ export function AvocadoTraps({ crop }: { crop?: string } = {}) {
               { label: "Catches in range", value: m.count },
               {
                 label: "Placement",
-                value: fixed[m.label]
-                  ? fixed[m.label].source === "Manual"
-                    ? "Fixed · placed manually"
-                    : `GPS estimate · ${fixed[m.label].fixes} fixes`
-                  : "Average of entries",
+                value: trapPlacement(fixed[m.label]),
               },
             ]}
             onClose={onClose}

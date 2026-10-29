@@ -39,7 +39,8 @@ import { useHouseOverlays } from "../maps/use-house-overlays";
 import { DrawAreaBar } from "../maps/DrawAreaBar";
 import { areaPinFeatures, draftFeatures, patchFeatures } from "./patch-features";
 import { TRAP_FOCUS_ZOOM } from "@/lib/trap-pulse";
-import { prefersReducedMotion, trapMarkerColors, trapMarkerHtml, trapPulse } from "@/lib/trap-pulse";
+import { trapUnitLayers } from "@/lib/trap-units";
+import { addTrapMarkers, drawTrapUnits, flyToTrap } from "../maps/trap-layers";
 
 /** Compute a polygon's bounds quickly for fitBounds. */
 function geometryBounds(
@@ -304,6 +305,10 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     () => (view.deriveMarkers ? view.deriveMarkers(data) : []),
     [data, view],
   );
+  // Flat views (open-field Observations) never tilt; the rest look at the trees at 60°.
+  const tilt = view.flat ? 0 : 60;
+  const tiltRef = useRef(tilt);
+  tiltRef.current = tilt;
 
   // Scout movement tracks — per scout, tree-to-tree in time order, cut when
   // the day or block changes (so a line never jumps across the orchard). Each
@@ -498,45 +503,25 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const reduced = prefersReducedMotion();
-    const made: maplibregl.Marker[] = [];
-    domMarkersRef.current = new Map();
-    for (const m of markers) {
-      const { size } = trapPulse(m.count);
-      const el = document.createElement("div");
-      el.className = "scp-trap-marker";
-      el.style.width = `${size}px`;
-      el.style.height = `${size}px`;
-      el.style.cursor = "pointer";
-      el.title = `${m.label || ""} · ${m.count} catches`;
-      el.setAttribute("role", "button");
-      el.tabIndex = 0;
-      el.innerHTML = trapMarkerHtml({
-        key: m.label || `${m.lng},${m.lat}`,
-        count: m.count,
-        maxCount: m.maxCount,
-        reducedMotion: reduced,
-        ...trapMarkerColors(m.color, m.count),
-      });
-      const open = (ev: Event) => {
-        ev.stopPropagation();
-        if (drawRef.current.active) return;
-        focusMarkerRef.current(m);
-      };
-      el.addEventListener("click", open);
-      el.addEventListener("keydown", (ev) => {
-        if ((ev as KeyboardEvent).key === "Enter" || (ev as KeyboardEvent).key === " ") open(ev);
-      });
-      const mk = new maplibregl.Marker({ element: el }).setLngLat([m.lng, m.lat]).addTo(map);
-      made.push(mk);
-      if (m.label) domMarkersRef.current.set(m.label, mk);
-    }
+    const made = addTrapMarkers(map, markers, (m) => {
+      if (drawRef.current.active) return;
+      focusMarkerRef.current(m);
+    });
+    domMarkersRef.current = made;
     setMarkerEpoch((n) => n + 1);
     return () => {
       made.forEach((mk) => mk.remove());
       domMarkersRef.current = new Map();
     };
   }, [markers, mapReady]);
+
+  // Each trap's unit (hexagon, tree, bed) outlined in its catch colour, with the trap number.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !view.trapUnits) return;
+    const colors = Object.fromEntries(markers.filter((m) => m.label && m.count > 0).map((m) => [m.label!, m.color]));
+    drawTrapUnits(map, trapUnitLayers(view.trapUnits, colors));
+  }, [view.trapUnits, markers, mapReady]);
 
   // Click a marker → fly to it, then the view's card (spec TM3).
   const [selectedMarker, setSelectedMarker] = useState<MarkerPoint | null>(null);
@@ -546,23 +531,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     if (!map || !view.markerCard) return;
     setSelectedMarker(null);
     // Zoom IN to the trap, never out: current zoom or ~19.
-    const zoom = Math.max(map.getZoom(), TRAP_FOCUS_ZOOM);
-    if (prefersReducedMotion()) {
-      map.jumpTo({ center: [m.lng, m.lat], zoom });
-      setSelectedMarker(m);
-      return;
-    }
-    let done = false;
-    const reveal = () => {
-      if (done) return;
-      done = true;
-      setSelectedMarker(m);
-    };
-    // Listen only after flyTo starts: stopping an earlier flight fires
-    // moveend synchronously, which would reveal this card too early.
-    map.flyTo({ center: [m.lng, m.lat], zoom, duration: 600, essential: false });
-    map.once("moveend", reveal);
-    window.setTimeout(reveal, 1000);
+    flyToTrap(map, m, TRAP_FOCUS_ZOOM, () => setSelectedMarker(m));
   };
   // The selected trap's marker is ringed.
   useEffect(() => {
@@ -679,7 +648,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
             [minX, minY],
             [maxX, maxY],
           ],
-          { padding: 80, pitch: 60, duration: 1000 },
+          { padding: 80, pitch: tilt, duration: 1000 },
         );
       }
       return;
@@ -687,12 +656,18 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     const farmBounds = farmBoundsFromBlocks(blocks);
     const b = farmBounds[filters.farm];
     if (b)
-      map.fitBounds(b, { padding: 80, pitch: 60, duration: 1000, bearing: 0 });
+      map.fitBounds(b, { padding: 80, pitch: tilt, duration: 1000, bearing: 0 });
   }, [filters.farm, blocks, mapReady]);
 
   // Click a block → fly into it.
   const onMapReady = (map: maplibregl.Map) => {
     mapRef.current = map;
+    if (tiltRef.current === 0) {
+      // 2D: pitch locked at 0 — no tilting by drag, touch or the compass.
+      map.setMaxPitch(0);
+      map.dragRotate.disable();
+      map.touchPitch.disable();
+    }
     map.on("load", () => {
       setMapReady(true);
     });
@@ -706,7 +681,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
       if (!b) return;
       map.fitBounds(b, {
         padding: 60,
-        pitch: 60,
+        pitch: tiltRef.current,
         duration: 1000,
         bearing: 0,
       });
@@ -852,7 +827,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
           className="relative h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]"
           aria-busy={first || undefined}
         >
-          <Map3D onReady={onMapReady} />
+          <Map3D onReady={onMapReady} initialPitch={tilt} />
 
           <MapKpiPill>
             {first || !blocks ? (

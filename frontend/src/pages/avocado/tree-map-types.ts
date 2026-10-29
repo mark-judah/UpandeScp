@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ProcessedData } from "@/lib/scouting-types";
+import type { TrapLocations } from "@/lib/scouting-api";
 
 /** A point overlay (e.g. a trap catch) drawn over the trees. */
 export interface MarkerPoint {
@@ -47,4 +48,9 @@ export interface AvocadoView {
   /** The observation whose patches the map outlines on a picked block
    *  (spread spec C5); null/absent = no patches. */
   patchObservation?: { kind: "pest" | "disease"; name: string } | null;
+  /** Draw the map flat (2D: no tilt, pitch locked at 0) — the open-field Observations map. */
+  flat?: boolean;
+  /** Traps with their units (get_trap_locations): each unit is outlined and labelled with the
+   *  trap number under its marker. */
+  trapUnits?: TrapLocations;
 }

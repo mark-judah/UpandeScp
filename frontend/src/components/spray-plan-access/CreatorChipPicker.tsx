@@ -12,7 +12,8 @@
  */
 
 import { SearchInput } from "@/components/SearchInput";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -60,6 +61,39 @@ export function CreatorChipPicker({
   const [results, setResults] = useState<CreatorCandidate[]>([]);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The picker sits inside a scrolling table, which clips anything positioned
+  // inside it. The menu is portalled to <body> and placed under the input.
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = anchorRef.current?.getBoundingClientRect();
+      if (r) setPos({ top: r.bottom + 4, left: r.left });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open]);
+
+  const floating = (children: ReactNode, className: string, onMouseDown?: (e: React.MouseEvent) => void) =>
+    pos
+      ? createPortal(
+          <div
+            className={`fixed z-[1000] min-w-56 rounded-md border bg-popover shadow-md ${className}`}
+            style={{ top: pos.top, left: pos.left }}
+            onMouseDown={onMouseDown}
+          >
+            {children}
+          </div>,
+          document.body,
+        )
+      : null;
 
   useEffect(() => {
     if (!open) return;
@@ -114,7 +148,7 @@ export function CreatorChipPicker({
         </span>
       ))}
       {!disabled && (
-        <div className="relative">
+        <div className="relative" ref={anchorRef}>
           {open ? (
             <div className="flex items-center gap-1">
               <SearchInput className="w-44" value={query} onChange={setQuery}
@@ -136,12 +170,9 @@ export function CreatorChipPicker({
               Add
             </button>
           )}
-          {open && results.length > 0 && (
-            <div
-              className="absolute top-8 left-0 z-50 min-w-56 max-h-60 overflow-auto rounded-md border bg-popover shadow-md"
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              {results.map((r) => (
+          {open && results.length > 0 &&
+            floating(
+              results.map((r) => (
                 <button
                   type="button"
                   key={r.user}
@@ -153,16 +184,19 @@ export function CreatorChipPicker({
                     {r.email || r.user}
                   </div>
                 </button>
-              ))}
-            </div>
-          )}
-          {open && !searching && results.length === 0 && query && (
-            <div className="absolute top-8 left-0 z-50 min-w-56 rounded-md border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-md">
-              No users found. Only enabled accounts with the
-              {" "}&quot;{roleLabel}&quot;{" "}role appear here. Grant the
-              role in Frappe Desk first if you need to give a user access.
-            </div>
-          )}
+              )),
+              "max-h-60 overflow-auto",
+              (e) => e.preventDefault(),
+            )}
+          {open && !searching && results.length === 0 && query &&
+            floating(
+              <>
+                No users found. Only enabled accounts with the
+                {" "}&quot;{roleLabel}&quot;{" "}role appear here. Grant the
+                role in Frappe Desk first if you need to give a user access.
+              </>,
+              "px-3 py-2 text-xs text-muted-foreground",
+            )}
         </div>
       )}
     </div>

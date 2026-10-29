@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { HeaderIconButton } from "@/components/header-controls";
 import { PlacePicker } from "@/components/PlacePicker";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useCropFarms } from "@/hooks/use-crop-farms";
+import { CropChip } from "@/components/CropChip";
+import { isBlockGrown, useCropProfiles } from "@/lib/crop-profile";
+import { fetchBlockCrops, type BlockCrop } from "@/lib/open-field-api";
+import { cropSlug } from "@/lib/router";
 
 export const ALL = "__all__";
 const fromAll = (v: string) => (v === ALL ? "" : v);
@@ -52,6 +56,23 @@ export function MapHeader({
   const { farms, loading } = useCropFarms(value.crop);
   const farmList = Object.keys(farms);
 
+  // On block-grown crops (a pivot's blocks) the crop each block is growing is named
+  // beside the block in the picker, highlighted.
+  useCropProfiles();
+  const blockGrown = showGreenhouse && isBlockGrown(cropSlug(value.crop));
+  const houseKey = useMemo(() => Object.values(farms).flat().join("|"), [farms]);
+  const [blockCrops, setBlockCrops] = useState<Record<string, BlockCrop>>({});
+  useEffect(() => {
+    if (!blockGrown || !houseKey) return;
+    let alive = true;
+    fetchBlockCrops(houseKey.split("|"))
+      .then((r) => alive && setBlockCrops(r || {}))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [blockGrown, houseKey]);
+
   // Single-farm crop (e.g. avocado → Lokitela): auto-select that farm on load
   // instead of leaving it on "All farms" — several map layers (orchard trees,
   // per-farm geometry) only load once a specific farm is chosen. Done once, and
@@ -77,6 +98,7 @@ export function MapHeader({
         value={{ farm: fromAll(value.farm), greenhouse: showGreenhouse ? fromAll(value.greenhouse) : "" }}
         onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
         disabled={loading}
+        houseExtra={blockGrown ? (h) => <CropChip crop={blockCrops[h]?.crop_label} /> : undefined}
       />
 
       <DateRangePicker

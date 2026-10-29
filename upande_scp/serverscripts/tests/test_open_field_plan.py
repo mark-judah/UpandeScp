@@ -162,6 +162,19 @@ class TestBatch(unittest.TestCase):
 			OF.create_draft_plans_batch([])
 
 
+class TestBlockCrops(unittest.TestCase):
+	def test_crop_label_and_group_per_block_without_the_creator_role(self):
+		with mock.patch.object(OF.planting, "crops_for_stations", return_value={"P1-B1 - MUT": "Potato", "P1-B2 - MUT": None}), \
+		     mock.patch.object(OF, "_ancestors", return_value=WH), \
+		     mock.patch.object(OF.frappe, "get_all", return_value=[frappe._dict(name="Potato", crop_name="Potatoes")]):
+			out = OF.get_block_crops(["P1-B1 - MUT", "P1-B2 - MUT"])
+		self.assertEqual(out["P1-B1 - MUT"], {"crop": "Potato", "crop_label": "Potatoes", "group": "Pivot 1 - MUT"})
+		self.assertIsNone(out["P1-B2 - MUT"]["crop"])
+
+	def test_no_blocks_no_query(self):
+		self.assertEqual(OF.get_block_crops([]), {})
+
+
 class TestDirectory(unittest.TestCase):
 	def setUp(self):
 		if not frappe.db.exists("Warehouse", "P1-B1 - MUT"):

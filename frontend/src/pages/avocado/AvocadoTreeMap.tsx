@@ -1,5 +1,6 @@
+import { BlockSelect } from "@/components/BlockSelect";
+import { fetchBlockCrops, type BlockCrop } from "@/lib/open-field-api";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FilterSelect } from "@/components/FilterSelect";
 import maplibregl from "maplibre-gl";
 import { ChevronDown, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
@@ -222,6 +223,18 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
       ].sort(),
     [blocks, filters.farm],
   );
+  // What each block is growing, so the picker names the crop beside a pivot's blocks.
+  const [blockCrops, setBlockCrops] = useState<Record<string, BlockCrop>>({});
+  useEffect(() => {
+    if (!blockNames.length) return;
+    let alive = true;
+    fetchBlockCrops(blockNames)
+      .then((r) => alive && setBlockCrops(r || {}))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [blockNames]);
   const saveArea = async (title: string, shared: boolean) => {
     if (!pendingArea || !block || !obs) return;
     setAreaBusy(true);
@@ -713,12 +726,13 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
         </span>
         {obs ? (
           <div className="flex flex-wrap items-center gap-2">
-            <FilterSelect
+            <BlockSelect
               label="Block for patches"
-              allLabel="Pick a block"
+              placeholder="Pick a block"
               value={block ?? ""}
               onChange={(v) => setBlock(v || null)}
               options={blockNames}
+              crops={blockCrops}
             />
             {block ? (
               <span className="tabular-nums">

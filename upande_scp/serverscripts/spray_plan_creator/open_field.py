@@ -192,6 +192,27 @@ def _ancestors(stations: list) -> dict:
 
 
 @frappe.whitelist()
+def get_block_crops(blocks) -> dict:
+	"""``{block: {crop, crop_label, group}}`` — what each block is growing now and the pivot or
+	section it sits in. Read-only and open to any desk user (scouts pick blocks too)."""
+	blocks = frappe.parse_json(blocks) if isinstance(blocks, str) else (blocks or [])
+	blocks = [b for b in dict.fromkeys(blocks) if b]
+	if not blocks:
+		return {}
+	crops = planting.crops_for_stations(blocks)
+	labels = {
+		r.name: r.crop_name or r.name
+		for r in frappe.get_all("Crop Scouted", fields=["name", "crop_name"])
+	}
+	wh = _ancestors(blocks)
+	return {
+		b: {"crop": crops.get(b), "crop_label": labels.get(crops.get(b), crops.get(b)) if crops.get(b) else None,
+		    "group": group_of(b, wh)[1]}
+		for b in blocks
+	}
+
+
+@frappe.whitelist()
 def get_block_findings(blocks, days: int = 30) -> dict:
 	"""Pests and diseases scouted on each block in the last ``days`` days:
 	``{block: {pests: [{name, count, last_seen}], diseases: [...], targets: [names]}}``."""

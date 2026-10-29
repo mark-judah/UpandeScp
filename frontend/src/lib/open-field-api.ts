@@ -33,3 +33,13 @@ export const fetchBlockFindings = (blocks: string[], days = 30) =>
 /** One draft per block, all or nothing; a failure names the block. */
 export const createDraftPlansBatch = (plans: DraftPayload[]) =>
   call<BatchResult>(`${M}.create_draft_plans_batch`, { plans: JSON.stringify(plans) });
+
+export interface BlockCrop {
+  crop: string | null;
+  crop_label: string | null;
+  group: string | null;
+}
+
+/** What each block is growing now; open to every desk user, so scouting pages can use it. */
+export const fetchBlockCrops = (blocks: string[]) =>
+  call<Record<string, BlockCrop>>(`${M}.get_block_crops`, { blocks: JSON.stringify(blocks) });

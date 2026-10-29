@@ -35,8 +35,15 @@ vi.mock("@/components/spray-plan/BlockPlanPanel", () => ({
   ),
 }));
 
+import { useState } from "react";
 import { ToastProvider } from "@/components/Toast";
-import { OpenFieldPlan } from "@/pages/OpenFieldPlan";
+import { OpenFieldPlanner } from "@/components/spray-plan/OpenFieldPlanner";
+
+/** The planner's selection belongs to its page (the Application Plan): hold it here. */
+function Page({ crop = "Potato" }: { crop?: string }) {
+  const [selected, setSelected] = useState<string[]>([]);
+  return <OpenFieldPlanner crop={crop} selected={selected} onSelect={setSelected} />;
+}
 
 const blk = (n: string) => ({ name: `${n} - MUT`, label: n, farm: "Mutara", crop: "Potato", crop_label: "Potato", area_ha: 2, cost_center: `${n} - MUT` });
 
@@ -50,10 +57,10 @@ beforeEach(() => {
   });
 });
 
-describe("OpenFieldPlan", () => {
+describe("OpenFieldPlanner", () => {
   it("selects two blocks, plans each, and creates one draft per block together", async () => {
     const user = userEvent.setup();
-    render(<ToastProvider><OpenFieldPlan initialCrop="Potato" /></ToastProvider>);
+    render(<ToastProvider><Page /></ToastProvider>);
     await user.click(await screen.findByRole("checkbox", { name: "Select all of Pivot 1" }));
     const create = await screen.findByRole("button", { name: /Create 2 draft plans/ });
     expect(create).toBeDisabled();
@@ -67,5 +74,31 @@ describe("OpenFieldPlan", () => {
     expect(payloads.map((p: any) => p.custom_greenhouse)).toEqual(["P1-B1 - MUT", "P1-B2 - MUT"]);
     expect(payloads[0].custom_area).toBe(2);
     expect(await screen.findByText(/2 draft plans created/)).toBeInTheDocument();
+  });
+});
+
+describe("OpenFieldPlanner list", () => {
+  it("lists the route crop's blocks and shows each block's extra cell", async () => {
+    render(
+      <ToastProvider>
+        <OpenFieldPlanner crop="Potato" selected={[]} onSelect={() => {}} rowExtra={(b) => <span data-testid={`heat-${b.label}`}>h</span>} />
+      </ToastProvider>,
+    );
+    expect(await screen.findByTestId("heat-P1-B1")).toBeInTheDocument();
+    expect(fetchOpenFieldBlocks).toHaveBeenCalledWith("Potato");
+  });
+  it("brings a block picked elsewhere into view in the list", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => blk(`P1-B${i + 1}`));
+    fetchOpenFieldBlocks.mockResolvedValue({ groups: [{ kind: "Pivot", name: "Pivot 1 - MUT", label: "Pivot 1", blocks: many }] });
+    const { rerender } = render(<ToastProvider><OpenFieldPlanner crop="Potato" selected={[]} onSelect={() => {}} /></ToastProvider>);
+    await screen.findByText("P1-B30");
+    const box = screen.getByTestId("block-multi-picker").querySelector(".overflow-y-auto") as HTMLElement;
+    const rows = Array.from(box.querySelectorAll<HTMLElement>("[data-block]"));
+    rows.forEach((r, i) => Object.defineProperty(r, "offsetTop", { value: i * 30, configurable: true }));
+    rows.forEach((r) => Object.defineProperty(r, "offsetHeight", { value: 30, configurable: true }));
+    Object.defineProperty(box, "clientHeight", { value: 200, configurable: true });
+    Object.defineProperty(box, "offsetTop", { value: 0, configurable: true });
+    rerender(<ToastProvider><OpenFieldPlanner crop="Potato" selected={["P1-B30 - MUT"]} onSelect={() => {}} focus="P1-B30 - MUT" /></ToastProvider>);
+    await waitFor(() => expect(box.scrollTop).toBeGreaterThan(0));
   });
 });

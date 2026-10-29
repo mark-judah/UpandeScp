@@ -98,9 +98,6 @@ const SprayPlanAccess = lazy(() =>
 const Settings = lazy(() =>
   import("@/pages/Settings").then((m) => ({ default: m.Settings })),
 );
-const OpenFieldPlan = lazy(() =>
-  import("@/pages/OpenFieldPlan").then((m) => ({ default: m.OpenFieldPlan })),
-);
 const ApplicationPlan = lazy(() =>
   import("@/pages/ApplicationPlan").then((m) => ({ default: m.ApplicationPlan })),
 );
@@ -314,8 +311,6 @@ function renderView(crop: string, view: View): ReactNode {
       ) : (
         <ApplicationPlan initialCrop={cropName} />
       );
-    case "open-field-plan":
-      return <OpenFieldPlan initialCrop={cropName} />;
     case "chemical-dashboard":
       return <ChemicalDashboard />;
     case "spray-plan-transfers":

@@ -4,7 +4,7 @@
  * crop as a highlighted chip. Handles any number of blocks per group (a pivot has
  * a dozen) by scrolling inside the card.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchInput } from "@/components/SearchInput";
@@ -25,13 +25,30 @@ export function BlockMultiPicker({
   selected,
   onChange,
   loading,
+  focus,
+  rowExtra,
 }: {
   groups: OpenFieldGroup[];
   selected: string[];
   onChange: (next: string[]) => void;
   loading?: boolean;
+  /** Scroll this block's row into view (e.g. a block picked on a map). */
+  focus?: string | null;
+  /** An extra cell at the end of each block row. */
+  rowExtra?: (block: OpenFieldBlock) => ReactNode;
 }) {
   const [query, setQuery] = useState("");
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // A block picked elsewhere can sit out of view in the scrolled list: bring its row in.
+  useEffect(() => {
+    const box = listRef.current;
+    if (!focus || !box) return;
+    const row = Array.from(box.querySelectorAll<HTMLElement>("[data-block]")).find((r) => r.dataset.block === focus);
+    if (!row) return;
+    const top = row.offsetTop - box.offsetTop;
+    if (top < box.scrollTop || top + row.offsetHeight > box.scrollTop + box.clientHeight)
+      box.scrollTop = Math.max(0, top - box.clientHeight / 2 + row.offsetHeight / 2);
+  }, [focus, selected]);
   const q = query.trim().toLowerCase();
   const shown = useMemo(
     () =>
@@ -44,7 +61,7 @@ export function BlockMultiPicker({
   return (
     <div className="flex flex-col gap-2" data-testid="block-multi-picker">
       <SearchInput value={query} onChange={setQuery} placeholder="Search blocks or crops…" size="md" />
-      <div className="max-h-[32rem] overflow-y-auto pr-1">
+      <div ref={listRef} className="max-h-[32rem] overflow-y-auto pr-1">
         {loading ? (
           <div className="flex flex-col gap-2" aria-busy="true" data-skeleton="blocks">
             {Array.from({ length: 8 }, (_, i) => (
@@ -86,6 +103,7 @@ export function BlockMultiPicker({
                       <span className="flex-1 truncate" title={b.name}>
                         {b.label}
                       </span>
+                      {rowExtra?.(b)}
                       <CropChip crop={b.crop_label} />
                     </label>
                   ))}

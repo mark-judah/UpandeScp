@@ -366,11 +366,9 @@ const AVOCADO_NAV: NavSection[] = [
   {
     label: "Crop Protection",
     items: [
-      // The heat map page carries the block prescription panel, so for avocado it is
-      // the Application Plan — observe and plan without leaving it.
-      { kind: "view", view: "heatmaps", label: "Application Plan", icon: ClipboardList },
-      // Several blocks at once, each planned separately, sent to approval together.
-      { kind: "view", view: "open-field-plan", label: "Spray Plan", icon: Droplets },
+      // One page to observe and plan: the pest map on the left, the blocks and a plan per
+      // block on the right, sent to approval together (the old Spray Plan merged in).
+      { kind: "view", view: "application-plan", label: "Application Plan", icon: ClipboardList },
       REENTRY_ITEM,
     ],
   },

@@ -35,6 +35,8 @@ export interface UseScoutingArgs {
    *  are set. */
   greenhouses?: string[];
   crop?: string;
+  /** False keeps the hook idle (no fetch, no IndexedDB read): the page is on another data path. */
+  enabled?: boolean;
 }
 
 export interface UseScoutingResult {
@@ -66,6 +68,7 @@ export function useScouting({
   greenhouse,
   greenhouses,
   crop,
+  enabled = true,
 }: UseScoutingArgs): UseScoutingResult {
   const [data, setData] = useState<ProcessedData | null>(null);
   const [meta] = useState<ScoutingMeta>(EMPTY_META);
@@ -115,7 +118,7 @@ export function useScouting({
   // refreshed in the background so opening a map never waits on the network
   // once the cache is warm.
   useEffect(() => {
-    if (!from || !to || from > to) return;
+    if (!enabled || !from || !to || from > to) return;
     const token = ++tokenRef.current;
     setError(null);
     // Every crop is fetched as its own server-side slice — Rose included — so
@@ -196,13 +199,13 @@ export function useScouting({
         .catch((e) => console.error("[scouting] background refresh failed", e));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, tick, crop, greenhouse, greenhousesKey]);
+  }, [from, to, tick, crop, greenhouse, greenhousesKey, enabled]);
 
   // Effect B — Render. Runs whenever filters change (and also after Effect A
   // mutates IDB, because `tick` and range are shared). Pure IDB-read +
   // ProcessedData rebuild; never touches loading/progress.
   useEffect(() => {
-    if (!from || !to || from > to) return;
+    if (!enabled || !from || !to || from > to) return;
     const token = tokenRef.current;
     void buildAndSet(token);
     // ``weeksLoaded`` is deliberately NOT a dependency. It increments once per
@@ -213,7 +216,7 @@ export function useScouting({
     // page load. Effect A now calls ``buildAndSet`` once when hydration
     // finishes; per-week progress belongs to the overlay, not to a rebuild.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, greenhouse, greenhousesKey, crop, tick]);
+  }, [from, to, greenhouse, greenhousesKey, crop, tick, enabled]);
 
   // Realtime: invalidate the affected month and re-render.
   useRealtime("scp:scouting:dirty", async (payload: { months?: string[] }) => {

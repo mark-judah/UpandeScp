@@ -39,6 +39,9 @@ export interface AvocadoView {
   ) => ReactNode;
   /** Floating legend at the bottom-right; hidden while a marker card is open. */
   renderLegend?: (data: ProcessedData | null, loading?: boolean) => ReactNode;
+  /** Colour from the one-request per-unit summary where the farm allows it (hexagons / visit
+   *  points); farms with orchard trees keep the raw per-week entries. */
+  aggregate?: boolean;
   /** Draw the per-scout movement trails layer (scouting only). */
   showTracks?: boolean;
   /** The observation whose patches the map outlines on a picked block

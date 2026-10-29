@@ -147,7 +147,7 @@ export function currentWeekRange(): { from: string; to: string } {
  *  of entries (Kaitet's avocado is ~0.4% of its scouting); a farm scouted every day puts ~1,000
  *  entries a week on the map, and every week is its own request, so the map opens on the last
  *  quarter and the date range widens it. */
-export const BLOCK_MAP_MONTHS = 3;
+export const BLOCK_MAP_MONTHS = 2;
 
 export function lastMonthsRange(months: number): { from: string; to: string } {
   const to = new Date();

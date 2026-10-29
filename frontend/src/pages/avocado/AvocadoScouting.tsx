@@ -17,6 +17,7 @@ export function AvocadoScouting({ crop }: { crop?: string } = {}) {
       title: "Scouting Map",
       subtitle: "Orchard trees · per-scout coloring · click a block to fly in",
       showTracks: true,
+      aggregate: true,
       deriveColors: deriveScoutColors,
       panelTitle: "Scouts",
       renderPanel: (data, loading) => {

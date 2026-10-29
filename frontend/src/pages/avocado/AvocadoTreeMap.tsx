@@ -28,6 +28,7 @@ import {
   type GeoJsonFC,
   type OrchardTreePoints,
 } from "@/lib/scouting-api";
+import { useScoutingSummary } from "@/hooks/use-scouting-summary";
 import { BLOCK_MAP_MONTHS, lastMonthsRange } from "@/lib/utils";
 import type { AvocadoView, MarkerPoint } from "./tree-map-types";
 import { SCOUT_PALETTE } from "./derive-scouts";
@@ -108,12 +109,28 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     // Fetched crop-scoped, a week at a time: open on the last quarter, widen with the range.
     ...lastMonthsRange(BLOCK_MAP_MONTHS),
   }));
-  const { data, loading, progress, error } = useScouting({
+  const scopedGreenhouse = filters.greenhouse === ALL ? undefined : filters.greenhouse;
+  // The Scouting Map asks the server for one row per hexagon / visit point (one request) and only
+  // falls back to the raw per-week entries when the farm has orchard trees.
+  const summary = useScoutingSummary({
+    enabled: !!view.aggregate,
     from: filters.from,
     to: filters.to,
-    greenhouse: filters.greenhouse === ALL ? undefined : filters.greenhouse,
+    greenhouse: scopedGreenhouse,
     crop: filters.crop,
   });
+  const raw = useScouting({
+    from: filters.from,
+    to: filters.to,
+    greenhouse: scopedGreenhouse,
+    crop: filters.crop,
+    enabled: summary.state === "off" || summary.state === "raw",
+  });
+  const aggregated = summary.state === "aggregated";
+  const data = aggregated ? summary.data : raw.data;
+  const loading = aggregated ? false : summary.state === "pending" || raw.loading;
+  const progress = raw.progress;
+  const error = aggregated ? null : raw.error;
 
   const [blocks, setBlocks] = useState<GeoJsonFC | null>(null);
   const [treePoints, setTreePoints] = useState<OrchardTreePoints | null>(null);

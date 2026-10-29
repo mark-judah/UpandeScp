@@ -45,12 +45,15 @@ import {
   type GeoJsonFC,
   type OrchardTreePoints,
 } from "@/lib/scouting-api";
-import { lastMonthsRange } from "@/lib/utils";
+import { BLOCK_MAP_MONTHS, lastMonthsRange } from "@/lib/utils";
 import { useObservationColors } from "@/lib/observation-colors";
 import { fetchTrapLocations, type TrapLocations } from "@/lib/scouting-api";
 import { classOf } from "@/lib/idw";
 import { computeField, FIELD_RADIUS_M, observationOptions, type ObsOption } from "@/lib/pest-heat";
 import { ObservationPicker, obsKey } from "./ObservationPicker";
+import { addFieldLayers, paintFieldColors, setFieldVisibility } from "../maps/field-layers";
+import { decodeHexes, fetchFieldLayers, rowLines, type FieldLayersPayload } from "@/lib/field-geo";
+import { triadObsColors } from "@/lib/triad-colors";
 
 /** Band colours of the field: none/low, medium, high. */
 const FIELD_COLORS: [string, string, string] = ["#5bb45d", "#e9a23b", "#dc2626"];
@@ -118,8 +121,8 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     crop: initialCrop,
     farm: ALL,
     greenhouse: ALL,
-    // Sparse crop, crop-scoped fetch → default to a long 10-month window.
-    ...lastMonthsRange(10),
+    // Crop-scoped, a week per request: open on the last quarter, widen with the range.
+    ...lastMonthsRange(BLOCK_MAP_MONTHS),
   }));
   const { data, loading, progress, error } = useScouting({
     from: filters.from,
@@ -131,7 +134,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const [blocks, setBlocks] = useState<GeoJsonFC | null>(null);
   const [treePoints, setTreePoints] = useState<OrchardTreePoints | null>(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
-  const [showBoundary, setShowBoundary] = useState(false);
+  // Boundaries are what orients you; they start on (hexagons and rows come in as you zoom).
+  const [showBoundary, setShowBoundary] = useState(true);
+  const [showHex, setShowHex] = useState(true);
+  const [field, setField] = useState<FieldLayersPayload | null>(null);
+  const paintedRef = useRef<{ units: Map<string, string> | null; blocks: Map<string, string> | null }>({ units: null, blocks: null });
   const [showTrees, setShowTrees] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
   // Block areas, for count per hectare.
@@ -192,6 +199,18 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       cancelled = true;
     };
   }, [filters.farm]);
+
+  // Rows and hexagons: compact, versioned, cached locally; drawn only once zoomed in.
+  useEffect(() => {
+    let alive = true;
+    fetchFieldLayers(filters.farm === ALL ? "" : filters.farm)
+      .then((r) => alive && setField(r))
+      .catch(() => alive && setField(null));
+    return () => {
+      alive = false;
+    };
+  }, [filters.farm]);
+  const hexSet = useMemo(() => decodeHexes(field?.hex), [field]);
 
   // Cost centre and area per block, as the planner will see them.
   useEffect(() => {
@@ -417,7 +436,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     const map = mapRef.current;
     if (!map || !mapReady || !blocks) return;
     if (!map.getSource("blocks")) {
-      map.addSource("blocks", { type: "geojson", data: blocks as never });
+      map.addSource("blocks", { type: "geojson", data: blocks as never, promoteId: "block" });
       // Invisible fill: gives the polygons a click/hover target.
       map.addLayer({
         id: "blocks-fill",
@@ -478,6 +497,29 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       map.on("mouseleave", "blocks-fill", () => (map.getCanvas().style.cursor = ""));
     }
   }, [blocks, mapReady]);
+
+  // Hexagons + rows under the block outline, hexagons coloured by the picked observation's band.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !blocks || !field) return;
+    addFieldLayers(map, hexSet, rowLines(field.rows, field.hex.q), [...new Set(hexSet.fc.features.map((f) => f.properties.b))]);
+    paintedRef.current = { units: null, blocks: null };
+    setFieldVisibility(map, { hex: showHex, rows: showHex });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field, hexSet, blocks, mapReady]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !field || !map.getSource("fg-hex")) return;
+    const units = triadObsColors(data?.entries ?? [], obs, FIELD_COLORS);
+    const perBlock = new Map<string, string>();
+    const next = { prev: paintedRef.current.blocks, next: perBlock };
+    paintFieldColors(map, hexSet, paintedRef.current.units, units, next);
+    paintedRef.current = { units, blocks: perBlock };
+  }, [data, obs, field, hexSet, mapReady]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && mapReady) setFieldVisibility(map, { hex: showHex, rows: showHex });
+  }, [showHex, mapReady, field]);
 
   // Layer visibility toggles.
   useEffect(() => {
@@ -620,6 +662,13 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
                     onCheckedChange={(v) => setShowBoundary(!!v)}
                   />
                   Boundary
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                  <Checkbox
+                    checked={showHex}
+                    onCheckedChange={(v) => setShowHex(!!v)}
+                  />
+                  Hexagons &amp; rows
                 </label>
               </PopoverContent>
             </Popover>

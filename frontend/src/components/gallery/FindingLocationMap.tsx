@@ -23,6 +23,8 @@ import { observationColor } from "@/lib/observation-colors";
 import { cropSlug } from "@/lib/router";
 import { isBlockGrown } from "@/lib/crop-profile";
 import type { FeedPhoto } from "@/lib/gallery-api";
+import { decodeHexes, fetchFieldLayers, type HexSet } from "@/lib/field-geo";
+import { entryPoint } from "@/lib/unit-key";
 
 const cache = new Map<string, Promise<ProjectedGeometry | null>>();
 
@@ -48,6 +50,7 @@ export function loadHouseGeometry(house: string): Promise<ProjectedGeometry | nu
 export const clearHouseGeometryCache = () => {
   cache.clear();
   blockCache.clear();
+  hexCache = null;
   trapCache = null;
 };
 
@@ -143,6 +146,9 @@ export interface ProjectedBlock {
   path: string;
   /** Tree-name key -> position in the drawing (percent). */
   trees: { key: string; x: number; y: number }[];
+  /** Every hexagon (Triad) of the block as one SVG path, and each one's centre (percent). */
+  hexPath: string;
+  triads: Map<string, { x: number; y: number }>;
   centroid: { x: number; y: number };
   /** lng/lat -> position in the drawing (percent, unclamped). */
   at: (lng: number, lat: number) => { x: number; y: number };
@@ -165,12 +171,21 @@ const ringsOf = (g: { type?: string; coordinates?: unknown } | null | undefined)
 };
 
 const blockCache = new Map<string, Promise<ProjectedBlock | null>>();
+let hexCache: Promise<HexSet> | null = null;
+/** Every hexagon on the farms, decoded once (the payload is the compact, versioned one). */
+function fieldHexes(): Promise<HexSet> {
+  return (hexCache ??= fetchFieldLayers("").then((r) => decodeHexes(r.hex)));
+}
 /** Projected outline + trees of one block (equirectangular, fitted to the outline), cached. */
 export function loadBlockGeometry(block: string): Promise<ProjectedBlock | null> {
   let hit = blockCache.get(block);
   if (!hit) {
-    hit = Promise.all([fetchBlocksGeojson(), fetchOrchardTreeRows({ block })])
-      .then(([fc, pts]) => {
+    hit = Promise.all([
+      fetchBlocksGeojson(),
+      fetchOrchardTreeRows({ block }),
+      fieldHexes().catch(() => null),
+    ])
+      .then(([fc, pts, hexes]) => {
         const rings = (fc?.features || [])
           .filter((f) => (f.properties as { block?: string } | null)?.block === block)
           .flatMap((f) => ringsOf(f.geometry as never))
@@ -192,9 +207,21 @@ export function loadBlockGeometry(block: string): Promise<ProjectedBlock | null>
           return `${((q.x / 100) * W).toFixed(1)} ${((q.y / 100) * H).toFixed(1)}`;
         };
         const path = rings.map((r) => `M${r.map(px).join("L")}Z`).join("");
+        const triads = new Map<string, { x: number; y: number }>();
+        const hexPath: string[] = [];
+        for (const f of hexes?.fc.features ?? []) {
+          if (f.properties.b !== block) continue;
+          const ring = f.geometry.coordinates[0];
+          hexPath.push(`M${ring.map(px).join("L")}Z`);
+          const mid = proj(
+            (Math.min(...ring.map((c) => c[0])) + Math.max(...ring.map((c) => c[0]))) / 2,
+            (Math.min(...ring.map((c) => c[1])) + Math.max(...ring.map((c) => c[1]))) / 2,
+          );
+          triads.set(f.properties.n, mid);
+        }
         const trees = pts.names.map((n, i) => ({ key: treeKey(n), ...proj(pts.coords[i * 2], pts.coords[i * 2 + 1]) }));
         const cx = all.reduce((s, c) => s + c[0], 0) / all.length;
-        return { width: W, height: H, path, trees, centroid: proj(cx, lat0), at: proj };
+        return { width: W, height: H, path, trees, hexPath: hexPath.join(""), triads, centroid: proj(cx, lat0), at: proj };
       })
       .catch(() => {
         blockCache.delete(block);
@@ -267,8 +294,14 @@ function BlockLocationMap({
   const key = p.tree ? treeKey(p.tree) : "";
   const tree = key ? geom.trees.find((t) => t.key === key) : undefined;
   const loc = p.trap ? traps?.[p.trap] : undefined;
+  const hex = p.triad ? geom.triads.get(p.triad) : undefined;
+  const at = entryPoint({ latitude: p.latitude, longitude: p.longitude });
   if (tree) spot = tree;
-  else if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+  else if (hex) spot = hex;
+  else if (at && !p.trap) {
+    const q = geom.at(at[0], at[1]);
+    spot = { x: clamp(q.x), y: clamp(q.y) };
+  } else if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
     const q = geom.at(loc.lng, loc.lat);
     spot = { x: clamp(q.x), y: clamp(q.y) };
     if (q.x < 0 || q.x > 100 || q.y < 0 || q.y > 100) note = "Trap sits outside the block";
@@ -281,6 +314,9 @@ function BlockLocationMap({
   const svg = (
     <svg viewBox={`0 0 ${geom.width} ${geom.height}`} className="pointer-events-none h-full w-full" aria-hidden>
       <path d={geom.path} fill="none" stroke="currentColor" strokeWidth={large ? 3 : 4} className="text-muted-foreground/60" />
+      {geom.hexPath ? (
+        <path d={geom.hexPath} fill="none" stroke="currentColor" strokeWidth={large ? 0.6 : 0.8} className="text-muted-foreground/30" data-testid="block-hexes" />
+      ) : null}
       {geom.trees.map((t, i) => (
         <circle
           key={i}

@@ -31,6 +31,8 @@ export interface ScoutingEntry {
   block: string;
   row: string;
   tree: string;
+  /** The hexagon (Triad) scouted, on blocks surveyed into triads. */
+  triad?: string;
   crop_scouted: string;
   owner: string;
   modified_by: string;

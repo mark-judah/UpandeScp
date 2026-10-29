@@ -19,6 +19,8 @@ import {
 import { HEADER_PILL } from "@/components/header-controls";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import { TreesLayer } from "../maps/TreesLayer";
+import { addFieldLayers, blockColors, paintFieldColors, pointFeatures, setFieldVisibility } from "../maps/field-layers";
+import { decodeHexes, fetchFieldLayers, rowLines, type FieldLayersPayload } from "@/lib/field-geo";
 import {
   fetchBlocksGeojson,
   fetchOrchardTreeRows,
@@ -26,7 +28,7 @@ import {
   type GeoJsonFC,
   type OrchardTreePoints,
 } from "@/lib/scouting-api";
-import { lastMonthsRange } from "@/lib/utils";
+import { BLOCK_MAP_MONTHS, lastMonthsRange } from "@/lib/utils";
 import type { AvocadoView, MarkerPoint } from "./tree-map-types";
 import { SCOUT_PALETTE } from "./derive-scouts";
 import { savePin } from "@/lib/spread-api";
@@ -103,9 +105,8 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     crop,
     farm: ALL,
     greenhouse: ALL,
-    // Avocado is sparse (~0.4% of all scouting) and fetched crop-scoped, so a
-    // long default window is cheap — default to the last 10 months.
-    ...lastMonthsRange(10),
+    // Fetched crop-scoped, a week at a time: open on the last quarter, widen with the range.
+    ...lastMonthsRange(BLOCK_MAP_MONTHS),
   }));
   const { data, loading, progress, error } = useScouting({
     from: filters.from,
@@ -124,8 +125,15 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   // Layer visibility toggles (Boundary/blocks + Tanks), like the greenhouse
   // picker but as show/hide checkboxes. Both start hidden — the first view of
   // the map is just the trees; boundaries/tanks are opt-in via the Layers menu.
-  const [showBlocks, setShowBlocks] = useState(false);
+  // Block boundaries are on from the first frame: they are what orients you on a farm whose
+  // trees are not mapped (Mutara), and they cost almost nothing. Hexagons and rows are layers
+  // in their own right and only draw once you are zoomed in (see maps/field-layers).
+  const [showBlocks, setShowBlocks] = useState(true);
   const [showTanks, setShowTanks] = useState(false);
+  const [showHex, setShowHex] = useState(true);
+  const [showRows, setShowRows] = useState(true);
+  const [field, setField] = useState<FieldLayersPayload | null>(null);
+  const paintedRef = useRef<{ units: Map<string, string> | null; blocks: Map<string, string> | null }>({ units: null, blocks: null });
 
   // Keep map + layer refs across renders so updateColors is cheap.
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -153,6 +161,20 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
       })
       .finally(() => setLoadingGeo(false));
   }, [filters.farm]);
+
+  // Rows and hexagons (compact, versioned, cached locally) stream in off the critical path, like
+  // the trees: blocks and the map paint first.
+  useEffect(() => {
+    let alive = true;
+    const farm = filters.farm === ALL ? "" : filters.farm;
+    fetchFieldLayers(farm)
+      .then((r) => alive && setField(r))
+      .catch(() => alive && setField(null));
+    return () => {
+      alive = false;
+    };
+  }, [filters.farm]);
+  const hexSet = useMemo(() => decodeHexes(field?.hex), [field]);
 
   // Orchard trees can be huge (every tree on every avocado block), so fetch
   // them OFF the critical path — the map paints from blocks/tanks + scouting
@@ -330,7 +352,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     if (!blocks) return;
 
     if (!map.getSource("blocks")) {
-      map.addSource("blocks", { type: "geojson", data: blocks });
+      map.addSource("blocks", { type: "geojson", data: blocks, promoteId: "block" });
       // Block boundaries in the page's warm-paper/ink palette (mirrors the
       // --sd-* design tokens; MapLibre paint takes literal colors, not CSS
       // vars). Kept subtle: a faint ink wash + a low-opacity ink hairline so
@@ -358,6 +380,8 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
         layout: {
           "text-field": ["get", "block_label"] as any,
           "text-size": 12,
+          // OpenFreeMap serves Noto Sans; MapLibre's default stack (Open Sans) is a 404 there.
+          "text-font": ["Noto Sans Regular"] as any,
           "text-allow-overlap": false,
         },
         paint: {
@@ -415,6 +439,36 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   useEffect(() => {
     treesLayerRef.current?.updateColors(treeColors);
   }, [treeColors]);
+
+  // Hexagons / rows / visit points under the block outline, then coloured by the view.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !blocks || !field) return;
+    const hexBlocks = [...new Set(hexSet.fc.features.map((f) => f.properties.b))];
+    addFieldLayers(map, hexSet, rowLines(field.rows, field.hex.q), hexBlocks);
+    paintedRef.current = { units: null, blocks: null };
+    setFieldVisibility(map, { hex: showHex, rows: showRows });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field, hexSet, blocks, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !field || !map.getSource("fg-hex")) return;
+    const perBlock = blockColors(data?.entries ?? [], treeColors);
+    paintFieldColors(map, hexSet, paintedRef.current.units, treeColors, {
+      prev: paintedRef.current.blocks,
+      next: perBlock,
+    });
+    paintedRef.current = { units: treeColors, blocks: perBlock };
+    (map.getSource("fg-pts") as maplibregl.GeoJSONSource | undefined)?.setData(
+      pointFeatures(data?.entries ?? [], treeColors) as never,
+    );
+  }, [treeColors, data, field, hexSet, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && mapReady) setFieldVisibility(map, { hex: showHex, rows: showRows });
+  }, [showHex, showRows, mapReady, field]);
 
   // Optional marker overlay (e.g. trap catches), driven by the view. Each is a
   // DOM marker: the same polygon + pulse ring as the rose map (lib/trap-pulse),
@@ -576,6 +630,8 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
         map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
     };
     setVis("blocks-fill", showBlocks);
+    setVis("blocks-heat", showBlocks);
+    setVis("blocks-heat-hex", showBlocks);
     setVis("blocks-line", showBlocks);
     setVis("blocks-labels", showBlocks);
     setVis("tanks-circle", showTanks);
@@ -663,6 +719,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   const treeCount = treePoints?.names.length || 0;
   const blockCount = blocks?.features.length || 0;
   const scoutedTreeCount = treeColors.size;
+  const hexCount = hexSet.count;
 
   return (
     <div className="flex flex-col h-svh overflow-hidden">
@@ -690,6 +747,20 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
                     onCheckedChange={(v) => setShowBlocks(!!v)}
                   />
                   Boundary
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                  <Checkbox
+                    checked={showHex}
+                    onCheckedChange={(v) => setShowHex(!!v)}
+                  />
+                  Hexagons
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                  <Checkbox
+                    checked={showRows}
+                    onCheckedChange={(v) => setShowRows(!!v)}
+                  />
+                  Rows
                 </label>
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
                   <Checkbox
@@ -771,7 +842,9 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
               <TextSkeleton width="26ch" />
             ) : (
               <>
-                {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
+                {blockCount} blocks
+                {treeCount ? ` · ${treeCount} trees` : ""}
+                {hexCount ? ` · ${hexCount.toLocaleString()} hexagons` : ""} · {scoutedTreeCount.toLocaleString()} visited
                 {treesPlacing && treeCount > 0 ? " · drawing trees…" : ""}
               </>
             )}

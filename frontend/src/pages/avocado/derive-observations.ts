@@ -1,5 +1,6 @@
 import type { ProcessedData } from "@/lib/scouting-types";
 import { type ObsKind } from "@/lib/observation-colors";
+import { unitKey } from "@/lib/unit-key";
 
 /** Observation names of the given kind on one entry, with a count (diseases
  *  carry no count, so each counts once). */
@@ -20,13 +21,14 @@ export function deriveObservationColors(
   if (!data) return m;
   const perTree = new Map<string, Map<string, number>>();
   for (const e of data.entries) {
-    if (!e.tree) continue;
+    const key = unitKey(e);
+    if (!key) continue;
     for (const o of obsOf(e, kind)) {
       if (!o.name) continue;
-      let t = perTree.get(e.tree);
+      let t = perTree.get(key);
       if (!t) {
         t = new Map();
-        perTree.set(e.tree, t);
+        perTree.set(key, t);
       }
       t.set(o.name, (t.get(o.name) || 0) + o.count);
     }

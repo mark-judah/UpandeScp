@@ -79,6 +79,10 @@ export interface FeedPhoto extends GalleryPhoto {
   bed?: string;
   zone?: string;
   tree?: string;
+  /** The hexagon (Triad) scouted, and where the visit was logged. */
+  triad?: string;
+  latitude?: string;
+  longitude?: string;
   /** HH:MM of the entry. */
   time?: string;
   trap?: string;

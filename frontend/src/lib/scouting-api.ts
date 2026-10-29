@@ -40,6 +40,7 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
         block: row?.block || "",
         row: row?.row || "",
         tree: row?.tree || "",
+        triad: row?.triad || "",
         crop_scouted: row?.crop_scouted || "",
         owner: row?.owner || "",
         modified_by: row?.modified_by || "",
@@ -63,6 +64,7 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
       fill("block", row?.block);
       fill("row", row?.row);
       fill("tree", row?.tree);
+      fill("triad", row?.triad);
       fill("crop_scouted", row?.crop_scouted);
       fill("owner", row?.owner);
       fill("modified_by", row?.modified_by);

@@ -21,6 +21,18 @@ export interface Map3DProps {
   onReady: (map: maplibregl.Map) => void;
 }
 
+/** A plain paper background with no network dependencies: what the map falls back to when the
+ *  basemap style cannot be fetched (offline, blocked, DNS), so block boundaries, rows and hexagons
+ *  still draw instead of leaving a blank canvas. Glyphs stay on OpenFreeMap: labels simply do not
+ *  render if that is unreachable too. */
+export const FALLBACK_STYLE = {
+  version: 8 as const,
+  glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+  sources: {},
+  layers: [{ id: "scp-paper", type: "background" as const, paint: { "background-color": "#ece9de" } }],
+};
+const STYLE_TIMEOUT_MS = 10_000;
+
 export const DEFAULT_CENTER: [number, number] = [36.756, -1.387];
 export const DEFAULT_ZOOM = 14;
 
@@ -70,10 +82,31 @@ export function Map3D({
       },
       "bottom-left",
     );
+    // The map's own `load` only fires once the style arrived. If the style host is unreachable it
+    // never does, and every consumer that waits for `load` before adding its layers shows nothing
+    // at all: swap in the offline style so the farm still draws.
+    let loaded = false;
+    let fellBack = false;
+    const fallBack = () => {
+      if (loaded || fellBack) return;
+      fellBack = true;
+      map.setStyle(FALLBACK_STYLE as never);
+    };
+    map.once("load", () => {
+      loaded = true;
+    });
+    map.on("error", (e) => {
+      // Only the style document itself failing means "no basemap"; a missing glyph range or tile
+      // is not a reason to throw the basemap away.
+      const url = (e as unknown as { error?: { url?: string } }).error?.url;
+      if (!loaded && url === styleUrl) fallBack();
+    });
+    const styleTimer = window.setTimeout(fallBack, STYLE_TIMEOUT_MS);
     mapRef.current = map;
     setReady(true);
     onReady(map);
     return () => {
+      window.clearTimeout(styleTimer);
       map.remove();
       mapRef.current = null;
       setReady(false);

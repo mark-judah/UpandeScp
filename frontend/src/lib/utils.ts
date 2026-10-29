@@ -143,6 +143,12 @@ export function currentWeekRange(): { from: string; to: string } {
 /** [from, to] spanning the last ``months`` calendar months up to today. Used
  *  by sparse crops (e.g. avocado) whose crop-scoped fetch is cheap enough to
  *  default to a long window. */
+/** How far back the block-grown crops' maps open. Ten months was fine while a crop was a trickle
+ *  of entries (Kaitet's avocado is ~0.4% of its scouting); a farm scouted every day puts ~1,000
+ *  entries a week on the map, and every week is its own request, so the map opens on the last
+ *  quarter and the date range widens it. */
+export const BLOCK_MAP_MONTHS = 3;
+
 export function lastMonthsRange(months: number): { from: string; to: string } {
   const to = new Date();
   const from = new Date(to);

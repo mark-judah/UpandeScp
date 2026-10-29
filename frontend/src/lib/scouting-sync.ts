@@ -129,10 +129,19 @@ export async function getMissingWeeks(
   return weeks.filter((w) => !known.has(w.key));
 }
 
-async function markWeekLoaded(week: string, crop?: string, greenhouse?: string): Promise<void> {
-  const set = await loadedWeeksSet(crop, greenhouse);
-  set.add(week);
-  await setMeta(weeksMetaKey(crop, greenhouse), Array.from(set));
+// Weeks hydrate concurrently and each one records itself in the same registry key. A bare
+// read-modify-write lets them overwrite each other (every one reads the set before any has
+// written), so most weeks were forgotten and refetched on the next visit. Serialise the updates.
+let registryQueue: Promise<unknown> = Promise.resolve();
+
+function markWeekLoaded(week: string, crop?: string, greenhouse?: string): Promise<void> {
+  const run = registryQueue.then(async () => {
+    const set = await loadedWeeksSet(crop, greenhouse);
+    set.add(week);
+    await setMeta(weeksMetaKey(crop, greenhouse), Array.from(set));
+  });
+  registryQueue = run.catch(() => undefined);
+  return run;
 }
 
 let legacyMonthsCleared = false;

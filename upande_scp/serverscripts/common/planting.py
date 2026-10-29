@@ -98,8 +98,11 @@ def nearest_custom_crop(station: str, warehouses: dict) -> str | None:
 
 def _load_warehouses(stations) -> dict:
 	"""``{name: row}`` for the stations and every ancestor, one query per level."""
-	has_unit = frappe.get_meta("Warehouse").has_field("custom_production_unit")
-	fields = ["name", "parent_warehouse", "custom_crop"]
+	meta = frappe.get_meta("Warehouse")
+	has_unit = meta.has_field("custom_production_unit")
+	# A site whose SCP fields haven't been created yet must still load (the crop then
+	# comes only from production cycles); never select a column that isn't there.
+	fields = ["name", "parent_warehouse"] + (["custom_crop"] if meta.has_field("custom_crop") else [])
 	if has_unit:
 		fields.append("custom_production_unit")
 	out: dict = {}

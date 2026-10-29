@@ -14,6 +14,7 @@
  * column doesn't blow away unsaved edits in the others.
  */
 
+import { SearchSelect } from "@/components/SearchSelect";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, ShieldAlert, RotateCcw, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -96,6 +97,10 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
   const [loading, setLoading] = useState(true);
   const [storeOptions, setStoreOptions] = useState<StoreWarehouseCandidate[]>(
     [],
+  );
+  const storeChoices = useMemo(
+    () => storeOptions.map((w) => ({ value: w.name, label: w.name, hint: w.custom_farm ?? undefined })),
+    [storeOptions],
   );
 
   useEffect(() => {
@@ -398,52 +403,22 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
                       />
                     </TableCell>
                     <TableCell className="align-top">
-                      <Select
-                        value={r.chemical_store_draft ?? NO_STORE}
-                        onValueChange={(v) =>
-                          updateRow(r.farm, {
-                            chemical_store_draft: v === NO_STORE ? null : v,
-                          })
-                        }
+                      <SearchSelect
+                        value={r.chemical_store_draft}
+                        options={storeChoices}
+                        onChange={(v) => updateRow(r.farm, { chemical_store_draft: v })}
                         disabled={r.saving}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NO_STORE}>None</SelectItem>
-                          {storeOptions.map((w) => (
-                            <SelectItem key={w.name} value={w.name}>
-                              {w.name}
-                              {w.custom_farm ? ` (${w.custom_farm})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        ariaLabel={`Chemical store for ${r.farm}`}
+                      />
                     </TableCell>
                     <TableCell className="align-top">
-                      <Select
-                        value={r.fertilizer_store_draft ?? NO_STORE}
-                        onValueChange={(v) =>
-                          updateRow(r.farm, {
-                            fertilizer_store_draft: v === NO_STORE ? null : v,
-                          })
-                        }
+                      <SearchSelect
+                        value={r.fertilizer_store_draft}
+                        options={storeChoices}
+                        onChange={(v) => updateRow(r.farm, { fertilizer_store_draft: v })}
                         disabled={r.saving}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NO_STORE}>None</SelectItem>
-                          {storeOptions.map((w) => (
-                            <SelectItem key={w.name} value={w.name}>
-                              {w.name}
-                              {w.custom_farm ? ` (${w.custom_farm})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        ariaLabel={`Fertilizer store for ${r.farm}`}
+                      />
                       {r.error && (
                         <div className="text-[0.65rem] text-destructive mt-1 flex items-start gap-1">
                           <ShieldAlert className="h-3 w-3 mt-[1px] flex-shrink-0" />

@@ -16,7 +16,9 @@ scale); the rest of Avocado is already in `seed_pests_diseases`.
 EXTRA_PEST_CROPS = {
     "Aphids": ["Potato", "Cabbage", "Passion Fruit", "Onion"],
     "Whiteflies": ["Potato", "Cabbage", "Passion Fruit"],
-    "Thrips": ["Onion", "Cabbage", "Passion Fruit"],
+    "Thrips": ["Onion", "Cabbage", "Passion Fruit", "Potato", "Corn"],
+    # Caterpillars are scouted on every crop (a generic catch-all by life stage).
+    "Caterpillars": ["Potato", "Onion", "Cabbage", "Passion Fruit", "Corn"],
     "Spidermites": ["Potato", "Onion", "Passion Fruit"],
     "Spodoptera": ["Onion", "Potato"],
     "Mealybugs": ["Passion Fruit"],
@@ -110,6 +112,17 @@ NEW_PESTS = [
      "arches (loops) as it walks; adult brown moth with a silver figure-of-eight "
      "mark on each forewing. Diagnosis: large ragged holes in outer leaves, "
      "green frass pellets, bored heads. Source: UC IPM; CABI Compendium."),
+    # --- Corn (maize) ---
+    ("Fall Armyworm", "Spodoptera frugiperda", ["Corn"],
+     ["Adult Moth", "Larvae", "Eggs", "Damage"],
+     "ID: larva pale green to dark brown with a pale inverted Y on the head and "
+     "four black dots in a square on the second-last segment, up to 40 mm; eggs "
+     "in a felt-like mass of 100-200 under grey scales on the leaf; adult grey-"
+     "brown moth (~35 mm wingspan). Diagnosis: young larvae scrape windows in "
+     "leaves, older ones chew ragged holes in the whorl leaving sawdust-like "
+     "frass, and bore into the cob; lines of holes show on unfolded leaves. "
+     "Scout the whorl of 20 plants per block weekly from emergence. Source: "
+     "Infonet-Biovision; CABI Compendium; FAO FAW guidance."),
     # --- Passion fruit ---
     ("Broad Mites", "Polyphagotarsonemus latus", ["Passion Fruit"],
      ["Motiles", "Eggs", "Damage"],
@@ -271,7 +284,7 @@ AVOCADO_SEVERITY = {"Mealybugs": [("Low", 0, 3, "#90EE90"),
 
 # Crops this data set adds filters for; reading_type of Damage / Damages rows is
 # Count here (as on kaitet's Avocado filters) rather than the catalog Checkbox.
-COUNT_SIGN_CROPS = {"Avocado", "Potato", "Onion", "Cabbage", "Passion Fruit"}
+COUNT_SIGN_CROPS = {"Avocado", "Potato", "Onion", "Cabbage", "Passion Fruit", "Corn"}
 
 # Stage catalog entries to create when missing: name -> (icon_key, reading_type).
 # Everything the seeders reference, so a fresh site needs no earlier patch.
@@ -296,7 +309,7 @@ NEW_PEST_COLORS = {
     "Leafminers": "#0f766e", "Cutworms": "#44403c", "Onion Fly": "#64748b",
     "Diamondback Moth": "#7e22ce", "Cabbage Webworm": "#c026d3",
     "Cabbage Looper": "#059669", "Broad Mites": "#f59e0b",
-    "Leaf-footed Bug": "#9f1239",
+    "Leaf-footed Bug": "#9f1239", "Fall Armyworm": "#b45309",
 }
 NEW_DISEASE_COLORS = {
     "Late Blight": "#1f2937", "Early Blight": "#92400e",

@@ -35,7 +35,13 @@ CROP_ITEMS = {
 	"Onion": ["Onion"],
 	"Cabbage": ["Cabbage"],
 	"Passion Fruit": ["Passion Fruit"],
+	"Corn": ["Maize"],
 }
+
+#: Items created when missing (item code -> stock UOM), so a crop can be linked
+#: before the first production cycle uses it. Corn (maize) is planted in a pivot
+#: block like the other vegetables; no cycle exists for it yet.
+CREATE_ITEMS = {"Maize": "Kg"}
 
 #: Farm Types the Mutara farm needs for blocks, rows and trees.
 FARM_TYPES = ["Has Phases", "Has Blocks", "Has Rows", "Has Orchard Trees"]
@@ -121,15 +127,52 @@ def _cycle_items():
 	}
 
 
+def _ensure_items(log):
+	for item, uom in CREATE_ITEMS.items():
+		if frappe.db.exists("Item", item):
+			continue
+		_insert(
+			log,
+			{
+				"doctype": "Item",
+				"item_code": item,
+				"item_name": item,
+				"item_group": "Products",
+				"stock_uom": uom,
+				"is_stock_item": 1,
+			},
+			"Item",
+			item,
+		)
+
+
+def crop_item_map(cycle_items=()):
+	"""``{crop: [items]}``: CROP_ITEMS plus the variety items of production cycles.
+
+	Cycles carry the variety item (``Potatoes - Shangi``), the crop lists the base
+	item (``Potatoes``), so every cycle item named ``<base> - <variety>`` joins its
+	base item's crop. Without this a pivot block never resolves to its crop.
+	"""
+	out = {crop: list(items) for crop, items in CROP_ITEMS.items()}
+	for crop, items in out.items():
+		for base in list(items):
+			for item in sorted(cycle_items):
+				if item.startswith(base + " - ") and item not in items:
+					items.append(item)
+	return out
+
+
 def _crops(log):
-	mapped = {i for items in CROP_ITEMS.values() for i in items}
+	_ensure_items(log)
+	crop_items = crop_item_map(_cycle_items())
+	mapped = {i for items in crop_items.values() for i in items}
 	for item in sorted(mapped):
 		if not frappe.db.exists("Item", item):
 			print(f"WARNING: item {item!r} does not exist; skipped")
 	unmapped = sorted(i for i in _cycle_items() if i not in mapped)
 	print("items in production cycles mapped to no crop:", unmapped or "none")
 
-	for crop, items in CROP_ITEMS.items():
+	for crop, items in crop_items.items():
 		items = [i for i in items if frappe.db.exists("Item", i)]
 		if not frappe.db.exists("Crop Scouted", crop):
 			log.made("Crop Scouted", crop)

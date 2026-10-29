@@ -30,13 +30,13 @@ Run (from the bench directory):
     bench --site kaitet.local execute \
         upande_scp.serverscripts.scouting.seed_pests_diseases.run
 
-Mutara (Avocado + Potato / Onion / Cabbage / Passion Fruit; the extra taxonomy is in
+Mutara (Avocado + Potato / Onion / Cabbage / Passion Fruit / Corn; the extra taxonomy is in
 `pests_diseases_extra_data.py`). `crops` limits the run, `create_crops` creates any
 missing Crop Scouted record (name = crop_name) so filter rows can link:
 
     bench --site mutara.local execute \
         upande_scp.serverscripts.scouting.seed_pests_diseases.run \
-        --kwargs "{'crops': ['Avocado','Potato','Onion','Cabbage','Passion Fruit'], 'create_crops': True}"
+        --kwargs "{'crops': ['Avocado','Potato','Onion','Cabbage','Passion Fruit','Corn'], 'create_crops': True}"
 
 Crops that do not exist on the site (and are not created) are skipped, and a
 Pest / Plant Disease master is only created when at least one of its crops runs.

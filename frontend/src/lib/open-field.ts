@@ -97,6 +97,7 @@ export function planProblems(plan: BlockPlan, areaHa: number): string[] {
   const out: string[] = [];
   if (!plan.classification) out.push("Preventive or Curative");
   else if (plan.classification === "Preventive" && plan.reason.trim().length < 20) out.push("a reason");
+  if (plan.classification && plan.targets.length === 0) out.push("a target");
   if (!plan.team) out.push("team");
   if (!plan.bom) out.push("tank mix");
   if (!plan.chemicals.some((c) => c.item_code && c.rate > 0)) {

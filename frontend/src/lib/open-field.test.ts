@@ -64,8 +64,13 @@ describe("plan completeness", () => {
     classification: "Curative" as const,
     team: "Spray 1",
     bom: "BOM-1",
+    targets: ["Thrips"],
     chemicals: [{ item_code: "X", item_name: "X", stock_uom: "Litre", rate: 1, source: "Chemical Store - MUT" }],
   };
+
+  it("at least one target is needed", () => {
+    expect(planProblems({ ...ok, targets: [] }, 2)).toContain("a target");
+  });
 
   it("a new plan lacks everything", () => {
     const p = planProblems(emptyPlan(), 2);

@@ -23,7 +23,7 @@ vi.mock("@/components/spray-plan/BlockPlanPanel", () => ({
           key={b.name}
           onClick={() =>
             p.onPlanChange(b.name, {
-              classification: "Curative", reason: "", team: "T", kit: "", bom: "BOM-1", targets: [], area: "",
+              classification: "Curative", reason: "", team: "T", kit: "", bom: "BOM-1", targets: ["Thrips"], area: "",
               chemicals: [{ item_code: "X", rate: 1, source: "S" }],
             })
           }

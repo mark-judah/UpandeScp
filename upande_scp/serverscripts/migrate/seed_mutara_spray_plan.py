@@ -19,6 +19,10 @@ What it seeds, for farm Mutara:
 * a spray kit (Spray Equipment) pointing at the "Work In Progress" warehouse, which gets the farm;
 * tank-mix BOMs (Item Group "Chemical Mix") built from the chemicals, adjuvants and foliars in stock;
 * an area on the two demo avocado blocks (a plan needs one for its water volume);
+* the demo scout Stephene (user with SCP Scout, plus Stock User which is what lets the handset read the
+  Farm and Warehouse lists its farm picker uses - Scout alone cannot, as on Kaitet; an Employee of the company, which is what
+  scopes his scouting to Mutara); the password is read from the MUTARA_SCOUT_PASSWORD environment
+  variable and never lives in code - without it the user is made with a random password;
 * a few weeks of scouting on avocado and pivot blocks with findings that fit each block's crop.
 
 Never touched: the production blocks' warehouses, cost centres and budgets.
@@ -31,6 +35,8 @@ from frappe.utils import add_days, nowdate
 FARM = "Mutara"
 COMPANY = "Mutara"
 ROSTER_USERS = ["Administrator", "saitoti@mutaraorchards.com"]
+DEMO_SCOUT = {"email": "stephene@mutaraorchards.com", "first_name": "Stephene", "designation": "Scout",
+              "roles": ["SCP Scout", "Stock User"], "password_env": "MUTARA_SCOUT_PASSWORD"}
 ROSTER_ROLES = ["SCP Spray Plan Creator", "SCP Spray Plan Approver", "SCP General Manager"]
 WIP_WAREHOUSE = "Work In Progress - MUT"
 TANK_MIX_UOM = "Tank Mix (1000L)"
@@ -130,6 +136,7 @@ def run(dry_run=False):
 		print(f"Farm {FARM} missing; nothing to seed")
 		return {}
 	_roster(log)
+	_demo_scout(log)
 	_wip_and_kits(log)
 	_teams(log)
 	_targets(log)
@@ -167,6 +174,44 @@ def _roster(log):
 				farm.append("spray_plan_creators", {"user": user})
 	if farm:
 		farm.save(ignore_permissions=True)
+
+
+def _demo_scout(log):
+	"""Stephene: SCP Scout role, Employee in the company (crop scoping and the entry's scout lookup)."""
+	import os
+
+	d = DEMO_SCOUT
+	email = d["email"]
+	if not frappe.db.exists("Designation", d["designation"]):
+		log.made("Designation", d["designation"])
+		if not log.dry_run:
+			frappe.get_doc({"doctype": "Designation", "designation_name": d["designation"]}).insert(ignore_permissions=True)
+	if not frappe.db.exists("User", email):
+		log.made("User", email)
+		if not log.dry_run:
+			user = frappe.get_doc({
+				"doctype": "User", "email": email, "first_name": d["first_name"], "enabled": 1,
+				"send_welcome_email": 0, "user_type": "System User",
+			})
+			user.insert(ignore_permissions=True)
+			frappe.utils.password.update_password(
+				email, os.environ.get(d["password_env"]) or frappe.generate_hash(length=24))
+	if not log.dry_run and frappe.db.exists("User", email):
+		roles = set(frappe.get_all("Has Role", filters={"parent": email, "parenttype": "User"}, pluck="role"))
+		for role in d["roles"]:
+			if role not in roles and frappe.db.exists("Role", role):
+				log.made("User role", f"{email}: {role}")
+				frappe.get_doc("User", email).add_roles(role)
+		if os.environ.get(d["password_env"]):
+			frappe.utils.password.update_password(email, os.environ[d["password_env"]])
+	if not frappe.db.exists("Employee", {"user_id": email}):
+		log.made("Employee", d["first_name"])
+		if not log.dry_run:
+			frappe.get_doc({
+				"doctype": "Employee", "first_name": d["first_name"], "company": COMPANY, "gender": "Male",
+				"date_of_birth": "1992-05-20", "date_of_joining": "2025-01-13", "status": "Active",
+				"designation": d["designation"], "user_id": email,
+			}).insert(ignore_permissions=True)
 
 
 def _wip_and_kits(log):

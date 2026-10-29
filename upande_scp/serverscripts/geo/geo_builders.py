@@ -59,13 +59,16 @@ def build_blocks_geojson():
     ``area_m2``, etc. — we just inject the human label so tooltips can show
     ``warehouse_name`` instead of the dashed warehouse ``name``.
     """
+    # How the Application Plan paints heat on the block (blank = by kind); a site whose
+    # SCP Warehouse fields are not created yet simply has no setting.
+    heat_style = frappe.db.has_column("Warehouse", "custom_heat_style")
     block_warehouses = frappe.get_all(
         "Warehouse",
         filters={"warehouse_type": "Block", "disabled": 0},
         fields=[
             "name", "warehouse_name", "custom_farm",
             "parent_warehouse", "custom_raw_geojson",
-        ],
+        ] + (["custom_heat_style"] if heat_style else []),
         order_by="name",
         limit_page_length=0,
     )
@@ -93,6 +96,7 @@ def build_blocks_geojson():
             props["block"] = wh["name"]
             props["block_label"] = wh.get("warehouse_name") or wh["name"]
             props["farm"] = wh.get("custom_farm") or ""
+            props["heat_style"] = wh.get("custom_heat_style") or ""
             features.append({
                 "type": "Feature",
                 "geometry": f["geometry"],

@@ -651,6 +651,22 @@ def _base_field_spec() -> dict:
 					"on a Phase). Used when no live Production Crop Cycle applies."
 				),
 			},
+			# How the Application Plan map paints scouting heat on this block: a smear
+			# (inverse-distance field across the block) or a solid fill per unit
+			# (hexagon). Blank = by what the block is: surveyed hexagon blocks
+			# Solid, everything else (avocado trees, visit points) Smear.
+			{
+				"fieldname": "custom_heat_style",
+				"label": "Heat Style",
+				"fieldtype": "Select",
+				"options": "\nSmear\nSolid",
+				"insert_after": "custom_crop",
+				"description": (
+					"How the Application Plan map paints pest heat here. Smear: a field "
+					"estimated between scouts. Solid: each hexagon filled. Blank: hexagon "
+					"blocks Solid, the rest Smear."
+				),
+			},
 		],
 		"Item": [
 			# Per-variety intervention thresholds. The only chemical field left on

@@ -746,7 +746,7 @@ def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = Non
     return rows
 
 
-# ── figures for the block report and the Jobsheet (D8) ────────────────────
+# ── figures for the block report and the Application Plan (D8) ────────────────────
 
 
 def figures_for_houses(crop, houses, from_date, to_date) -> dict:
@@ -783,7 +783,7 @@ def figures_for_houses(crop, houses, from_date, to_date) -> dict:
 
 @frappe.whitelist()
 def house_figures(crop: str, warehouse: str, from_date: str, to_date: str) -> dict:
-    """The Jobsheet's per-pest figures for one block or greenhouse."""
+    """The Application Plan's per-pest figures for one block or greenhouse."""
     crop = crop_catalog.resolve_crop(crop)
     if not crop or not warehouse:
         return {}

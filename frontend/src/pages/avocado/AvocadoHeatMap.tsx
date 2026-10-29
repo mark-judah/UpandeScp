@@ -1,5 +1,5 @@
 /**
- * Avocado/coffee Jobsheet — a top-down (2D) view of the orchard showing ONE pest or
+ * Avocado/coffee Application Plan — a top-down (2D) view of the orchard showing ONE pest or
  * disease at a time (searchable pill). Every located scouting entry is a sample,
  * zero where scouted and not found; fixed-trap catches count for pests; the gaps
  * are filled by inverse-distance weighting (lib/idw.ts) across the block polygons
@@ -10,7 +10,7 @@
  * dots instead of the 3D TreesLayer. A thin, collapsible planning sidebar lists
  * the most-affected blocks; picking one shows its top pests/diseases and then the
  * prescription itself — observe and prescribe in one place, which is why this page is
- * the avocado **Jobsheet** rather than a heat map with a sidebar. The plan it creates
+ * the avocado **Application Plan** rather than a heat map with a sidebar. The plan it creates
  * is an ordinary Application Floor Plan: same draft endpoint, same approval, same
  * transfer, with the block riding in `custom_greenhouse`.
  */
@@ -579,10 +579,10 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   return (
     <div className="flex flex-col h-svh overflow-hidden">
       <MapHeader
-        // The sidebar has called this "Jobsheet" since the prescribe flow
+        // The sidebar has called this "Application Plan" since the prescribe flow
         // landed on it; the heading still said "Heat maps", so the page a
         // manager was sent to did not match the name they were sent to.
-        title="Jobsheet"
+        title="Application Plan"
         subtitle={obs ? `${obs.name} · zeros count · estimated between scouts` : "Orchard pest & disease"}
         value={filters}
         onChange={setFilters}

@@ -52,7 +52,7 @@ That is the whole of it — three views.
 ## What coffee does not have
 
 **No Trends.** No Observations list, no Heatmaps, no Traps view. None of the
-crop-protection chain — no Jobsheet, no Application Plan, no Approvals.
+crop-protection chain — no Application Plan, no Approvals.
 
 So coffee today is: record entries on the map, look at the dashboard, run the
 weekly report.

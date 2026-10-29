@@ -13,11 +13,11 @@ describe("route fallback (skeleton spec K5)", () => {
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
-  it("uses the crop's label: the avocado Jobsheet is the heatmaps route", () => {
+  it("uses the crop's label: the avocado Application Plan is the heatmaps route", () => {
     __setCropProfiles([
       { crop: "Avocado", label: "Avocado", slug: "avocado", station_type: "Block", block_grown: true, level_labels: [] },
     ]);
-    expect(routeHeading("avocado", "heatmaps")).toEqual({ title: "Jobsheet", eyebrow: "Crop Protection" });
+    expect(routeHeading("avocado", "heatmaps")).toEqual({ title: "Application Plan", eyebrow: "Crop Protection" });
     expect(routeHeading("rose", "sprayers")).toEqual({ title: "Sprayers", eyebrow: "Personnel" });
   });
 

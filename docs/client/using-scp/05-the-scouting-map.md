@@ -54,5 +54,5 @@ than waiting out.
 | **Observations** | The underlying records as a list, when you want the detail rather than the picture |
 | **Spraying** | Where spraying is happening now |
 
-On avocado the heatmaps view is labelled **Jobsheet**, because that is what it
+On avocado the heatmaps view is labelled **Application Plan**, because that is what it
 is used for — prescribing a block to spray straight from the map.

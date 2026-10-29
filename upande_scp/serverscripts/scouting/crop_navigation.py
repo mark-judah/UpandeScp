@@ -3,12 +3,12 @@
 The workspace block used to carry seven tiles, every one of them pointing at
 `/scp_app#/rose/...`. Somebody arriving to look at avocado was handed the roses
 Application Plan — a page avocado does not have — and the crop tiles underneath
-only reached each crop's dashboard, so there was no way to the Jobsheet from the
+only reached each crop's dashboard, so there was no way to the Application Plan from the
 desk at all.
 
 The crops do not have the same pages, and that is the point: roses plan bed by
 bed through an Application Plan and an approval queue; avocado prescribes a
-block from the Jobsheet; coffee, for now, is scouting and a weekly sheet. So the
+block from the Application Plan; coffee, for now, is scouting and a weekly sheet. So the
 desk shows each crop its own links.
 
 This is the desk's copy of what `AppSidebar.navForCrop` does in the React app,
@@ -43,7 +43,7 @@ CROP_TILES = {
 		("scouting-map", "Scouting Map", "Orchard tree map"),
 		("observations", "Observations", "What was found, where"),
 		("traps", "Traps", "Trap catches"),
-		("heatmaps", "Jobsheet", "Prescribe a block"),
+		("heatmaps", "Application Plan", "Prescribe a block"),
 		("reports", "Reports", "Weekly block sheet"),
 		("settings", "Settings", "Thresholds & spray plan"),
 	],
@@ -68,7 +68,7 @@ DEFAULT_TILES = [
 
 # A crop with no tile list of its own that is grown on blocks (its stations are Blocks,
 # read from `common.crop_profile`, never from its name) gets the avocado tiles: the
-# jobsheet, the weekly block sheet and the tree/block maps are all crop-agnostic.
+# Application Plan, the weekly block sheet and the tree/block maps are all crop-agnostic.
 BLOCK_TILES = CROP_TILES["Avocado"]
 
 # Mark and accent per crop, so the desk, the app and the report emails agree on

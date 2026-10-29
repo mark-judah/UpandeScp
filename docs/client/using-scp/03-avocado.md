@@ -43,16 +43,16 @@ same count can mean different things on the two crops.
 |---|---|
 | Overview | Dashboards, Trends |
 | Scouting | Scouting Map, Observations, Traps |
-| Crop Protection | **Jobsheet** |
+| Crop Protection | **Application Plan** |
 | Reports | Reports |
 
-### Jobsheet
+### Application Plan
 
-Where roses have "Heatmaps", avocado has **Jobsheet** — the same underlying
+Where roses have "Heatmaps", avocado has the **Application Plan** — the same underlying
 view, named for what it is used for. From the map you prescribe a block to be
 sprayed, and that is the avocado equivalent of a spray plan.
 
-It is a jobsheet, not an approval chain. There is no Application Plan, no
+It is a block prescription, not the rose approval chain. There is no Application Floor Plan, no
 Approvals queue, no Tank Mixes and no Postponements for avocado.
 
 ### Weekly block report
@@ -66,4 +66,4 @@ the orchard, found under **Reports**.
 Approvals, Postponements, Settings, Historical, Tank Mixes.**
 
 If you need a full spray plan with approval on avocado, it does not exist yet.
-Prescribe from the Jobsheet.
+Prescribe from the Application Plan.

@@ -307,7 +307,13 @@ function renderView(crop: string, view: View): ReactNode {
     case "spray-plan-access":
       return <SprayPlanAccess />;
     case "application-plan":
-      return <ApplicationPlan initialCrop={cropName} />;
+      // A block-grown crop's Application Plan is the heatmaps page (it kept that route when
+      // it was renamed from "Jobsheet"), so a link to #/<crop>/application-plan lands there.
+      return blockGrown ? (
+        <AvocadoHeatMap initialCrop={cropName} />
+      ) : (
+        <ApplicationPlan initialCrop={cropName} />
+      );
     case "open-field-plan":
       return <OpenFieldPlan initialCrop={cropName} />;
     case "chemical-dashboard":

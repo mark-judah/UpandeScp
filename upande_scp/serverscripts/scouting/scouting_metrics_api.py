@@ -790,7 +790,7 @@ def get_blocks_geojson():
 def get_block_areas(farm=None):
     """{block warehouse: hectares} from ``Warehouse.custom_area_ha``.
 
-    The denominator for a Per-Hectare pest threshold. The jobsheet needs it to
+    The denominator for a Per-Hectare pest threshold. The Application Plan needs it to
     say whether a block's count is heavy *for that block* — forty on 1.5 ha and
     forty on 12 ha are different facts — and it is the same figure the weekly
     block report judges its cells against, read from the same column, so the

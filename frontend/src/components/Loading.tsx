@@ -150,7 +150,7 @@ export function PageSkeleton({
 
 /**
  * The silhouette of a full-bleed map page — Scouting Map, Observations, Traps,
- * Jobsheet. Those do not have KPI cards; they have a header strip, a legend
+ * Application Plan. Those do not have KPI cards; they have a header strip, a legend
  * line and one large canvas with a docked panel, so `PageSkeleton` would draw
  * the wrong shape and reflow on arrival.
  */

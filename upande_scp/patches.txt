@@ -57,7 +57,7 @@ upande_scp.patches.v1_0.add_scouting_lookup_indexes
 upande_scp.patches.v1_0.rename_workspace_to_scp
 # Put the 78 Lokitela block polygons back. They are empty on live v16 — the
 # v15->v16 migration never carried custom_raw_geojson — so the avocado map draws
-# no blocks there and the jobsheet has nothing to click. Fills blanks only.
+# no blocks there and the Application Plan has nothing to click. Fills blanks only.
 upande_scp.patches.v1_0.restore_block_boundaries
 # Pest/Disease Filter.measure from the old unit (thresholds & actions, piece 3a).
 upande_scp.patches.v1_0.set_threshold_measure

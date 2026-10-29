@@ -24,7 +24,7 @@
  {
   "docstatus": 0,
   "doctype": "Custom HTML Block",
-  "html": "<div class=\"scpn\">\n  <div class=\"scpn-title\">Scouting &amp; Crop Protection</div>\n  <!-- One section per scouted crop, each with that crop's own links, built by\n       the block script from serverscripts.scouting.crop_navigation. The tiles\n       used to be seven hard-coded rose links shown to everybody, so somebody\n       opening avocado was handed the roses Application Plan \u2014 a page avocado\n       does not have \u2014 and there was no route to the Jobsheet from the desk. -->\n  <div data-scpn-crops></div>\n  <div class=\"scpn-empty\" data-scpn-empty hidden>\n    No scouted crops are set up yet.\n  </div>\n</div>\n",
+  "html": "<div class=\"scpn\">\n  <div class=\"scpn-title\">Scouting &amp; Crop Protection</div>\n  <!-- One section per scouted crop, each with that crop's own links, built by\n       the block script from serverscripts.scouting.crop_navigation. The tiles\n       used to be seven hard-coded rose links shown to everybody, so somebody\n       opening avocado was handed the roses Application Plan \u2014 a page avocado\n       does not have \u2014 and there was no route to the avocado Application Plan from the desk. -->\n  <div data-scpn-crops></div>\n  <div class=\"scpn-empty\" data-scpn-empty hidden>\n    No scouted crops are set up yet.\n  </div>\n</div>\n",
   "modified": "2026-03-11 22:02:14.732669",
   "name": "SCP Navigation",
   "private": 0,

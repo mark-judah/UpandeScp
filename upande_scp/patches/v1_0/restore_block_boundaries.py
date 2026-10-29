@@ -11,7 +11,7 @@ Lokitela blocks, so it did not survive the v15→v16 migration; nothing in the
 scouting transfer carried it. The symptom is quiet, which is why it went
 unnoticed: `get_blocks_geojson` returns a well-formed but empty
 FeatureCollection, so the avocado map renders "0 blocks" and simply draws no
-polygons rather than reporting a fault. The jobsheet's "prescribe a block from
+polygons rather than reporting a fault. The Application Plan's "prescribe a block from
 the map" has nothing to click on the site the operators actually use.
 
 The data is small — 78 polygons averaging eight points, 58 KB — so it ships in

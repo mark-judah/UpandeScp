@@ -19,12 +19,12 @@ beforeEach(() => {
   });
 });
 
-describe("MapHeader on the avocado jobsheet", () => {
+describe("MapHeader on the avocado Application Plan", () => {
   it("lists the crop's farms from the server and has no crop picker", async () => {
     const onChange = vi.fn();
     render(
       <MapHeader
-        title="Jobsheet"
+        title="Application Plan"
         subtitle=""
         value={{ crop: "Avocado", farm: ALL, greenhouse: ALL, from: "2026-01-01", to: "2026-09-01" }}
         onChange={onChange}

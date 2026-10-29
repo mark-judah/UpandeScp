@@ -1,5 +1,5 @@
 /**
- * Severity bands as the server judged them, for the avocado Jobsheet.
+ * Severity bands as the server judged them, for the avocado Application Plan.
  *
  * The band is computed server-side (`scouting/thresholds_check.figures_for_houses`)
  * from the same figure and bands the dashboards, the alerts and the weekly block

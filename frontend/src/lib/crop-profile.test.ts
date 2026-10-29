@@ -27,9 +27,9 @@ describe("crop profile", () => {
     expect(isBlockGrown("avocado")).toBe(false);
   });
 
-  it("a block-grown crop gets the block nav (Jobsheet) whatever it is called", () => {
+  it("a block-grown crop gets the block nav (Application Plan) whatever it is called", () => {
     __setCropProfiles([p("passion-fruit", true)]);
-    expect(viewNavMeta("heatmaps", "passion-fruit")?.label).toBe("Jobsheet");
+    expect(viewNavMeta("heatmaps", "passion-fruit")?.label).toBe("Application Plan");
     __setCropProfiles([p("passion-fruit", false)]);
     expect(viewNavMeta("heatmaps", "passion-fruit")?.label).toBe("Heatmaps");
   });

@@ -60,7 +60,7 @@ its own chapter.
 | Trends | yes | yes | — |
 | Scouting map | yes | yes | yes |
 | Observations | yes | yes | — |
-| Heatmaps | yes | as **Jobsheet** | — |
+| Heatmaps | yes | as **Application Plan** | — |
 | Traps | yes | yes | — |
 | Spraying | yes | — | — |
 | Application Plan, Approvals, Postponements, Tank Mixes, Historical | yes | — | — |

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 // A block picked on the map is checked in the (clipped) list; the list must
 // scroll that row into view or the pick looks like it did nothing.
-describe("Jobsheet map pick is visible in the list", () => {
+describe("Application Plan map pick is visible in the list", () => {
   const src = readFileSync("src/pages/avocado/AvocadoHeatMap.tsx", "utf8");
   it("tags rows and scrolls the selected one into view", () => {
     expect(src).toContain("data-block={b.tag}");

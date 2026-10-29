@@ -28,16 +28,17 @@ class TestCropNavigation(unittest.TestCase):
 					f"{crop}'s {tile['label']} points at {tile['href']}",
 				)
 
-	def test_avocado_offers_the_jobsheet_and_roses_the_application_plan(self):
+	def test_avocado_offers_the_application_plan_route_and_roses_their_own(self):
 		"""They plan differently: roses bed by bed through an approval queue,
 		avocado by prescribing a block. Offering either crop the other's page is
 		offering a page that crop does not have."""
-		avocado = {t["label"] for t in self.nav["Avocado"]["tiles"]}
-		rose = {t["label"] for t in self.nav["Rose"]["tiles"]}
-		self.assertIn("Jobsheet", avocado)
-		self.assertNotIn("Application Plan", avocado)
-		self.assertIn("Application Plan", rose)
-		self.assertNotIn("Jobsheet", rose)
+		avocado = {t["view"]: t["label"] for t in self.nav["Avocado"]["tiles"]}
+		rose = {t["view"]: t["label"] for t in self.nav["Rose"]["tiles"]}
+		# Both are called "Application Plan" now; the routes tell them apart.
+		self.assertEqual(avocado.get("heatmaps"), "Application Plan")
+		self.assertNotIn("application-plan", avocado)
+		self.assertEqual(rose.get("application-plan"), "Application Plan")
+		self.assertNotIn("heatmaps", rose)
 
 	def test_every_crop_can_reach_its_own_settings(self):
 		"""Settings became per-crop; the desk has to lead there."""

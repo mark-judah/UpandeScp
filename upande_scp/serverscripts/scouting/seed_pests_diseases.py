@@ -277,7 +277,11 @@ PESTS = [
 DISEASES = [
     # --- Rose (mostly already complete; blanks are no-ops) ---
     ("Agrobacterium", "Agrobacterium tumefaciens", ["Rose"], DISEASE_STAGES, ""),
-    ("Botrytis", "Botrytis cinerea", ["Rose"], DISEASE_STAGES, ""),
+    ("Botrytis", "Botrytis cinerea", ["Rose"], DISEASE_STAGES,
+     "Look for grayish-brown fuzzy mold growth on flowers, buds, and stems. "
+     "Initially appears as water-soaked spots that develop into gray sporulating "
+     "masses. (Kaitet record; on potato also grey mould on stems, leaves and "
+     "stored tubers in cool humid weather.)"),
     ("Downy Mildew", "Peronospora sparsa", ["Rose"], DISEASE_STAGES, ""),
     ("Powdery Mildew", "Podosphaera pannosa", ["Rose"], DISEASE_STAGES, ""),
     ("Rust", "Phragmidium tuberculatum", ["Rose"], DISEASE_STAGES,
@@ -489,6 +493,63 @@ def _ensure_stages(filter_doctype, filter_name, stage_names, species, crop, dry_
     doc.save(ignore_permissions=True)
 
 
+def _ensure_predators(wanted, create_crops, dry_run, log):
+    """Predator masters (+ stage, target pests, legend colour) and the crop links
+    in `Crop Scouted.predators`. Fill-blanks only; safe to run twice."""
+    for name, sci, crops, targets, color, guideline in extra.PREDATORS:
+        crops = [c for c in crops if wanted is None or c in wanted]
+        crops = [c for c in crops if _ensure_crop(c, create_crops, dry_run, log)]
+        if extra_crops_requested(extra.PREDATORS, name) and not crops:
+            continue
+        if not frappe.db.exists("Predator", name):
+            log["masters_created"].append(f"Predator: {name}")
+            if not dry_run:
+                doc = frappe.new_doc("Predator")
+                doc.common_name = name
+                doc.scientific_name = sci
+                doc.identification_guideline = guideline
+                if color:
+                    doc.predator_legend_color = color
+                doc.append("predator_stages", {"stage": name, "reading_type": "Count"})
+                for pest in targets:
+                    if frappe.db.exists("Pest", pest):
+                        doc.append("target_pest", {"pest": pest})
+                doc.insert(ignore_permissions=True)
+        elif not dry_run:
+            doc = frappe.get_doc("Predator", name)
+            changed = False
+            for field, value in (("scientific_name", sci), ("identification_guideline", guideline),
+                                 ("predator_legend_color", color)):
+                if value and not (doc.get(field) or "").strip():
+                    doc.set(field, value)
+                    changed = True
+            if not doc.predator_stages:
+                doc.append("predator_stages", {"stage": name, "reading_type": "Count"})
+                changed = True
+            have = {r.pest for r in doc.target_pest or []}
+            for pest in targets:
+                if pest not in have and frappe.db.exists("Pest", pest):
+                    doc.append("target_pest", {"pest": pest})
+                    changed = True
+            if changed:
+                log["masters_filled"].append(f"Predator: {name}")
+                doc.save(ignore_permissions=True)
+        for crop in crops:
+            if dry_run:
+                log["mapped"].append(f"Predator: {name} -> {crop}")
+                continue
+            cs = frappe.get_doc("Crop Scouted", crop)
+            if name not in [r.predator for r in cs.get("predators") or []]:
+                cs.append("predators", {"predator": name})
+                cs.save(ignore_permissions=True)
+                log["mapped"].append(f"Predator: {name} -> {crop}")
+
+
+def extra_crops_requested(rows, name):
+    """True for predators that have Mutara crops (those are skipped when no crop runs)."""
+    return any(r[0] == name and r[2] for r in rows)
+
+
 def run(dry_run=False, crops=None, create_crops=False):
     dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else bool(dry_run)
     create_crops = frappe.parse_json(create_crops) if isinstance(create_crops, str) else bool(create_crops)
@@ -516,6 +577,7 @@ def run(dry_run=False, crops=None, create_crops=False):
 
     _process("Pest", "Pest Filter", "pest", _all_pests())
     _process("Plant Disease", "Disease Filter", "disease", _all_diseases())
+    _ensure_predators(wanted, create_crops, dry_run, log)
 
     if not dry_run:
         frappe.db.commit()

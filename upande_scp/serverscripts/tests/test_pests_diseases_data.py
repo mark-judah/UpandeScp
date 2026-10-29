@@ -79,3 +79,38 @@ class TestCropItemMap(unittest.TestCase):
 		self.assertIn("Cabbage - Gloria F1", m["Cabbage"])
 		self.assertIn("Passion Fruit - Purple", m["Passion Fruit"])
 		self.assertEqual(["Maize"], m["Corn"])
+
+
+def _disease_crops(name):
+	return set(next(r[2] for r in S._all_diseases() if r[0] == name))
+
+
+class TestRequestedDiseasesAndBeneficials(unittest.TestCase):
+	ALL = {"Avocado", "Potato", "Onion", "Cabbage", "Passion Fruit", "Corn"}
+
+	def test_disease_crop_links(self):
+		self.assertIn("Corn", _disease_crops("Corn Rust"))
+		self.assertLessEqual({"Avocado", "Passion Fruit"}, _disease_crops("Anthracnose"))
+		self.assertEqual({"Avocado", "Cabbage"}, _disease_crops("Leaf Spot"))
+		self.assertEqual({"Cabbage"}, _disease_crops("Damping Off"))
+		self.assertEqual(self.ALL, self.ALL & _disease_crops("Fusarium Wilt"))
+		self.assertEqual(self.ALL, self.ALL & _disease_crops("Bacterial Wilt (Ralstonia)"))
+		self.assertIn("Cabbage", _disease_crops("Black Rot"))
+		self.assertIn("Potato", _disease_crops("Botrytis"))
+		self.assertIn("Onion", _disease_crops("Onion Powdery Mildew"))
+		self.assertIn("Onion", _disease_crops("Onion Downy Mildew"))
+		self.assertIn("Onion", _disease_crops("Purple Blotch"))
+		self.assertEqual({"Corn"}, _disease_crops("Maize Lethal Necrosis (MLND)"))
+
+	def test_persea_mite(self):
+		self.assertEqual({"Avocado", "Passion Fruit"}, _crops_of("Persea Mite"))
+		self.assertIn("Broad Mites", {r[0] for r in S._all_pests()})
+
+	def test_predators_modelled_like_kaitet(self):
+		by = {r[0]: r for r in X.PREDATORS}
+		for name in ("Ladybird", "Lacewing"):
+			self.assertEqual(set(X.ALL_MUTARA_CROPS), set(by[name][2]))
+			self.assertTrue(by[name][5].startswith("ID:") and by[name][1] and by[name][4])
+			pests = {r[0] for r in S._all_pests()}
+			self.assertLessEqual(set(by[name][3]), pests)
+		self.assertEqual(len({r[0] for r in X.PREDATORS}), len(X.PREDATORS))

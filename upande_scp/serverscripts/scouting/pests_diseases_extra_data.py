@@ -29,6 +29,8 @@ EXTRA_PEST_CROPS = {
 EXTRA_DISEASE_CROPS = {
     "Anthracnose": ["Passion Fruit"],
     "Phytophthora Root Rot": ["Passion Fruit"],
+    # Kaitet's Botrytis record (generic Botrytis cinerea) also covers potato.
+    "Botrytis": ["Potato"],
 }
 
 # Appended to the master's guideline when it is first created (fill-blank).
@@ -130,6 +132,14 @@ NEW_PESTS = [
      "on growing tips and young fruit. Diagnosis: shoot tips and young leaves "
      "curl, harden and turn bronze / brittle; fruit skin turns scabby and "
      "russeted with distortion. Source: CABI Compendium; UC IPM."),
+    ("Persea Mite", "Oligonychus perseae", ["Avocado", "Passion Fruit"],
+     ["Motiles", "Eggs", "Web"],
+     "ID: tiny (0.3-0.5 mm) yellow-green to pale mites, 2 dark spots, in "
+     "colonies under silken webbing on the leaf UNDERSIDE along the midrib and "
+     "veins. Diagnosis: circular yellow-brown to brown necrotic blotches on the "
+     "upper leaf surface corresponding to webbed colonies; heavy attacks cause "
+     "bronzing and premature leaf drop and sunburned fruit; worst in hot dry "
+     "weather. Source: UC IPM (Persea mite); CABI Compendium."),
     ("Leaf-footed Bug", "Leptoglossus australis", ["Passion Fruit"],
      PEST_STAGES_SUCKER,
      "ID: dark brown bug ~20 mm with a flattened leaf-like expansion on each "
@@ -154,7 +164,8 @@ NEW_DISEASES = [
      "lesions merge, leaves yellow and drop; favoured by plant stress, warm "
      "alternating wet/dry weather; tuber lesions are dark sunken and corky. "
      "Source: Infonet-Biovision; CABI Compendium."),
-    ("Bacterial Wilt (Ralstonia)", "Ralstonia solanacearum", ["Potato"], None,
+    ("Bacterial Wilt (Ralstonia)", "Ralstonia solanacearum",
+     ["Potato", "Avocado", "Onion", "Cabbage", "Passion Fruit", "Corn"], None,
      "ID: sudden wilting of the whole plant while leaves stay green, "
      "recovering at night then dying; cut stem placed in clear water streams "
      "milky-white ooze; tubers show brown vascular ring and ooze from the eyes. "
@@ -241,11 +252,15 @@ NEW_DISEASES = [
      "and fruit; fruit spots become sunken and corky. Diagnosis: severe "
      "defoliation, fruit drop and shrivelling in humid weather; one of the two "
      "most important diseases in Kenya. Source: Ondieki (ISHS); KALRO."),
-    ("Fusarium Wilt", "Fusarium oxysporum f. sp. passiflorae", ["Passion Fruit"], None,
-     "ID: yellowing and wilting of leaves starting on one side, vines collapse "
-     "while still attached; brown staining inside the stem and roots. "
-     "Diagnosis: soil-borne in poorly-drained soil; graft onto resistant "
-     "Passiflora edulis f. flavicarpa rootstock. Source: KALRO; CABI Compendium."),
+    ("Fusarium Wilt", "Fusarium oxysporum",
+     ["Passion Fruit", "Avocado", "Potato", "Onion", "Cabbage", "Corn"], None,
+     "ID: yellowing and wilting of leaves starting on one side or the lower "
+     "leaves, plants collapse while still attached; brown staining inside the "
+     "stem, vines and roots. Diagnosis: soil-borne in poorly-drained soil; "
+     "crop-specific forms (passion fruit: f. sp. passiflorae - graft onto "
+     "resistant Passiflora edulis f. flavicarpa rootstock; onion basal rot, "
+     "cabbage yellows, potato wilt); rotate and use clean planting material. "
+     "Source: KALRO; CABI Compendium."),
     ("Septoria Spot", "Septoria passiflorae", ["Passion Fruit"], None,
      "ID: small round tan spots with a dark border on leaves and fruit, with "
      "tiny black dots (pycnidia) in the centre. Diagnosis: cool wet weather, "
@@ -256,6 +271,47 @@ NEW_DISEASES = [
      "yellow halo; greasy dark spots on fruit and stems. Diagnosis: spread by "
      "rain splash and wounds in warm wet weather; can progress to leaf drop. "
      "Source: CABI Compendium; KALRO."),
+]
+
+NEW_DISEASES += [
+    # --- Added on request: crop-specific masters (species differ from Kaitet's
+    # rose records of the same common name, so they are separate records) ---
+    ("Corn Rust", "Puccinia sorghi", ["Corn"], None,
+     "ID: small round to oval, powdery cinnamon-brown pustules scattered on BOTH "
+     "leaf surfaces, turning black late in the season. Diagnosis: rub a pustule - "
+     "brown spore dust confirms common rust; cool (16-23 C) humid weather, heavy "
+     "attacks yellow and dry the leaves before tasselling and cut yield. "
+     "Source: Infonet-Biovision (maize rust); CABI Compendium."),
+    ("Maize Lethal Necrosis (MLND)",
+     "Maize chlorotic mottle virus + Sugarcane mosaic virus", ["Corn"], None,
+     "ID: yellow streaks and mottling from the leaf base to the tip, starting on "
+     "young whorl leaves; leaf edges dry from the margin (necrosis); young plants "
+     "show 'dead heart'; cobs small, deformed with little or no grain. "
+     "Diagnosis: caused by two viruses together, spread by thrips, beetles and "
+     "infected seed / debris; no cure - uproot and burn affected plants, rotate "
+     "with non-cereals, control thrips, report clusters to KEPHIS / county "
+     "extension. Source: Infonet-Biovision; CIMMYT; KALRO."),
+    ("Leaf Spot", "Cercospora / Pseudocercospora / Alternaria spp.",
+     ["Avocado", "Cabbage"], None,
+     "ID: round to angular brown to black spots, often with a yellow halo or "
+     "concentric rings, on leaves (and fruit on avocado). Diagnosis: spots "
+     "merge and leaves yellow and drop in warm humid weather; on cabbage "
+     "wrapper leaves lose grade. Alternaria / Cercospora species are the "
+     "common causes - see the crop-specific records for the species. Source: "
+     "Infonet-Biovision; UC IPM."),
+    ("Damping Off", "Pythium / Rhizoctonia / Fusarium spp.", ["Cabbage"], None,
+     "ID: seeds rot before emerging or seedlings collapse at the soil line, "
+     "with a thin, water-soaked, pinched stem base; patches of fallen "
+     "seedlings in the nursery or newly transplanted field. Diagnosis: wet, "
+     "cool, poorly drained or over-watered seedbeds, dense sowing and unclean "
+     "trays; use sterile media, drain well and avoid over-watering. Source: "
+     "Infonet-Biovision; UC IPM."),
+    ("Onion Powdery Mildew", "Leveillula taurica", ["Onion"], None,
+     "ID: pale yellow patches on the upper leaf surface with a white powdery "
+     "bloom, mostly on the underside; leaves yellow, dry and die back from the "
+     "tips. Diagnosis: warm dry days with cool nights; unlike downy mildew the "
+     "growth is dry and powdery, not violet-grey fuzz. Source: CABI Compendium; "
+     "UC IPM."),
 ]
 
 # --- Avocado, exported from kaitet.local ------------------------------------
@@ -273,6 +329,7 @@ AVOCADO_FILTER_SETTINGS = {
     ("Pest", "Coconut Bug"): ("Per Warehouse", "Count"),
     ("Pest", "Leaf Rollers"): ("Per Hectare", "Count"),
     ("Pest", "Stinkbug"): ("Per Warehouse", "Count"),
+    ("Pest", "Persea Mite"): ("Per Hectare", "Count"),
 }
 # Avocado stage rows kaitet limits to plant sections (Pests Stages.plant_sections)
 AVOCADO_PLANT_SECTIONS = {"Mealybugs": "Buds\nTop\nMiddle\nBase\nStem",
@@ -309,9 +366,12 @@ NEW_PEST_COLORS = {
     "Leafminers": "#0f766e", "Cutworms": "#44403c", "Onion Fly": "#64748b",
     "Diamondback Moth": "#7e22ce", "Cabbage Webworm": "#c026d3",
     "Cabbage Looper": "#059669", "Broad Mites": "#f59e0b",
-    "Leaf-footed Bug": "#9f1239", "Fall Armyworm": "#b45309",
+    "Leaf-footed Bug": "#9f1239", "Fall Armyworm": "#b45309", "Persea Mite": "#b91c1c",
 }
 NEW_DISEASE_COLORS = {
+    "Corn Rust": "#b45309", "Maize Lethal Necrosis (MLND)": "#4d7c0f",
+    "Leaf Spot": "#a16207", "Damping Off": "#0e7490",
+    "Onion Powdery Mildew": "#94a3b8",
     "Late Blight": "#1f2937", "Early Blight": "#92400e",
     "Bacterial Wilt (Ralstonia)": "#991b1b", "Potato Viruses": "#4338ca",
     "Common Scab": "#a8a29e", "Black Scurf": "#171717",
@@ -323,3 +383,39 @@ NEW_DISEASE_COLORS = {
     "Brown Spot": "#c2410c", "Fusarium Wilt": "#7f1d1d",
     "Septoria Spot": "#ca8a04", "Bacterial Oily Spot": "#0369a1",
 }
+
+
+# --- Beneficial insects: Kaitet models them as a `Predator` master (common name,
+# scientific name, guideline, legend colour; one `predator_stages` row whose stage
+# is the predator's own name, read as a Count; optional `target_pest` rows) mapped
+# to a crop through `Crop Scouted.predators` (a plain Predator Filter link).
+ALL_MUTARA_CROPS = ["Avocado", "Potato", "Onion", "Cabbage", "Passion Fruit", "Corn"]
+
+# (name, scientific_name, crops, target pests, colour, guideline)
+PREDATORS = [
+    ("Ladybird", "Coccinellidae", ALL_MUTARA_CROPS,
+     ["Aphids", "Scale Insects", "Mealybugs", "Whiteflies", "Spidermites"],
+     "#dc2626",
+     "ID: adult rounded dome-shaped beetle 4-8 mm, red / orange with black "
+     "spots (some species black with red spots); larvae spiny, alligator-shaped, "
+     "grey-black with orange marks; pupae stuck to the leaf. Role: both adults "
+     "and larvae eat aphids, scales, mealybugs and mites. Count adults and "
+     "larvae; do not spray where they are building up. Source: UC IPM; "
+     "Infonet-Biovision."),
+    ("Lacewing", "Chrysoperla carnea", ALL_MUTARA_CROPS,
+     ["Aphids", "Thrips", "Whiteflies", "Mealybugs", "Spidermites", "Caterpillars"],
+     "#16a34a",
+     "ID: adult delicate pale-green insect ~15 mm with large clear net-veined "
+     "wings and golden eyes; eggs singly on fine silk stalks; larva (aphid "
+     "lion) grey-brown, spindle-shaped with sickle jaws. Role: larvae eat "
+     "aphids, thrips, whiteflies, mites and small caterpillars / eggs. Count "
+     "adults, larvae and stalked eggs. Source: UC IPM; Infonet-Biovision."),
+    # Copied from Kaitet (mapped to Rose there, so no Mutara crop):
+    ("Phytoseiulus", "Phytoseiulus persimilis", [], [], None,
+     "ID: pear-shaped, shiny orange-red predatory mite, longer legs and faster "
+     "than spider mites. Role: eats spider mite eggs and motiles. Source: UC "
+     "IPM."),
+    ("Carlifonicus", "Neoseiulus californicus", [], [], None,
+     "ID: pear-shaped pale to orange predatory mite, fast moving. Role: feeds on "
+     "spider mites, broad mites and thrips larvae. Source: UC IPM."),
+]

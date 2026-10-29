@@ -228,6 +228,7 @@ def validate_targets_in_scope(
 
 
 def _observed_targets(greenhouse: str | None, cutoff, kind: str) -> Iterable[str]:
+    # Greenhouse entries name the place in `zone`; open-field entries carry the `block`.
     if not greenhouse:
         return []
     table = "tabPests Scouting Entry" if kind == "pest" else "tabDiseases Scouting Entry"
@@ -236,9 +237,9 @@ def _observed_targets(greenhouse: str | None, cutoff, kind: str) -> Iterable[str
         f"""SELECT DISTINCT child.{field} AS target
             FROM `{table}` AS child
             INNER JOIN `tabScouting Entry` AS parent ON parent.name = child.parent
-            WHERE parent.zone LIKE %s
+            WHERE (parent.zone LIKE %s OR parent.block = %s)
               AND parent.date_of_capture >= %s""",
-        (f"{greenhouse}%", cutoff),
+        (f"{greenhouse}%", greenhouse, cutoff),
         as_dict=True,
     )
     return [r["target"] for r in rows if r.get("target")]

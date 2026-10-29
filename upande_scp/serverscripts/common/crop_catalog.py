@@ -167,10 +167,20 @@ def crop_for_farm(farm) -> str | None:
 
 
 def crop_for_greenhouse(wh) -> str | None:
-    """Crop of a greenhouse or block warehouse (any warehouse with a custom_farm)."""
+    """Crop of a greenhouse or block warehouse (any warehouse with a custom_farm): a block
+    growing something answers with that crop, anything else with its farm's crop."""
     if not wh:
         return None
-    farm = frappe.db.get_value("Warehouse", wh, "custom_farm")
+    farm, kind = frappe.db.get_value("Warehouse", wh, ["custom_farm", "warehouse_type"]) or (None, None)
+    if kind == "Block":
+        # A farm can grow several crops (Mutara: avocado blocks and vegetable pivots), so a
+        # block's crop is what is planted there, not the farm's one crop. Unplanted blocks
+        # fall back to the farm's crop as before.
+        from upande_scp.serverscripts.common import planting
+
+        planted = planting.crop_for_station(wh)
+        if planted:
+            return planted
     return crop_for_farm(farm)
 
 

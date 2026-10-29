@@ -6,7 +6,7 @@ import { useObservationColors, type ObsKind } from "@/lib/observation-colors";
 import { HEADER_PILL } from "@/components/header-controls";
 import { RowsSkeleton } from "@/components/Loading";
 
-export function AvocadoObservations() {
+export function AvocadoObservations({ crop }: { crop?: string } = {}) {
   const [kind, setKind] = useState<ObsKind>("pest");
   const [pickedObs, setPickedObs] = useState<string | null>(null);
   const { pest: pestColor, disease: diseaseColor } = useObservationColors();
@@ -68,5 +68,5 @@ export function AvocadoObservations() {
     };
   }, [kind, pickedObs, pestColor, diseaseColor]);
 
-  return <AvocadoTreeMap view={view} />;
+  return <AvocadoTreeMap view={view} crop={crop} />;
 }

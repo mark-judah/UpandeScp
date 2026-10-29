@@ -41,6 +41,28 @@ TAB = "custom_scouting_and_crop_protection_tab"
 
 
 def _field_spec() -> dict:
+	spec = _base_field_spec()
+	# A Link to a doctype that is not installed breaks the Warehouse form, so
+	# the production link only exists where upande_production does.
+	if frappe.db.exists("DocType", "Production Unit"):
+		spec["Warehouse"].append(
+			{
+				"fieldname": "custom_production_unit",
+				"label": "Production Unit",
+				"fieldtype": "Link",
+				"options": "Production Unit",
+				"insert_after": "custom_crop",
+				"search_index": 1,
+				"description": (
+					"The upande_production unit planted on this station. Its Production "
+					"Crop Cycle decides the crop."
+				),
+			}
+		)
+	return spec
+
+
+def _base_field_spec() -> dict:
 	"""SCP's custom fields on shared doctypes, keyed by doctype.
 
 	``insert_after`` values are a starting anchor only. ``scouting_tab_layout``
@@ -612,6 +634,21 @@ def _field_spec() -> dict:
 				"description": (
 					"Area of this greenhouse / block in hectares — used as the denominator "
 					"for per-hectare pest & disease severity thresholds."
+				),
+			},
+			# What is planted here. `custom_production_unit` (the link into
+			# upande_production's cycles) is added by `_field_spec` only when that
+			# app's doctype exists; `custom_crop` is the app-free fixed crop, read
+			# on the station or the nearest ancestor (see common.planting).
+			{
+				"fieldname": "custom_crop",
+				"label": "Crop",
+				"fieldtype": "Link",
+				"options": "Crop Scouted",
+				"insert_after": "custom_area_ha",
+				"description": (
+					"Fixed crop for this location and everything below it (e.g. set "
+					"on a Phase). Used when no live Production Crop Cycle applies."
 				),
 			},
 		],

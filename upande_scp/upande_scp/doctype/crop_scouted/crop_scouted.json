@@ -12,6 +12,7 @@
   "image",
   "farms",
   "plant_sections_scouted",
+  "production_items",
   "section_break_predators",
   "predators",
   "section_break_weeds",
@@ -55,6 +56,13 @@
    "fieldtype": "Table MultiSelect",
    "label": "Plant Sections Scouted",
    "options": "Plant Section Filter"
+  },
+  {
+   "description": "Production items (e.g. Potatoes) that count as this crop when a station's Production Crop Cycle is read. Configure here, never match by name.",
+   "fieldname": "production_items",
+   "fieldtype": "Table",
+   "label": "Production Items",
+   "options": "SCP Crop Production Item"
   },
   {
    "fieldname": "section_break_predators",

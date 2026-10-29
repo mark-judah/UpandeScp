@@ -18,6 +18,7 @@ import {
 } from "@/lib/scouting-api";
 import { loadObservationColors } from "@/lib/observation-colors";
 import { bootstrap } from "@/lib/frappe";
+import { isBlockGrown, useCropProfiles } from "@/lib/crop-profile";
 
 const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
 
@@ -238,6 +239,8 @@ function NotPermitted({ view }: { view: View }) {
 
 function renderView(crop: string, view: View): ReactNode {
   const cropName = cropDisplayName(crop);
+  // Greenhouse or block, from the crop's stations (lib/crop-profile) — not its name.
+  const blockGrown = isBlockGrown(crop);
 
   // Gate the ROUTE, not just the sidebar link. Hiding a link is presentation,
   // not access control — `#/rose/approvals` typed into the address bar rendered
@@ -252,19 +255,19 @@ function renderView(crop: string, view: View): ReactNode {
     case "trends":
       return <Trends initialCrop={cropName} />;
     case "observations":
-      return crop === "rose" ? (
+      return !blockGrown ? (
         <Observations initialCrop={cropName} />
       ) : (
-        <AvocadoObservations />
+        <AvocadoObservations crop={cropName} />
       );
     case "traps":
-      return crop === "rose" ? (
+      return !blockGrown ? (
         <TrapsMap initialCrop={cropName} />
       ) : (
-        <AvocadoTraps />
+        <AvocadoTraps crop={cropName} />
       );
     case "heatmaps":
-      return crop === "rose" ? (
+      return !blockGrown ? (
         <Heatmaps initialCrop={cropName} />
       ) : (
         <AvocadoHeatMap initialCrop={cropName} />
@@ -272,12 +275,13 @@ function renderView(crop: string, view: View): ReactNode {
     case "gallery":
       return <Gallery initialCrop={cropName} />;
     case "scouting-map":
-      return crop === "rose" ? (
+      // The coffee triad map is a bespoke tessellation, not a station kind.
+      return !blockGrown ? (
         <RoseScouting />
       ) : crop === "coffee" ? (
         <CoffeeTriadMap />
       ) : (
-        <AvocadoScouting />
+        <AvocadoScouting crop={cropName} />
       );
     case "spraying":
       return <Spraying initialCrop={cropName} />;
@@ -450,6 +454,9 @@ function usePocHashMatch(): boolean {
 export function App() {
   const [{ crop, view }, navigate] = useRoute();
   const isPoc = usePocHashMatch();
+  // The block/greenhouse split comes from the data; hold the section's first paint
+  // until it is known (instant on a return visit — the last copy is stored).
+  const profilesReady = useCropProfiles();
 
   // Sections mount once and stay mounted (keep-alive), so revisiting is instant
   // and only data reloads. Track which crop/view pairs have been opened.
@@ -509,15 +516,15 @@ export function App() {
   // — 99.6% of the bytes — re-fetched on every load, because the IndexedDB hit
   // still fires a stale-while-revalidate refresh behind it.
   useEffect(() => {
-    if (crop !== "avocado") primeBedsAndZones();
-  }, [crop]);
+    if (!isBlockGrown(crop)) primeBedsAndZones();
+  }, [crop, profilesReady]);
 
   // Warm the avocado 3D-map geometry as soon as the user is in the avocado
   // section, so the map's own fetch finds it cached (or shares the in-flight
   // request) instead of a cold round-trip on open.
   useEffect(() => {
-    if (crop === "avocado") primeAvocadoGeo();
-  }, [crop]);
+    if (isBlockGrown(crop)) primeAvocadoGeo();
+  }, [crop, profilesReady]);
 
   // Store Keepers land on Spray Plan Transfers (not the scouting
   // Dashboard they don't have access to anyway). Only redirect when
@@ -572,7 +579,7 @@ export function App() {
             return (
               <KeepAlive key={k} active={active}>
                 <Suspense fallback={active ? fallback : null}>
-                  {renderView(kCrop, kView)}
+                  {profilesReady ? renderView(kCrop, kView) : active ? fallback : null}
                 </Suspense>
               </KeepAlive>
             );

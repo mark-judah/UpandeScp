@@ -97,6 +97,16 @@ DISEASE_DEFAULTS = {
     "Avocado Scab": "#9a3412",
 }
 
+# Colours for the Mutara crops (Potato / Onion / Cabbage / Passion Fruit) and the
+# shared Whiteflies record live with their taxonomy data.
+from upande_scp.serverscripts.scouting.pests_diseases_extra_data import (  # noqa: E402
+    NEW_DISEASE_COLORS,
+    NEW_PEST_COLORS,
+)
+
+PEST_DEFAULTS.update(NEW_PEST_COLORS)
+DISEASE_DEFAULTS.update(NEW_DISEASE_COLORS)
+
 
 def _normalize(s):
     return (s or "").strip().lower()

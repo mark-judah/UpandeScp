@@ -97,9 +97,9 @@ function farmBoundsFromBlocks(
   return out;
 }
 
-export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
+export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; crop?: string }) {
   const [filters, setFilters] = useState<MapFilterValue>(() => ({
-    crop: "Avocado",
+    crop,
     farm: ALL,
     greenhouse: ALL,
     // Avocado is sparse (~0.4% of all scouting) and fetched crop-scoped, so a

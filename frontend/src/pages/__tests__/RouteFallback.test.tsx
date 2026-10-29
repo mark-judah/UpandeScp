@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { __setCropProfiles } from "@/lib/crop-profile";
+
 const { PageFallback, ApplicationPlanSkeleton, routeHeading } = await import("@/App");
 
 describe("route fallback (skeleton spec K5)", () => {
@@ -12,6 +14,9 @@ describe("route fallback (skeleton spec K5)", () => {
   });
 
   it("uses the crop's label: the avocado Jobsheet is the heatmaps route", () => {
+    __setCropProfiles([
+      { crop: "Avocado", label: "Avocado", slug: "avocado", station_type: "Block", block_grown: true, level_labels: [] },
+    ]);
     expect(routeHeading("avocado", "heatmaps")).toEqual({ title: "Jobsheet", eyebrow: "Crop Protection" });
     expect(routeHeading("rose", "sprayers")).toEqual({ title: "Sprayers", eyebrow: "Personnel" });
   });

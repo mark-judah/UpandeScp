@@ -21,6 +21,7 @@ import {
 import { projectFromUnproject } from "@/lib/geo-project";
 import { observationColor } from "@/lib/observation-colors";
 import { cropSlug } from "@/lib/router";
+import { isBlockGrown } from "@/lib/crop-profile";
 import type { FeedPhoto } from "@/lib/gallery-api";
 
 const cache = new Map<string, Promise<ProjectedGeometry | null>>();
@@ -121,9 +122,9 @@ function SpotPulse({
   );
 }
 
-const avocadoCrop = (crop?: string) => (crop || "").trim().toLowerCase() === "avocado";
+const avocadoCrop = (crop?: string) => isBlockGrown(cropSlug(crop || ""));
 
-/** Avocado findings are placed by block + tree; roses by greenhouse + bed. */
+/** Block-grown findings (avocado, pivot vegetables) are placed by block + tree; roses by greenhouse + bed. */
 export function FindingLocationMap(props: { photo: FeedPhoto; crop?: string; size?: "mini" | "large" }) {
   const p = props.photo;
   return avocadoCrop(props.crop) || (!(p.greenhouse || p.house) && p.block) ? (

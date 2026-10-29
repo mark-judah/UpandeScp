@@ -66,6 +66,11 @@ DEFAULT_TILES = [
 	("traps", "Traps", "Trap catches"),
 ]
 
+# A crop with no tile list of its own that is grown on blocks (its stations are Blocks,
+# read from `common.crop_profile`, never from its name) gets the avocado tiles: the
+# jobsheet, the weekly block sheet and the tree/block maps are all crop-agnostic.
+BLOCK_TILES = CROP_TILES["Avocado"]
+
 # Mark and accent per crop, so the desk, the app and the report emails agree on
 # what colour a crop is. A crop with no mark falls back to a generic one rather
 # than borrowing another crop's identity.
@@ -179,6 +184,9 @@ def get_crop_navigation() -> list:
 	crops = frappe.get_all(
 		"Crop Scouted", fields=["name", "crop_name"], order_by="crop_name asc"
 	)
+	from upande_scp.serverscripts.common import crop_profile
+
+	block_grown = {p["crop"]: p["block_grown"] for p in crop_profile.compute_profiles()}
 	out = []
 	for row in crops:
 		label = (row.get("crop_name") or row.get("name") or "").strip()
@@ -190,7 +198,7 @@ def get_crop_navigation() -> list:
 		tiles = (
 			CROP_TILES.get(label)
 			or CROP_TILES.get(label.rstrip("s"))
-			or DEFAULT_TILES
+			or (BLOCK_TILES if block_grown.get(row.get("name")) else DEFAULT_TILES)
 		)
 		mark = CROP_MARKS.get(slug) or CROP_MARKS.get(slug.rstrip("s"))
 		out.append(

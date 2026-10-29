@@ -17,3 +17,15 @@ class ScoutingEntry(Document):
 			)
 		if not greenhouse_flow and not block_flow:
 			frappe.throw("Scouting Entry requires a Greenhouse or a Block.")
+		self._fill_crop_from_station()
+
+	def _fill_crop_from_station(self):
+		"""A blank crop is read from what is planted at the station on the day."""
+		if self.crop_scouted:
+			return
+		station = self.greenhouse or self.block
+		if not station:
+			return
+		from upande_scp.serverscripts.common.planting import crop_for_station
+
+		self.crop_scouted = crop_for_station(station, self.date_of_capture)

@@ -29,10 +29,22 @@ Run (from the bench directory):
 
     bench --site kaitet.local execute \
         upande_scp.serverscripts.scouting.seed_pests_diseases.run
+
+Mutara (Avocado + Potato / Onion / Cabbage / Passion Fruit; the extra taxonomy is in
+`pests_diseases_extra_data.py`). `crops` limits the run, `create_crops` creates any
+missing Crop Scouted record (name = crop_name) so filter rows can link:
+
+    bench --site mutara.local execute \
+        upande_scp.serverscripts.scouting.seed_pests_diseases.run \
+        --kwargs "{'crops': ['Avocado','Potato','Onion','Cabbage','Passion Fruit'], 'create_crops': True}"
+
+Crops that do not exist on the site (and are not created) are skipped, and a
+Pest / Plant Disease master is only created when at least one of its crops runs.
 """
 
 import frappe
 
+from upande_scp.serverscripts.scouting import pests_diseases_extra_data as extra
 from upande_scp.serverscripts.scouting.observation_colors import seed_canonical_colors
 
 # Stage catalog entries this seeder relies on that may not exist yet.
@@ -342,7 +354,11 @@ DISEASES = [
 
 
 def _ensure_stage_catalog(dry_run, log):
-    for stage_name, icon_key, reading_type in REQUIRED_STAGES:
+    from upande_scp.serverscripts.common.stage_roles import seed_role
+
+    required = {n: (i, r) for n, i, r in REQUIRED_STAGES}
+    required.update(extra.STAGE_CATALOG)
+    for stage_name, (icon_key, reading_type) in required.items():
         if frappe.db.exists("Stage", stage_name):
             continue
         log["stages_created"].append(stage_name)
@@ -352,7 +368,48 @@ def _ensure_stage_catalog(dry_run, log):
         doc.stage_name = stage_name
         doc.icon_key = icon_key
         doc.default_reading_type = reading_type
+        if frappe.db.has_column("Stage", "stage_role"):
+            doc.stage_role = seed_role(stage_name)
         doc.insert(ignore_permissions=True)
+
+
+def _merged(base, extra_crops):
+    """Base rows with the extra crops added (one record, several crop filters)."""
+    out = []
+    for name, sci, crops, stages, guideline in base:
+        out.append((name, sci, list(crops) + extra_crops.get(name, []), stages, guideline))
+    return out
+
+
+def _all_pests():
+    rows = _merged(PESTS, extra.EXTRA_PEST_CROPS)
+    rows = [(n, s, c, st, g + extra.EXTRA_PEST_NOTES.get(n, "") if g else g)
+            for n, s, c, st, g in rows]
+    return rows + list(extra.NEW_PESTS)
+
+
+def _all_diseases():
+    rows = _merged(DISEASES, extra.EXTRA_DISEASE_CROPS)
+    return rows + [(n, s, c, DISEASE_STAGES if st is None else st, g)
+                   for n, s, c, st, g in extra.NEW_DISEASES]
+
+
+def _ensure_crop(crop, create_crops, dry_run, log):
+    """True when the Crop Scouted exists (or was just created)."""
+    if frappe.db.exists("Crop Scouted", crop):
+        return True
+    if not create_crops:
+        if crop not in log["crops_skipped"]:
+            log["crops_skipped"].append(crop)
+        return False
+    if crop in log["crops_created"]:
+        return True
+    log["crops_created"].append(crop)
+    if not dry_run:
+        doc = frappe.new_doc("Crop Scouted")
+        doc.crop_name = crop
+        doc.insert(ignore_permissions=True)
+    return True
 
 
 def _ensure_master(doctype, name, scientific_name, guideline, dry_run, log):
@@ -366,6 +423,8 @@ def _ensure_master(doctype, name, scientific_name, guideline, dry_run, log):
                 doc.scientific_name = scientific_name
             if guideline:
                 doc.identification_guideline = guideline
+            for sev, lo, hi, color in (extra.AVOCADO_SEVERITY.get(name, []) if doctype == "Pest" else []):
+                doc.append("severity", {"severity": sev, "from": lo, "to": hi, "color": color})
             doc.insert(ignore_permissions=True)
         return
 
@@ -398,6 +457,10 @@ def _ensure_filter(filter_doctype, link_field, species, crop, dry_run, log):
     doc = frappe.new_doc(filter_doctype)
     doc.crop_scouted = crop
     doc.set(link_field, species)
+    kind = "Pest" if filter_doctype == "Pest Filter" else "Plant Disease"
+    settings = extra.AVOCADO_FILTER_SETTINGS.get((kind, species)) if crop == "Avocado" else None
+    if settings:
+        doc.unit, doc.measure = settings
     doc.insert(ignore_permissions=True)
     return doc.name
 
@@ -415,31 +478,44 @@ def _ensure_stages(filter_doctype, filter_name, stage_names, species, crop, dry_
         return
     for stage_name in stage_names:
         reading_type = frappe.db.get_value("Stage", stage_name, "default_reading_type") or "Count"
-        doc.append("stages", {"stage": stage_name, "reading_type": reading_type})
+        if (filter_doctype == "Pest Filter" and crop in extra.COUNT_SIGN_CROPS
+                and stage_name in ("Damage", "Damages")):
+            reading_type = "Count"
+        row = {"stage": stage_name, "reading_type": reading_type}
+        if filter_doctype == "Pest Filter" and crop == "Avocado" \
+                and species in extra.AVOCADO_PLANT_SECTIONS:
+            row["plant_sections"] = extra.AVOCADO_PLANT_SECTIONS[species]
+        doc.append("stages", row)
     doc.save(ignore_permissions=True)
 
 
-def run(dry_run=False):
+def run(dry_run=False, crops=None, create_crops=False):
     dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else bool(dry_run)
+    create_crops = frappe.parse_json(create_crops) if isinstance(create_crops, str) else bool(create_crops)
+    crops = frappe.parse_json(crops) if isinstance(crops, str) else crops
+    wanted = set(crops) if crops else None
 
     log = {
         "stages_created": [], "masters_created": [], "masters_filled": [],
         "mapped": [], "staged": [], "colors": None,
+        "crops_created": [], "crops_skipped": [],
     }
 
     _ensure_stage_catalog(dry_run, log)
 
-    for name, sci, crops, stages, guideline in PESTS:
-        _ensure_master("Pest", name, sci, guideline, dry_run, log)
-        for crop in crops:
-            fname = _ensure_filter("Pest Filter", "pest", name, crop, dry_run, log)
-            _ensure_stages("Pest Filter", fname, stages, name, crop, dry_run, log)
+    def _process(doctype, filter_doctype, link_field, rows):
+        for name, sci, row_crops, stages, guideline in rows:
+            row_crops = [c for c in row_crops if wanted is None or c in wanted]
+            row_crops = [c for c in row_crops if _ensure_crop(c, create_crops, dry_run, log)]
+            if not row_crops:
+                continue
+            _ensure_master(doctype, name, sci, guideline, dry_run, log)
+            for crop in row_crops:
+                fname = _ensure_filter(filter_doctype, link_field, name, crop, dry_run, log)
+                _ensure_stages(filter_doctype, fname, stages, name, crop, dry_run, log)
 
-    for name, sci, crops, stages, guideline in DISEASES:
-        _ensure_master("Plant Disease", name, sci, guideline, dry_run, log)
-        for crop in crops:
-            fname = _ensure_filter("Disease Filter", "disease", name, crop, dry_run, log)
-            _ensure_stages("Disease Filter", fname, stages, name, crop, dry_run, log)
+    _process("Pest", "Pest Filter", "pest", _all_pests())
+    _process("Plant Disease", "Disease Filter", "disease", _all_diseases())
 
     if not dry_run:
         frappe.db.commit()
@@ -454,6 +530,7 @@ def _print_summary(log, dry_run):
     mode = "DRY RUN (no writes)" if dry_run else "LIVE"
     print(f"\n=== seed_pests_diseases [{mode}] ===")
     print(f"Stage catalog added: {len(log['stages_created'])}")
+    print(f"Crops created:       {len(log['crops_created'])}  skipped (absent): {log['crops_skipped']}")
     print(f"Masters created:     {len(log['masters_created'])}")
     print(f"Masters filled:      {len(log['masters_filled'])}")
     print(f"Crop mappings:       {len(log['mapped'])}")

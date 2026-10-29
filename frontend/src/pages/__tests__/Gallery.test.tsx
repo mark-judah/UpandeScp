@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { __setCropProfiles } from "@/lib/crop-profile";
 import type { FeedPayload, FeedPhoto } from "@/lib/gallery-api";
 
 const fetchPhotoFeed = vi.fn();
@@ -195,6 +196,9 @@ describe("Scouting ▸ Gallery", () => {
   });
 
   it("View on map opens the viewer on the Location tab; the tabs switch", async () => {
+    __setCropProfiles([
+      { crop: "Avocado", label: "Avocado", slug: "avocado", station_type: "Block", block_grown: true, level_labels: [] },
+    ]);
     fetchPhotoFeed.mockResolvedValueOnce(page([photo(1, { farm: "Lokitela", greenhouse: "Lokitela", block: "B3", tree: "12" })], false));
     render(<Gallery initialCrop="Avocado" />);
     await screen.findByTestId("gallery-masonry");

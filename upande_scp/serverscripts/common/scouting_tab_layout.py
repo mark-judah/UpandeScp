@@ -36,6 +36,7 @@ SCP_FIELDS = {
     "Warehouse": [
         "custom_location", "custom_raw_geojson", "custom_cost_center",
         "custom_bed_numbering", "custom_zone_numbering", "custom_area_ha",
+        "custom_crop", "custom_production_unit",
     ],
     "BOM": [
         "custom_item_group", "custom_water_ph", "custom_water_hardness",

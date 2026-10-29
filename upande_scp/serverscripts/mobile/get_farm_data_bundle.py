@@ -18,6 +18,7 @@ from __future__ import annotations
 import frappe
 
 from upande_scp.serverscripts.common import farm_map
+from upande_scp.serverscripts.mobile.get_farm_hierarchy_info import derive_levels
 
 from upande_scp.serverscripts.common.cache_utils import (
     K_SM_FARM_BUNDLE_PREFIX,
@@ -34,7 +35,7 @@ _BED_FIELDS = ["name", "bed", "greenhouse", "unit_type"]
 # Bumped whenever the payload's *shape* changes. The version digest is otherwise
 # derived purely from `modified` timestamps, so a phone holding a bundle from
 # before a new field existed would never learn it was missing one.
-_BUNDLE_SCHEMA = "v2-unit-type"
+_BUNDLE_SCHEMA = "v3-levels"
 _TRAP_FIELDS = ["name", "farm", "greenhouse", "trap_number", "location", "type"]
 _WAREHOUSE_FIELDS = [
     "name",
@@ -48,7 +49,7 @@ _WAREHOUSE_FIELDS = [
 
 
 @frappe.whitelist()
-def getFarmDataBundle(farm=None, version=None):
+def getFarmDataBundle(farm=None, version=None, crop=None):
     """Return the cached bundle for a farm.
 
     Args:
@@ -56,6 +57,8 @@ def getFarmDataBundle(farm=None, version=None):
         version: Optional digest from the client's last successful download.
             When it matches the current digest we short-circuit with
             `{"unchanged": true}` so the app skips re-caching everything.
+        crop: Optional crop name. When given, stations whose crop today is not
+            this crop are left out (with their beds and traps).
 
     Response shape:
         {
@@ -63,8 +66,9 @@ def getFarmDataBundle(farm=None, version=None):
                 "farm": "Lokitela",
                 "version": "...",
                 "unchanged": False,
-                "warehouses": [{...}, ...],
+                "warehouses": [{..., "crop": "Roses" | None}, ...],  # stations carry crop
                 "sections": [{"name": "...", "warehouse_name": "..."}, ...],
+                "levels": [{"name", "warehouse_name", "warehouse_type", "parent"}, ...],
                 "station_type": "Block" | "Greenhouse" | None,
                 "has_sections": True | False,
                 "beds_by_warehouse": {wh_name: [{name, bed, unit_type}, ...]},
@@ -80,6 +84,10 @@ def getFarmDataBundle(farm=None, version=None):
     key = f"{K_SM_FARM_BUNDLE_PREFIX}:{farm}"
     bundle = get_or_set(key, lambda: _build_farm_bundle(farm), ttl=TTL_MEDIUM)
 
+    # Crop is resolved for today, so it is layered on per request and never
+    # stored in the cached bundle (a planting can start overnight).
+    bundle = _with_crops(bundle, crop)
+
     if version and bundle.get("version") and version == bundle["version"]:
         frappe.response["message"] = {
             "data": {
@@ -92,6 +100,59 @@ def getFarmDataBundle(farm=None, version=None):
 
     frappe.response["message"] = {"data": bundle}
     return frappe.response["message"]
+
+
+def _crops_for(names: list[str]) -> dict:
+    """Today's crop per station, in one batched call. Empty if planting is absent."""
+    if not names:
+        return {}
+    try:
+        from upande_scp.serverscripts.common import planting
+    except ImportError:
+        return {}
+    return planting.crops_for_stations(names) or {}
+
+
+def _with_crops(bundle: dict, crop=None) -> dict:
+    """Copy of ``bundle`` whose stations carry ``crop``; filtered if ``crop`` given."""
+    types = farm_map.station_types()
+    warehouses = [dict(w) for w in bundle.get("warehouses", [])]
+    stations = [w["name"] for w in warehouses if farm_map.is_station(w, types)]
+    crops = _crops_for(stations)
+    for w in warehouses:
+        if w["name"] in crops or w["name"] in stations:
+            w["crop"] = crops.get(w["name"])
+            w["parent"] = w.get("parent_warehouse")
+
+    out = dict(bundle)
+    if crop:
+        keep = {n for n in stations if crops.get(n) == crop}
+        drop = set(stations) - keep
+        warehouses = [w for w in warehouses if w["name"] not in drop]
+        out["beds_by_warehouse"] = {
+            k: v for k, v in bundle.get("beds_by_warehouse", {}).items() if k in keep
+        }
+        out["traps_by_warehouse"] = {
+            k: v for k, v in bundle.get("traps_by_warehouse", {}).items() if k in keep
+        }
+        out["unit_type_by_warehouse"] = {
+            k: v for k, v in bundle.get("unit_type_by_warehouse", {}).items() if k in keep
+        }
+        # Keep only the pickers that still lead to a station.
+        wanted = set()
+        by_name = {w["name"]: w for w in warehouses}
+        for n in keep:
+            p = by_name[n].get("parent_warehouse")
+            while p and p in by_name and p not in wanted:
+                wanted.add(p)
+                p = by_name[p].get("parent_warehouse")
+        out["levels"] = [l for l in bundle.get("levels", []) if l["name"] in wanted]
+        direct = {by_name[n].get("parent_warehouse") for n in keep}
+        out["sections"] = [s for s in bundle.get("sections", []) if s["name"] in direct]
+        out["has_sections"] = len(out["sections"]) > 0
+        out["version"] = f"{bundle.get('version')}|crop={crop}"
+    out["warehouses"] = warehouses
+    return out
 
 
 def _build_farm_bundle(farm: str) -> dict:
@@ -115,11 +176,12 @@ def _build_farm_bundle(farm: str) -> dict:
     station_names = [
         w.name for w in warehouses if farm_map.is_station(w, station_types)
     ]
-    sections = [
-        {"name": w.name, "warehouse_name": w.warehouse_name}
-        for w in warehouses
-        if w.is_group and w.warehouse_type == "Section"
-    ]
+    farm_wh = frappe.db.get_value(
+        "Warehouse", {"warehouse_type": "Farm", "custom_farm": farm}, "name"
+    )
+    sections, levels = derive_levels(
+        farm_wh, [dict(w) for w in warehouses], station_types
+    )
 
     beds_by_warehouse: dict[str, list] = {}
     traps_by_warehouse: dict[str, list] = {}
@@ -169,6 +231,7 @@ def _build_farm_bundle(farm: str) -> dict:
         "unchanged": False,
         "warehouses": [dict(w) for w in warehouses],
         "sections": sections,
+        "levels": levels,
         "station_type": station_type,
         "has_sections": len(sections) > 0,
         "beds_by_warehouse": beds_by_warehouse,

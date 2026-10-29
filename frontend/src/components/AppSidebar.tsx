@@ -50,7 +50,8 @@ import {
 } from "@/components/ui/sidebar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarUser } from "@/components/SidebarUser";
-import { routeHash, type View } from "@/lib/router";
+import { routeHash, cropDisplayName, type View } from "@/lib/router";
+import { isBlockGrown, useCropProfiles } from "@/lib/crop-profile";
 import { bootstrap } from "@/lib/frappe";
 import { useUnreadNotifications } from "@/hooks/use-notifications";
 import { cn } from "@/lib/utils";
@@ -481,8 +482,10 @@ const DEFAULT_CROP_NAV: NavSection[] = [
 
 function navForCrop(crop: string): NavSection[] {
   if (crop === "rose") return ROSE_NAV;
-  if (crop === "avocado") return AVOCADO_NAV;
   if (crop === "coffee") return COFFEE_NAV;
+  // Any other block-grown crop (avocado, pivot vegetables) gets the block nav; the
+  // crop's stations decide, not its name.
+  if (isBlockGrown(crop)) return AVOCADO_NAV;
   return DEFAULT_CROP_NAV;
 }
 
@@ -597,7 +600,7 @@ export function viewNavMeta(
 function cropLabel(crop: string): string {
   const c = (crop || "").trim();
   if (!c) return "Scouting & Crop Protection";
-  const name = c.charAt(0).toUpperCase() + c.slice(1);
+  const name = cropDisplayName(c);
   return /s$/i.test(name) ? name : name + "s";
 }
 
@@ -615,6 +618,7 @@ export function AppSidebar({
   const { unread: unreadNotifications } = useUnreadNotifications();
   const roles = bootstrap().roles || [];
 
+  useCropProfiles(); // re-render once the crop profiles (block vs greenhouse) land
   const nav = navForCrop(crop);
 
   // Show the footer "pocket" shadow only while nav items remain hidden below

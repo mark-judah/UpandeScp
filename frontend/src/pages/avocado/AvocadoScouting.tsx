@@ -5,7 +5,7 @@ import { deriveScoutColors, deriveScoutRoster } from "./derive-scouts";
 import { fetchScoutLookup } from "@/lib/scouting-api";
 import { RowsSkeleton } from "@/components/Loading";
 
-export function AvocadoScouting() {
+export function AvocadoScouting({ crop }: { crop?: string } = {}) {
   const [scoutNames, setScoutNames] = useState<Record<string, string>>({});
   useEffect(() => {
     fetchScoutLookup().then(setScoutNames);
@@ -49,5 +49,5 @@ export function AvocadoScouting() {
     [scoutNames],
   );
 
-  return <AvocadoTreeMap view={view} />;
+  return <AvocadoTreeMap view={view} crop={crop} />;
 }

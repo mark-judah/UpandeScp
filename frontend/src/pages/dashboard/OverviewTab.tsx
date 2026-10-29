@@ -1,5 +1,7 @@
 import type { KpiSeries } from "./Sparkline";
 import { useEffect, useState } from "react";
+import { isBlockGrown, useCropProfiles } from "@/lib/crop-profile";
+import { cropSlug } from "@/lib/router";
 import {
   AreaChart,
   Area,
@@ -88,11 +90,12 @@ export function OverviewTab({
   loading?: boolean;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
-  // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
-  // Fall back to data shape too, so the label tracks reality even if the
-  // crop string ever drifts (case/whitespace) or a new block-crop is added.
+  // Block-grown crops (stations are Blocks, per the crop profile) count Blocks;
+  // the rest count Greenhouses. Fall back to data shape too, so the label tracks
+  // reality while the profile is still loading.
+  useCropProfiles();
   const showBlocks =
-    (crop || "").trim().toLowerCase() === "avocado" ||
+    isBlockGrown(cropSlug(crop || "")) ||
     (k.blockCount > 0 && k.greenhouseCount === 0);
   const unitLabel = showBlocks ? "Blocks" : "Greenhouses";
   const unitValue = showBlocks ? k.blockCount : k.greenhouseCount;

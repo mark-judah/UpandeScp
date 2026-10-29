@@ -159,8 +159,12 @@ def is_station(warehouse, types=None) -> bool:
 	return (not is_group) or wt in _GROUPS_ALLOWED
 
 
-def stations_for_farm(farm: str | None) -> list:
-	"""Every warehouse of ``farm`` a scout can be sent to."""
+def stations_for_farm(farm: str | None, crop: str | None = None, on_date=None) -> list:
+	"""Every warehouse of ``farm`` a scout can be sent to.
+
+	With ``crop``, only the stations that resolve to that crop on ``on_date``
+	(see ``common.planting``); without it the list is unfiltered.
+	"""
 	if not farm:
 		return []
 	rows = frappe.get_all(
@@ -171,4 +175,10 @@ def stations_for_farm(farm: str | None) -> list:
 		limit_page_length=0,
 	)
 	types = station_types()
-	return [r["name"] for r in rows if is_station(r, types)]
+	stations = [r["name"] for r in rows if is_station(r, types)]
+	if crop:
+		from upande_scp.serverscripts.common import planting
+
+		crops = planting.crops_for_stations(stations, on_date)
+		stations = [s for s in stations if crops.get(s) == crop]
+	return stations

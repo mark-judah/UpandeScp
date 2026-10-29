@@ -28,6 +28,8 @@ import { BlockWeeklyReport } from "./BlockWeeklyReport";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
+import { cropProfile, useCropProfiles } from "@/lib/crop-profile";
+import { cropSlug } from "@/lib/router";
 import { errorText } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
@@ -109,17 +111,14 @@ const REPORTS: ReportSpec[] = [
   },
 ];
 
-/** Crops grown on blocks rather than beds. They are not FCM-reportable, so the KEPHIS
- *  workbook and the rose daily/trap reports do not apply to them at all — they get the
- *  plain weekly block sheet instead. */
-const BLOCK_GROWN = new Set(["avocado", "coffee"]);
-
+/** Crops grown on blocks rather than beds (read from the crop's stations, never its
+ *  name). They are not FCM-reportable, so the KEPHIS workbook and the rose daily/trap
+ *  reports do not apply to them at all — they get the plain weekly block sheet. */
 export function Reports({ initialCrop }: { initialCrop?: string } = {}) {
-  const crop = (initialCrop || "").toLowerCase();
-  if (BLOCK_GROWN.has(crop)) {
-    return (
-      <BlockWeeklyReport crop={crop.charAt(0).toUpperCase() + crop.slice(1)} />
-    );
+  useCropProfiles();
+  const profile = cropProfile(cropSlug(initialCrop || ""));
+  if (profile?.block_grown) {
+    return <BlockWeeklyReport crop={profile.crop} />;
   }
   return <RoseReports />;
 }

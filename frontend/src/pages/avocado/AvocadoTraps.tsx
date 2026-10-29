@@ -8,7 +8,7 @@ import { MapControlPanel } from "@/components/maps/MapControlPanel";
 import { useObservationColors } from "@/lib/observation-colors";
 import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
 
-export function AvocadoTraps() {
+export function AvocadoTraps({ crop }: { crop?: string } = {}) {
   // Fixed trap locations (Trap.geojson); traps without one fall back to the
   // average of their entries' coordinates.
   const [fixed, setFixed] = useState<TrapLocations>({});
@@ -106,5 +106,5 @@ export function AvocadoTraps() {
     [fixed, pestColor],
   );
 
-  return <AvocadoTreeMap view={view} />;
+  return <AvocadoTreeMap view={view} crop={crop} />;
 }

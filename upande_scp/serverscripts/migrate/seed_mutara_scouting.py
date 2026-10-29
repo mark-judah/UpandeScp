@@ -417,12 +417,13 @@ def run(total: int = TOTAL, seed: int = 2026, clear_first: bool = False, dry_run
 	print(summary)
 	if dry_run:
 		return summary
-	_insert(plan)
+	names = _insert(plan)
+	summary["photos"] = _photos(plan, names, rng)
 	refresh_caches(plan)
 	return summary
 
 
-def _insert(plan: list) -> None:
+def _insert(plan: list) -> list:
 	year = datetime.date.today().year
 	prefix = SERIES_PREFIX.format(year=year)
 	cur = frappe.db.sql("select current from tabSeries where name = %s", (prefix,))
@@ -466,6 +467,75 @@ def _insert(plan: list) -> None:
 	frappe.db.bulk_insert("Predators Scouting Entry", pe_fields + ["plant_section", "predator", "stage", "count"], predators)
 	frappe.db.sql("update tabSeries set current = %s where name = %s", (start + len(plan), prefix))
 	frappe.db.commit()
+	return [e[0] for e in entries]
+
+
+# ---------------------------------------------------------------- visual findings
+
+
+PHOTOS_PER_CROP = 24
+
+
+def _card(subject: str, color: str, size=(640, 480)) -> bytes:
+	"""A plain labelled card standing in for a photograph (the site has no pest images)."""
+	import io
+
+	from PIL import Image, ImageDraw, ImageFont
+
+	img = Image.new("RGB", size, color)
+	d = ImageDraw.Draw(img)
+	for i in range(0, size[1], 6):
+		shade = int(40 * i / size[1])
+		d.line([(0, i), (size[0], i)], fill=tuple(max(0, c - shade) for c in img.getpixel((0, i))))
+	font = ImageFont.load_default(size=44)
+	small = ImageFont.load_default(size=22)
+	d.text((32, size[1] // 2 - 40), subject, font=font, fill="white")
+	d.text((32, size[1] // 2 + 20), "Mutara demo scouting photo", font=small, fill="white")
+	buf = io.BytesIO()
+	img.save(buf, "PNG")
+	return buf.getvalue()
+
+
+def _photos(plan: list, names: list, rng) -> int:
+	"""A few photographed findings per crop, so Visual findings and its location map have something
+	to show. Picks the worst finding on each chosen visit."""
+	from frappe.utils import cstr
+
+	color = {}
+	for dt, f in (("Pest", "pests_legend_color"), ("Plant Disease", "disease_legend_color")):
+		for r in frappe.get_all(dt, fields=["name", f], limit_page_length=0):
+			color[r.name] = r.get(f) or "#4b6b3a"
+	by_crop: dict = {}
+	for i, r in enumerate(plan):
+		if not (r["pests"] or r["diseases"]):
+			continue
+		by_crop.setdefault(r["crop"], []).append(i)
+	files: dict = {}
+	rows = []
+	now = frappe.utils.now()
+	for crop, idxs in by_crop.items():
+		rng.shuffle(idxs)
+		for i in idxs[:PHOTOS_PER_CROP]:
+			r = plan[i]
+			worst = max(r["pests"], key=lambda p: p["count"])["pest"] if r["pests"] else r["diseases"][0]["disease"]
+			if worst not in files:
+				doc = frappe.get_doc({
+					"doctype": "File", "file_name": f"demo-finding-{frappe.scrub(worst)}.png", "is_private": 0,
+					"content": _card(worst, color.get(worst, "#4b6b3a"))
+				}).insert(ignore_permissions=True)
+				files[worst] = doc.file_url
+			ts = datetime.datetime.combine(r["date"], r["time"])
+			rows.append((frappe.generate_hash(length=10), ts, ts, "Administrator", "Administrator", 0, 1, names[i],
+			             "photos_scouting_entry", "Scouting Entry", files[worst], f"Demo photo: {worst}", worst, ts))
+	if rows:
+		frappe.db.bulk_insert(
+			"Scouting Entry Photo",
+			["name", "creation", "modified", "modified_by", "owner", "docstatus", "idx", "parent", "parentfield",
+			 "parenttype", "image", "caption", "subject", "captured_on"],
+			rows,
+		)
+		frappe.db.commit()
+	return len(rows)
 
 
 def clear() -> dict:
@@ -473,12 +543,14 @@ def clear() -> dict:
 	names = frappe.db.sql_list("select name from `tabScouting Entry` where _user_tags like %s", (f"%{TAG}%",))
 	if not names:
 		return {"deleted": 0}
-	for child in ("Pests Scouting Entry", "Diseases Scouting Entry", "Predators Scouting Entry"):
+	for child in ("Pests Scouting Entry", "Diseases Scouting Entry", "Predators Scouting Entry", "Scouting Entry Photo"):
 		frappe.db.sql(
 			f"delete c from `tab{child}` c join `tabScouting Entry` se on se.name = c.parent where se.`_user_tags` like %s",
 			(f"%{TAG}%",),
 		)
 	frappe.db.sql("delete from `tabScouting Entry` where _user_tags like %s", (f"%{TAG}%",))
+	for f in frappe.get_all("File", filters={"file_name": ["like", "demo-finding-%"]}, pluck="name"):
+		frappe.delete_doc("File", f, ignore_permissions=True, force=True)
 	prefix = SERIES_PREFIX.format(year=datetime.date.today().year)
 	rest = frappe.db.sql(
 		"select max(cast(substring(name, %s) as unsigned)) from `tabScouting Entry` where name like %s",

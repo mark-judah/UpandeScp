@@ -37,6 +37,19 @@ class TestPure(unittest.TestCase):
 		self.assertIsNone(P.pick_cycle_item(cycles, "2026-06-01"))
 		self.assertEqual(P.pick_cycle_item(cycles, "2026-09-01"), "B")
 
+	def test_variety_item_follows_its_base_item(self):
+		m = {"Maize": "Corn", "Cabbage - Gloria F1": "Cabbage"}
+		self.assertEqual(P.crop_for_item("Maize - H513", m), "Corn")
+		self.assertEqual(P.crop_for_item("Cabbage - Gloria F1", m), "Cabbage")
+		self.assertIsNone(P.crop_for_item("Cabbage - Other", m))
+		self.assertIsNone(P.crop_for_item("Wheat - X", m))
+		self.assertIsNone(P.crop_for_item(None, m))
+
+	def test_unit_fallback_needs_a_known_crop(self):
+		self.assertEqual(P.unit_fallback_crop("Avocado", {"Avocado"}), "Avocado")
+		self.assertIsNone(P.unit_fallback_crop("Fruits & Vegetables", {"Avocado"}))
+		self.assertIsNone(P.unit_fallback_crop(None, {"Avocado"}))
+
 	def test_nearest_custom_crop_walks_up(self):
 		wh = {
 			"blk": {"parent_warehouse": "sec", "custom_crop": None},
@@ -162,3 +175,23 @@ class TestResolution(unittest.TestCase):
 			self.assertEqual(farm_map.stations_for_farm(farm, crop=self.crop_pot, on_date=ACTIVE_DAY), [pot])
 			self.assertEqual(farm_map.stations_for_farm(farm, crop=self.crop_avo), [avo])
 			self.assertEqual(P.stations_for_crop(farm, self.crop_avo), [avo])
+
+
+class TestMutaraBlocks(unittest.TestCase):
+	"""The real Mutara blocks (skipped where that data is absent)."""
+
+	def setUp(self):
+		if not frappe.db.exists("Production Crop Cycle", {"unit": "P1-B9", "item": "Maize - H513"}):
+			self.skipTest("mutara production seed data absent")
+
+	def test_maize_blocks_are_corn(self):
+		got = P.crops_for_stations(["P1-B9 - MUT", "P2-B9 - MUT"])
+		self.assertEqual(set(got.values()), {"Corn"})
+
+	def test_phase_two_avocado_without_cycles_is_avocado(self):
+		self.assertEqual(P.crop_for_station("PH2-B4 - MUT"), "Avocado")
+		self.assertEqual(P.crop_for_station("PH2-B1 - MUT"), "Avocado")
+
+	def test_retired_units_resolve_to_nothing(self):
+		got = P.crops_for_stations(["P3-B1 - MUT", "P4-B2 - MUT", "Avocado Block A - MUT"])
+		self.assertEqual(set(got.values()), {None})

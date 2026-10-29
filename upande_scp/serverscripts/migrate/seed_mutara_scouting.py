@@ -1,12 +1,12 @@
-"""Mutara demo scouting at scale: ~50,000 Scouting Entries over six months.
+"""Mutara demo scouting at scale: ~50,000 Scouting Entries over the previous two months.
 
     bench --site mutara.local execute upande_scp.serverscripts.migrate.seed_mutara_scouting.run
     bench --site mutara.local execute upande_scp.serverscripts.migrate.seed_mutara_scouting.run \
         --kwargs "{'clear_first': True}"
     bench --site mutara.local execute upande_scp.serverscripts.migrate.seed_mutara_scouting.clear
 
-What it makes, per block that has a crop planted (``common.planting``; a Production Unit's
-own crop stands in where no cycle exists, so Phase 2 avocado is scouted like Phase 1):
+What it makes, per block that has a crop planted (``common.planting``: the current Production Crop
+Cycle, a Production Unit's own crop where it has none yet, never a Retired unit):
 
 * surveyed pivot blocks: every entry sits on one of the block's Triads (3 m hexagons) and its
   Row (Bed); the hexagon is stored in ``Scouting Entry.triad``;
@@ -36,7 +36,8 @@ import frappe
 FARM = "Mutara"
 TAG = "mutara-demo-scouting"
 SERIES_PREFIX = "SCE-{year}-"
-WINDOW_DAYS = 183
+#: 2026-08-29 .. 2026-10-29 when run on 2026-10-29: the two months before today.
+WINDOW_DAYS = 61
 TOTAL = 50_000
 M_PER_DEG = 111_320.0
 
@@ -163,8 +164,8 @@ def make_hotspots(unit: Unit, cat: dict, n: int, window: int, rng) -> list:
 			x, y = random_point_in(unit.polygon, rng)
 		else:
 			x = y = 0.0
-		onset = rng.randint(5, int(window * 0.72))
-		treated = onset + rng.randint(45, 110) if rng.random() < 0.5 else None
+		onset = rng.randint(2, int(window * 0.65))
+		treated = onset + rng.randint(max(8, window // 3), max(16, int(window * 0.8))) if rng.random() < 0.5 else None
 		out.append(
 			Hotspot(
 				kind=kind, target=target, x=x, y=y, onset=onset,
@@ -289,12 +290,7 @@ def load_units(farm: str = FARM) -> list:
 		order_by="name",
 		limit_page_length=0,
 	)
-	whs = [w for w in whs if not w.name.startswith("Avocado Block ")]
 	crops = planting.crops_for_stations([w.name for w in whs])
-	known = set(frappe.get_all("Crop Scouted", pluck="name"))
-	unit_crop = {
-		r.name: r.crop for r in frappe.get_all("Production Unit", fields=["name", "crop"], limit_page_length=0)
-	} if frappe.db.exists("DocType", "Production Unit") else {}
 	triads: dict = {}
 	for r in frappe.db.sql(
 		"select name, block, row, triad, geojson from `tabTriad` where farm = %s", (farm,), as_dict=True
@@ -303,9 +299,6 @@ def load_units(farm: str = FARM) -> list:
 	units = []
 	for w in whs:
 		crop = crops.get(w.name)
-		if not crop:
-			c = unit_crop.get(w.custom_production_unit)
-			crop = c if c in known and c == "Avocado" else None
 		if not crop:
 			continue
 		sites = []
@@ -476,35 +469,65 @@ def _insert(plan: list) -> list:
 PHOTOS_PER_CROP = 24
 
 
-def _card(subject: str, color: str, size=(640, 480)) -> bytes:
-	"""A plain labelled card standing in for a photograph (the site has no pest images)."""
-	import io
+#: Reference photographs, read-only (never written to). Kaitet keeps one per pest / disease,
+#: named after it (``aphids.jpeg``, ``powdery_mildew.jpg``).
+REFERENCE_DIRS = (
+	"/home/ubuntu/stive/code/frappe15/sites/kaitet.local/public/files",
+)
+_IMAGE_EXT = (".jpg", ".jpeg", ".png")
+#: Names that differ between this site's masters and the reference files.
+_ALIASES = {
+	"leafminers": "leaf_miner", "fcm": "fcm", "mosquito_bugs": "mosquito_bugs", "unidentified_insects": "caterpillars",
+	"diamondback_moth": "caterpillars", "cabbage_webworm": "caterpillars", "cabbage_looper": "loopers",
+	"fall_armyworm": "spodoptera", "potato_tuber_moth": "caterpillars", "cutworms": "caterpillars",
+	"onion_fly": "fruit_fly_(ceratitis)", "persea_mite": "spidermites", "broad_mites": "spidermites",
+	"leaf_footed_bug": "stinkbug", "potato_cyst_nematode": "weevils", "red_spider_mite": "spidermites",
+}
+#: Stand-ins by kind when nothing matches, so a finding always has a real photograph.
+_FALLBACK = {
+	"pest": ("caterpillars", "thrips", "aphids", "whiteflies", "mealybugs", "spodoptera"),
+	"disease": ("powdery_mildew", "downy_mildew", "botrytis", "rust", "anthracnose", "brown_eye_spot"),
+}
 
-	from PIL import Image, ImageDraw, ImageFont
 
-	img = Image.new("RGB", size, color)
-	d = ImageDraw.Draw(img)
-	for i in range(0, size[1], 6):
-		shade = int(40 * i / size[1])
-		d.line([(0, i), (size[0], i)], fill=tuple(max(0, c - shade) for c in img.getpixel((0, i))))
-	font = ImageFont.load_default(size=44)
-	small = ImageFont.load_default(size=22)
-	d.text((32, size[1] // 2 - 40), subject, font=font, fill="white")
-	d.text((32, size[1] // 2 + 20), "Mutara demo scouting photo", font=small, fill="white")
-	buf = io.BytesIO()
-	img.save(buf, "PNG")
-	return buf.getvalue()
+def reference_images(dirs=REFERENCE_DIRS) -> dict:
+	"""``{stem: path}`` of the reference images that exist (hash-suffixed duplicates and thumbnails left out)."""
+	import os
+	import re
+
+	out: dict = {}
+	for d in dirs:
+		if not os.path.isdir(d):
+			continue
+		for fn in sorted(os.listdir(d)):
+			stem, ext = os.path.splitext(fn)
+			if ext.lower() not in _IMAGE_EXT or fn.startswith(("QR_", "zz-", "loadtest")) or "thumb" in stem:
+				continue
+			if re.search(r"[0-9a-f]{6}$", stem) and stem[:-6] in out:
+				continue
+			out.setdefault(stem, os.path.join(d, fn))
+	return out
+
+
+def pick_reference(subject: str, kind: str, images: dict, rng) -> str | None:
+	"""Path of the reference photo for ``subject``: its own, its alias, else a stand-in for its kind."""
+	key = frappe.scrub(subject)
+	for k in (key, _ALIASES.get(key)):
+		if k and k in images:
+			return images[k]
+	pool = [images[k] for k in _FALLBACK.get(kind, ()) if k in images] or list(images.values())
+	return rng.choice(pool) if pool else None
 
 
 def _photos(plan: list, names: list, rng) -> int:
-	"""A few photographed findings per crop, so Visual findings and its location map have something
-	to show. Picks the worst finding on each chosen visit."""
-	from frappe.utils import cstr
+	"""A few photographed findings per crop (real reference photographs copied from Kaitet, read-only)
+	so Visual findings and its location map have something to show. Picks the worst finding on each
+	chosen visit."""
 
-	color = {}
-	for dt, f in (("Pest", "pests_legend_color"), ("Plant Disease", "disease_legend_color")):
-		for r in frappe.get_all(dt, fields=["name", f], limit_page_length=0):
-			color[r.name] = r.get(f) or "#4b6b3a"
+	images = reference_images()
+	if not images:
+		print("no reference images found: no photos attached")
+		return 0
 	by_crop: dict = {}
 	for i, r in enumerate(plan):
 		if not (r["pests"] or r["diseases"]):
@@ -517,11 +540,18 @@ def _photos(plan: list, names: list, rng) -> int:
 		rng.shuffle(idxs)
 		for i in idxs[:PHOTOS_PER_CROP]:
 			r = plan[i]
-			worst = max(r["pests"], key=lambda p: p["count"])["pest"] if r["pests"] else r["diseases"][0]["disease"]
+			is_pest = bool(r["pests"])
+			worst = max(r["pests"], key=lambda p: p["count"])["pest"] if is_pest else r["diseases"][0]["disease"]
 			if worst not in files:
+				path = pick_reference(worst, "pest" if is_pest else "disease", images, rng)
+				with open(path, "rb") as fh:
+					content = fh.read()
+				ext = path.rsplit(".", 1)[-1].lower()
+				# Private: this bench has no nginx /files location, but Frappe serves /private/files
+				# to a signed-in user, so the gallery and Visual findings can open them.
 				doc = frappe.get_doc({
-					"doctype": "File", "file_name": f"demo-finding-{frappe.scrub(worst)}.png", "is_private": 0,
-					"content": _card(worst, color.get(worst, "#4b6b3a"))
+					"doctype": "File", "file_name": f"demo-finding-{frappe.scrub(worst)}.{ext}", "is_private": 1,
+					"content": content,
 				}).insert(ignore_permissions=True)
 				files[worst] = doc.file_url
 			ts = datetime.datetime.combine(r["date"], r["time"])

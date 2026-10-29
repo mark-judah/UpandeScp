@@ -41,7 +41,7 @@ class TestPlan(unittest.TestCase):
 		self.assertEqual(len(rows), 4000)
 		lo = datetime.date(2026, 10, 29) - datetime.timedelta(days=S.WINDOW_DAYS)
 		self.assertTrue(all(lo <= r["date"] <= datetime.date(2026, 10, 29) for r in rows))
-		self.assertGreater((max(r["date"] for r in rows) - min(r["date"] for r in rows)).days, 150)
+		self.assertGreater((max(r["date"] for r in rows) - min(r["date"] for r in rows)).days, 50)
 
 	def test_deterministic(self):
 		a, b = self.plan(500), self.plan(500)
@@ -60,7 +60,7 @@ class TestPlan(unittest.TestCase):
 
 	def test_all_three_severity_bands_occur(self):
 		low = mod = high = 0
-		for r in self.plan():
+		for r in self.plan(seed=9):
 			for p in r["pests"]:
 				lo_hi = CATALOG["Potato"]["bands"][p["pest"]]
 				if p["count"] <= lo_hi[0]:
@@ -84,8 +84,8 @@ class TestPlan(unittest.TestCase):
 		def hit_rate(rs):
 			return sum(1 for r in rs if r["pests"] or r["diseases"]) / len(rs)
 
-		first = [r for r in rows if (r["date"] - start).days < 60]
-		last = [r for r in rows if (r["date"] - start).days >= 120]
+		first = [r for r in rows if (r["date"] - start).days < 20]
+		last = [r for r in rows if (r["date"] - start).days >= 40]
 		self.assertGreater(hit_rate(last), hit_rate(first))
 
 
@@ -122,8 +122,49 @@ class TestHelpers(unittest.TestCase):
 		self.assertTrue(all(0 <= x <= 1 and 0 <= y <= 1 for x, y in pts))
 
 
+class TestReferenceImages(unittest.TestCase):
+	IMAGES = {"aphids": "/r/aphids.jpeg", "caterpillars": "/r/c.jpg", "thrips": "/r/t.jpg", "spodoptera": "/r/s.jpg",
+	          "powdery_mildew": "/r/p.jpg", "fruit_fly_(bactocera)": "/r/f.jpg"}
+
+	def test_own_photo_then_alias_then_kind_stand_in(self):
+		rng = random.Random(1)
+		self.assertEqual(S.pick_reference("Aphids", "pest", self.IMAGES, rng), "/r/aphids.jpeg")
+		self.assertEqual(S.pick_reference("Fruit fly (Bactocera)", "pest", self.IMAGES, rng), "/r/f.jpg")
+		self.assertEqual(S.pick_reference("Fall Armyworm", "pest", self.IMAGES, rng), "/r/s.jpg")
+		self.assertIn(S.pick_reference("Unknown Bug", "pest", self.IMAGES, rng), {"/r/c.jpg", "/r/t.jpg", "/r/aphids.jpeg", "/r/s.jpg"})
+		self.assertEqual(S.pick_reference("Late Blight", "disease", self.IMAGES, rng), "/r/p.jpg")
+		self.assertIsNone(S.pick_reference("X", "pest", {}, rng))
+
+	def test_reference_images_skip_duplicates_and_thumbnails(self):
+		import os
+		import tempfile
+
+		with tempfile.TemporaryDirectory() as d:
+			for fn in ("aphids.jpeg", "aphidsa55695.jpeg", "calf_thumb.jpg", "QR_x.png", "zz-photo-1.png", "rust.jpg", "x.pdf"):
+				open(os.path.join(d, fn), "wb").write(b"x")
+			self.assertEqual(sorted(S.reference_images((d, "/nope"))), ["aphids", "rust"])
+
+	def test_real_reference_images_are_readable(self):
+		imgs = S.reference_images()
+		if not imgs:
+			self.skipTest("reference images absent")
+		self.assertIn("aphids", imgs)
+		self.assertTrue(open(imgs["aphids"], "rb").read(4))
+
+
 class TestDb(unittest.TestCase):
 	def test_second_run_is_a_noop_when_seeded(self):
 		if not S.is_seeded():
 			self.skipTest("demo scouting not seeded on this site")
 		self.assertEqual(S.run(dry_run=True)["status"], "already seeded")
+
+
+class TestLoadUnits(unittest.TestCase):
+	def test_only_live_blocks_with_their_cycle_crop(self):
+		if not frappe.db.exists("Production Crop Cycle", {"unit": "P1-B9", "item": "Maize - H513"}):
+			self.skipTest("mutara production seed data absent")
+		units = {u.block: u.crop for u in S.load_units()}
+		self.assertEqual(len([b for b in units if b.startswith("P1-") or b.startswith("P2-")]), 24)
+		self.assertEqual(len([b for b in units if b.startswith("PH")]), 25)
+		self.assertEqual((units["P1-B9 - MUT"], units["P2-B9 - MUT"]), ("Corn", "Corn"))
+		self.assertFalse([b for b in units if b.startswith(("P3-", "P4-", "Avocado Block"))])

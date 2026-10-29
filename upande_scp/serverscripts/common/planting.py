@@ -10,8 +10,13 @@ SCP keeps no planting record of its own. Resolution order for a station:
    station itself first.
 3. Otherwise ``None`` (fallow / unknown).
 
-Crops are never matched by name: the item -> crop link is configuration on
-``Crop Scouted.production_items``.
+The item -> crop link is configuration on ``Crop Scouted.production_items``. An item that is
+not listed but is named ``<listed item> - <variety>`` (``Maize - H513`` beside ``Maize``) follows
+the item it is a variety of.
+
+Retired Production Units are ignored: their stations resolve to ``None``. A unit with no live
+cycle of its own (a young orchard block whose cycles are not entered yet) is planted with its
+own ``crop`` when that names a Crop Scouted.
 """
 
 import frappe
@@ -50,6 +55,22 @@ def pick_cycle_item(cycles, on_date) -> str | None:
 		if best is None or getdate(start) > getdate(best["start_date"]):
 			best = c
 	return best["item"] if best else None
+
+
+def crop_for_item(item: str | None, item_crop: dict) -> str | None:
+	"""Crop of ``item``: its own link, else the link of the item it is a variety of
+	(``"Maize - H513"`` -> ``"Maize"``). Pure."""
+	if not item:
+		return None
+	if item_crop.get(item):
+		return item_crop[item]
+	base = item.split(" - ", 1)[0].strip()
+	return item_crop.get(base) if base != item else None
+
+
+def unit_fallback_crop(unit_crop: str | None, known_crops) -> str | None:
+	"""A unit's own ``crop`` when it names a Crop Scouted. Pure."""
+	return unit_crop if unit_crop and unit_crop in known_crops else None
 
 
 def nearest_custom_crop(station: str, warehouses: dict) -> str | None:
@@ -113,6 +134,19 @@ def _item_to_crop() -> dict:
 	return out
 
 
+def _unit_rows(units) -> dict:
+	"""``{unit: {status, crop}}`` for Production Units."""
+	if not units:
+		return {}
+	rows = frappe.get_all(
+		"Production Unit",
+		filters={"name": ["in", list(units)]},
+		fields=["name", "status", "crop"],
+		limit_page_length=0,
+	)
+	return {r["name"]: r for r in rows}
+
+
 def _cycles_by_unit(units, on_date) -> dict:
 	if not units:
 		return {}
@@ -144,6 +178,7 @@ def crops_for_stations(stations: list, on_date=None) -> dict:
 	warehouses = _load_warehouses(stations)
 
 	cycle_crop: dict = {}
+	unit_rows: dict = {}
 	if production_available():
 		units = {
 			warehouses[s].get("custom_production_unit")
@@ -151,15 +186,25 @@ def crops_for_stations(stations: list, on_date=None) -> dict:
 			if s in warehouses and warehouses[s].get("custom_production_unit")
 		}
 		if units:
+			unit_rows = _unit_rows(units)
 			item_crop = _item_to_crop()
 			for unit, cycles in _cycles_by_unit(units, on_date).items():
-				item = pick_cycle_item(cycles, on_date)
-				if item and item_crop.get(item):
-					cycle_crop[unit] = item_crop[item]
+				crop = crop_for_item(pick_cycle_item(cycles, on_date), item_crop)
+				if crop:
+					cycle_crop[unit] = crop
+			known = set(frappe.get_all("Crop Scouted", pluck="name"))
+			for unit, row in unit_rows.items():
+				if unit not in cycle_crop and row.get("status") != "Retired":
+					fb = unit_fallback_crop(row.get("crop"), known)
+					if fb:
+						cycle_crop[unit] = fb
 
 	out: dict = {}
 	for s in stations:
 		unit = (warehouses.get(s) or {}).get("custom_production_unit")
+		if unit and (unit_rows.get(unit) or {}).get("status") == "Retired":
+			out[s] = None
+			continue
 		out[s] = cycle_crop.get(unit) if unit else None
 		if not out[s]:
 			out[s] = nearest_custom_crop(s, warehouses)

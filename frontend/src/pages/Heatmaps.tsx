@@ -85,12 +85,9 @@ import {
   type ProjectedGeometry,
   type ZoneGeoLike,
 } from "./maps/bed-projection";
-import { TreePicker } from "@/components/TreePicker";
-import {
-  buildStationTree,
-  parseSelection,
-  parseObs,
-} from "./trends/aggregate";
+import { PlacePicker } from "@/components/PlacePicker";
+import type { Place } from "@/lib/places";
+import { parseSelection, parseObs } from "./trends/aggregate";
 import { WeatherCard } from "@/components/WeatherCard";
 import { ScoutRow, type Scout } from "@/components/ScoutAvatar";
 import { WeatherHistory, useWeatherHistory } from "@/components/WeatherHistory";
@@ -431,23 +428,6 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   );
   const geometryByGh = useProjectedGeometries(zonesByGh, neededGhs);
 
-  // Station tree is built from the full farm map (every farm/greenhouse the
-  // tenant has) so the operator can browse and pick before any cards exist.
-  // No counts here — counts come from the cards once a pick has been made.
-  const stationTree = useMemo(() => {
-    const farmStations: Record<string, Record<string, number>> = {};
-    // Optional in-range counts overlay (only on greenhouses that have cards).
-    const ghTotals: Record<string, number> = {};
-    for (const c of cards) {
-      ghTotals[c.greenhouse] = (ghTotals[c.greenhouse] || 0) + c.totalObs;
-    }
-    for (const [gh, farm] of Object.entries(farmsByGh)) {
-      if (!farmStations[farm]) farmStations[farm] = {};
-      farmStations[farm][gh] = ghTotals[gh] || 0;
-    }
-    return buildStationTree(farmStations);
-  }, [farmsByGh, cards]);
-
   // Counters strip
   const totalObs = visibleCards.reduce((s, c) => s + c.totalObs, 0);
   const totalZones = visibleCards.reduce((s, c) => s + c.zonesAffected, 0);
@@ -483,6 +463,26 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     );
     return ids.length === 1 ? ids[0] : null;
   }, [obsChecks]);
+
+  // The place pill drives the same selection set the deep link writes: one
+  // farm ("farm:<f>") or one greenhouse ("station:<f>|<gh>").
+  const place = useMemo<Place>(() => {
+    const s = selections[0];
+    if (!s) return { farm: "", greenhouse: "" };
+    return s.kind === "station"
+      ? { farm: s.farm, greenhouse: s.station }
+      : { farm: s.farm, greenhouse: "" };
+  }, [selections]);
+  const setPlace = (p: Place) =>
+    setStationChecks(
+      new Set(
+        p.greenhouse
+          ? [`station:${p.farm || farmsByGh[p.greenhouse] || ""}|${p.greenhouse}`]
+          : p.farm
+            ? [`farm:${p.farm}`]
+            : [],
+      ),
+    );
 
   // Pick a farm for the weather card. Use the first farm-typed selection;
   // otherwise infer from the first station-typed selection via farmsByGh.
@@ -562,20 +562,24 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
       >
         <DateRangePicker label="Heatmap date range" value={{ from, to }} onChange={setRange} />
 
-        {/* Multi-select: check any farms and/or greenhouses to plot. */}
-        <TreePicker label="Farms" icon={<MapPin className="h-3.5 w-3.5" />} count={selections.length} disabled={farmsLoading}
-              nodes={stationTree}
-              checked={stationChecks}
-              onChange={setStationChecks}
-              emptyHint={
-                farmsError === "stale-session"
-                  ? "This page is out of date — reload to sign the session back in."
-                  : farmsError === "failed"
-                  ? "Couldn't load the farm list. Check your connection and reload."
-                  : "No farms configured"
-              }
-              searchPlaceholder="Search farms or greenhouses…"
-            />
+        {/* One farm (every greenhouse on it) or one greenhouse. No "All farms":
+            nothing loads until the scope is narrowed. */}
+        <PlacePicker
+          farms={cropFarms}
+          crop={crop}
+          value={place}
+          onChange={setPlace}
+          allLabel={false}
+          placeholder={
+            farmsError === "stale-session"
+              ? "Reload to sign back in"
+              : farmsError === "failed"
+                ? "Couldn't load farms"
+                : "Pick a farm or greenhouse"
+          }
+          label="Heatmap farm or greenhouse"
+          disabled={farmsLoading}
+        />
 
         <HeaderIconButton
           onClick={() => gridState.reload({ force: true })}
@@ -623,9 +627,9 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               Pick farms or greenhouses to start
             </CardTitle>
             <CardDescription className="max-w-md">
-              Use the Farms picker above. Click a farm for every greenhouse
-              under it, or drill into specific greenhouses. Nothing loads
-              until you narrow the scope.
+              Use the farm and greenhouse picker above. Pick a farm for every
+              greenhouse on it, or one greenhouse. Nothing loads until you
+              narrow the scope.
             </CardDescription>
           </Card>
         ) : firstGrid ? (
@@ -831,8 +835,15 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                       type="button"
                       onClick={() => setShow3D((v) => !v)}
                       className="ml-auto rounded-md border px-2 py-0.5 text-[0.7rem] font-normal hover:bg-muted"
+                      title={
+                        show3D
+                          ? "Back to the greenhouse seen from above"
+                          : `How this ${picked.obsKind} built up over the last scouted weeks`
+                      }
                     >
-                      {show3D ? "2D" : "3D"}
+                      {show3D
+                        ? "Greenhouse top view"
+                        : `Click to see ${picked.obsKind} progression`}
                     </button>
                   )}
                 </DialogTitle>

@@ -6,6 +6,7 @@
  * Self-contained (its own load and Save) so the section works the same whether
  * or not Upande Asset is installed; without it the card says so and offers nothing.
  */
+import { PlacePicker } from "@/components/PlacePicker";
 import { useCallback, useEffect, useState } from "react";
 import { ClipboardCheck, Plus, Trash2 } from "lucide-react";
 import {
@@ -111,11 +112,15 @@ export function AssetChecksCard() {
                 )}
                 {rows.map((r, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-                    <FilterSelect
+                    <PlacePicker
+                      level="farm"
+                      remember={false}
+                      allLabel={false}
+                      farms={data.farms}
                       label="Farm"
-                      value={r.farm}
-                      onChange={(v) => update(i, { farm: v })}
-                      options={data.farms}
+                      placeholder="Pick a farm"
+                      value={{ farm: r.farm || "", greenhouse: "" }}
+                      onChange={(p) => update(i, { farm: p.farm })}
                     />
                     <FilterSelect
                       label="Asset category"
@@ -143,7 +148,13 @@ export function AssetChecksCard() {
                   </div>
                 ))}
                 <div>
-                  <Button variant="outline" size="sm" onClick={() => setRows((rs) => [...rs, blankRow()])}>
+                  <Button variant="outline" size="sm" onClick={() =>
+                    setRows((rs) => [
+                      ...rs,
+                      // One farm on the site: the row is for it (the picker shows it fixed).
+                      { ...blankRow(), farm: data.farms.length === 1 ? data.farms[0] : "" },
+                    ])
+                  }>
                     <Plus className="h-4 w-4 mr-1" /> Add farm and category
                   </Button>
                 </div>

@@ -45,6 +45,9 @@ export interface PlacePickerProps {
   label?: string;
   /** pill text while nothing is picked and there is no "all" */
   placeholder?: string;
+  /** false where the "all" option is a real, different choice even with one
+   *  farm (a team's "No farm"): keeps the list instead of a fixed label. */
+  fixedWhenSingle?: boolean;
   /** something drawn at the end of a greenhouse's row (a badge) */
   houseExtra?: (house: string) => ReactNode;
   className?: string;
@@ -72,6 +75,7 @@ export function PlacePicker({
   label = level === "farm" ? "Farm" : level === "greenhouse" ? "Greenhouse" : "Farm and greenhouse",
   placeholder,
   houseExtra,
+  fixedWhenSingle = true,
   className,
 }: PlacePickerProps) {
   const [open, setOpen] = useState(false);
@@ -87,7 +91,7 @@ export function PlacePicker({
     [farms],
   );
   const farmNames = useMemo(() => Object.keys(farmMap).filter(Boolean), [farmMap]);
-  const single = farmNames.length === 1;
+  const single = farmNames.length === 1 && fixedWhenSingle;
   const withHouses = level !== "farm";
   const showAll = level !== "greenhouse" && allLabel !== false && !single;
 

@@ -4,6 +4,7 @@
  * enable or disable it. Saving re-syncs the changed members into the sprayer
  * register (the Spray Team on_update hook).
  */
+import { PlacePicker } from "@/components/PlacePicker";
 import { useEffect, useState } from "react";
 import { Loader2, RotateCcw, Save, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -76,20 +77,17 @@ function TeamCard({
           {!draft.enabled && <Badge variant="outline">Disabled</Badge>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Select
-            value={draft.farm || NO_FARM}
-            onValueChange={(v) => setDraft((d) => ({ ...d, farm: v === NO_FARM ? null : v }))}
-          >
-            <SelectTrigger aria-label={`Farm of ${team.name}`} className="h-8 w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(ctx.manager || !team.farm) && <SelectItem value={NO_FARM}>No farm</SelectItem>}
-              {ctx.farms.map((f) => (
-                <SelectItem key={f} value={f}>{f}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PlacePicker
+            level="farm"
+            remember={false}
+            farms={ctx.farms}
+            label={`Farm of ${team.name}`}
+            allLabel={ctx.manager || !team.farm ? "No farm" : false}
+            fixedWhenSingle={!(ctx.manager || !team.farm)}
+            placeholder="No farm"
+            value={{ farm: draft.farm || "", greenhouse: "" }}
+            onChange={(p) => setDraft((d) => ({ ...d, farm: p.farm || null }))}
+          />
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               aria-label={`Enabled ${team.name}`}

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
+import { PlacePicker } from "@/components/PlacePicker";
 import { SearchInput } from "@/components/SearchInput";
 import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
 import { ZeroValuedList } from "@/components/store/ZeroValuedList";
@@ -470,19 +471,13 @@ export function SprayPlanTransfers() {
         eyebrow="Material Transfer for Manufacture · biometric-authorised bulk submit"
       >
         <div className="flex flex-wrap items-center gap-2">
-            <Select value={farm} onValueChange={setFarm}>
-              <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_FARMS}>All farms</SelectItem>
-                {farms.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PlacePicker
+              level="farm"
+              farms={farms}
+              label="Transfers farm"
+              value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
+              onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+            />
             <DateRangePicker
               label="Transfers date range"
               value={{ from: fromDate, to: toDate }}

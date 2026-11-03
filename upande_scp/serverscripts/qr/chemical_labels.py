@@ -196,17 +196,113 @@ def is_labelled_transfer(doc) -> bool:
 	return frappe.db.get_value("Work Order", work_order, "custom_type") == AFP_TYPE
 
 
-def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
+#: The Work Order state in which the store may label ahead of the issue. The draft
+#: transfer is created at approval, so a draft on an Approved plan is exactly the
+#: chemicals the GM signed off, waiting for the morning issue.
+EARLY_STATE = "Approved"
+
+
+def can_issue_early(doc) -> bool:
+	"""True for an approved plan's draft transfer, which the store may label early."""
+	if doc.purpose != TRANSFER_PURPOSE or doc.docstatus != 0:
+		return False
+	if not is_labelled_transfer(doc):
+		return False
+	return frappe.db.get_value("Work Order", doc.work_order, "workflow_state") == EARLY_STATE
+
+
+def _item_totals(doc) -> dict[str, tuple[int, float, object]]:
+	"""``item_code -> (first row idx, total qty, first row)`` across the entry's lines.
+
+	One sticker per chemical: the store's printer and the web PDF both label the
+	first line of each item (see ``spray_plan_labels._collect_labels``). Submitting
+	can split a line by batch, so the early code is checked against the item's
+	total rather than against whichever line happens to come first.
+	"""
+	out: dict[str, tuple[int, float, object]] = {}
+	for row in doc.items or []:
+		if not row.item_code:
+			continue
+		if row.item_code in out:
+			idx, total, first = out[row.item_code]
+			out[row.item_code] = (idx, total + flt(row.qty), first)
+		else:
+			out[row.item_code] = (row.idx, flt(row.qty), row)
+	return out
+
+
+def _reconcile_early(doc, announce: bool = True) -> list[str]:
+	"""On submit, keep each early code that still describes what moved; void the rest.
+
+	A code printed from the draft carries the draft's quantity. If the storesman
+	changed the line before submitting, that sticker now says the wrong thing, so it
+	is voided (a scan of it is refused with the reason) and the normal submit path
+	mints a fresh one for the reprint. Returns a line per voided label.
+	"""
+	early = frappe.get_all(
+		LABEL,
+		filters={"stock_entry": doc.name, "issued_early": 1, "voided": 0},
+		fields=["name", "item_code", "item_name", "qty", "se_line_idx"],
+	)
+	if not early:
+		return []
+	totals = _item_totals(doc)
+	voided: list[str] = []
+	for lbl in early:
+		hit = totals.get(lbl.item_code)
+		if hit and abs(hit[1] - flt(lbl.qty)) < 1e-6:
+			if hit[0] != lbl.se_line_idx:
+				frappe.db.set_value(LABEL, lbl.name, "se_line_idx", hit[0],
+				                    update_modified=False)
+			continue
+		chem = lbl.item_name or lbl.item_code
+		why = (
+			f"{chem} is no longer on {doc.name}" if not hit else
+			f"{chem} was printed as {flt(lbl.qty):g} but {hit[1]:g} was transferred"
+		)
+		frappe.db.set_value(LABEL, lbl.name, {"voided": 1, "voided_reason": why},
+		                    update_modified=False)
+		voided.append(why)
+	if voided:
+		# Back on the store's list as unprinted, so the reprint is not forgotten.
+		frappe.db.set_value("Stock Entry", doc.name, "custom_labels_printed", 0,
+		                    update_modified=False)
+	if voided and announce:
+		frappe.msgprint(
+			"These labels were printed before the transfer was changed and no longer "
+			"match it:<br>" + "<br>".join(voided)
+			+ "<br><br>New labels have been issued. Reprint them from the Labels tab "
+			"and throw the old stickers away — they will not scan at the CSU.",
+			title="Reprint labels",
+			indicator="orange",
+		)
+	return voided
+
+
+def issue_for_stock_entry(doc, regenerate: bool = False, early: bool = False) -> list[dict]:
 	"""Issue one code per chemical line on a submitted transfer, and attach its QR.
 
 	Idempotent: a line that already has a label keeps it, so a resubmit or a rerun of
 	the backfill never mints a second code for the same physical sticker. Pass
 	``regenerate=True`` only to reissue deliberately.
+
+	``early=True`` labels an approved plan's *draft* transfer, so the store can print
+	the night before the morning issue. One code per chemical, at the draft's
+	quantity, flagged ``issued_early``. It changes nothing about what a scan proves:
+	``verify_scan`` still refuses a label until its transfer is submitted, and the
+	submit checks each early code against what actually moved (`_reconcile_early`).
 	"""
-	if doc.purpose != TRANSFER_PURPOSE or doc.docstatus != 1:
-		return []
-	if not is_labelled_transfer(doc):
-		return []
+	if early:
+		if not can_issue_early(doc):
+			return []
+		# The draft may have been edited since its labels were last fetched.
+		_reconcile_early(doc, announce=False)
+	else:
+		if doc.purpose != TRANSFER_PURPOSE or doc.docstatus != 1:
+			return []
+		if not is_labelled_transfer(doc):
+			return []
+		_reconcile_early(doc)
 
 	year = name_year(doc.name) or int(str(doc.posting_date or "")[:4] or 0) % 100
 	# Bounded to the slot: the Work Order number is Frappe's, not ours, and the one
@@ -215,12 +311,20 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 	issued: list[dict] = []
 	skipped: list[str] = []
 
+	early_totals = _item_totals(doc) if early else {}
 	for row in doc.items or []:
 		if not row.item_code:
 			continue
+		if early and early_totals[row.item_code][0] != row.idx:
+			# One early sticker per chemical, on its first line.
+			continue
 		existing = frappe.db.get_value(
 			LABEL,
-			{"stock_entry": doc.name, "se_line_idx": row.idx},
+			# Early codes are per chemical; a reordered draft must not mint a second.
+			{"stock_entry": doc.name, "item_code": row.item_code, "issued_early": 1,
+			 "voided": 0}
+			if early else
+			{"stock_entry": doc.name, "se_line_idx": row.idx, "voided": 0},
 			["name", "code"],
 			as_dict=True,
 		)
@@ -233,12 +337,13 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 		# Allocated here, after the already-labelled check, so a rerun of the backfill
 		# does not burn a serial per line it skips.
 		serial = _next_label_serial()
+		qty = early_totals[row.item_code][1] if early else flt(row.qty)
 		try:
 			code = encode(
 				year=year,
 				ref=serial,
 				item_id=surrogate,
-				qty=flt(row.qty),
+				qty=qty,
 				wo_tail=wo_tail,
 			)
 		except CodeError as e:
@@ -264,7 +369,8 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 			"item_name": row.item_name or row.item_code,
 			"item_surrogate": surrogate,
 			"serial": serial,
-			"qty": flt(row.qty),
+			"qty": qty,
+			"issued_early": 1 if early else 0,
 			"uom": row.uom or row.stock_uom,
 			"greenhouse": _greenhouse_of(doc),
 			"farm": frappe.db.get_value("Warehouse", row.s_warehouse, "custom_farm"),
@@ -340,7 +446,8 @@ def verify_scan(payload: str | None, work_order: str, item_code: str) -> dict:
 	label = frappe.db.get_value(
 		LABEL,
 		code,
-		["name", "stock_entry", "work_order", "item_code", "qty", "se_line_idx"],
+		["name", "stock_entry", "work_order", "item_code", "qty", "se_line_idx",
+		 "voided", "voided_reason"],
 		as_dict=True,
 	)
 	if not label:
@@ -348,6 +455,14 @@ def verify_scan(payload: str | None, work_order: str, item_code: str) -> dict:
 		# has to match a row that was actually issued.
 		raise ScanRefused(
 			f"this code was never issued ({parsed.describe()})"
+		)
+
+	if label.voided:
+		# Printed early from the draft, then the transfer changed before it was
+		# submitted. The sticker describes chemicals that were not issued as printed.
+		raise ScanRefused(
+			f"this label was replaced: {label.voided_reason or 'the transfer changed'}. "
+			"Use the reprinted label."
 		)
 
 	docstatus = frappe.db.get_value("Stock Entry", label.stock_entry, "docstatus")

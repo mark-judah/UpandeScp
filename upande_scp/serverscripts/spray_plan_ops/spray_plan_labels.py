@@ -320,7 +320,8 @@ def _collect_labels(
 				r["se_line_idx"]: r["code"]
 				for r in frappe.get_all(
 					"Chemical QR Label",
-					filters={"stock_entry": se_name},
+					# A voided code was printed early and then the transfer changed.
+					filters={"stock_entry": se_name, "voided": 0},
 					fields=["se_line_idx", "code"],
 				)
 			}

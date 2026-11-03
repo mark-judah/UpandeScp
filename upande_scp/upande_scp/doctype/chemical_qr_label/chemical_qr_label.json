@@ -21,11 +21,14 @@
   "greenhouse",
   "farm",
   "issued_at",
-  "attachment"
+  "attachment",
+  "issued_early",
+  "voided",
+  "voided_reason"
  ],
  "fields": [
   {
-   "description": "The 33 digits in the QR. Also this row's name \u2014 a scan is one lookup.",
+   "description": "The 33 digits in the QR. Also this row's name — a scan is one lookup.",
    "fieldname": "code",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -135,6 +138,29 @@
    "fieldtype": "Data",
    "label": "QR File",
    "read_only": 1
+  },
+  {
+   "fieldname": "issued_early",
+   "fieldtype": "Check",
+   "label": "Issued Before Transfer",
+   "default": "0",
+   "read_only": 1,
+   "description": "Printed from the approved draft transfer so the store could label ahead of the morning issue. Checked against what was actually transferred when the entry is submitted."
+  },
+  {
+   "fieldname": "voided",
+   "fieldtype": "Check",
+   "label": "Voided",
+   "default": "0",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "voided_reason",
+   "fieldtype": "Small Text",
+   "label": "Voided Reason",
+   "read_only": 1,
+   "depends_on": "voided"
   }
  ],
  "index_web_pages_for_search": 0,

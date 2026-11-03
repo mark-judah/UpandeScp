@@ -14,6 +14,7 @@ import json
 
 import frappe
 
+from upande_scp.serverscripts.qr import chemical_labels
 from upande_scp.serverscripts.store import store_keeper_api
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_labels import (
     _collect_labels,
@@ -33,6 +34,7 @@ _JOB_FIELDS = (
     "spray_type",
     "greenhouse",
     "qr_payload",
+    "draft",
 )
 
 
@@ -42,7 +44,74 @@ def _to_print_job(label: dict) -> dict:
     Pure: drops ``image_src`` and any other extra keys, defaulting any
     missing field to an empty string. ``qr_payload`` is preserved verbatim.
     """
-    return {k: label.get(k, "") for k in _JOB_FIELDS}
+    job = {k: label.get(k, "") for k in _JOB_FIELDS}
+    job["draft"] = bool(label.get("draft"))
+    return job
+
+
+def _approved_drafts(
+    farm: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> list[dict]:
+    """Draft transfers on Approved plans, dated by the plan's spray day.
+
+    The draft is created when the GM approves, so this is the store's work for the
+    coming morning. It is dated by when the spray is planned, not by the draft's
+    posting date (the approval day), because that is the day the store prints for.
+    """
+    store_keeper_api._check_perm()
+    where = [
+        "se.docstatus = 0",
+        "se.purpose = %(purpose)s",
+        "wo.custom_type = %(afp)s",
+        "wo.workflow_state = %(state)s",
+    ]
+    params = {
+        "purpose": chemical_labels.TRANSFER_PURPOSE,
+        "afp": chemical_labels.AFP_TYPE,
+        "state": chemical_labels.EARLY_STATE,
+    }
+    if from_date:
+        where.append("DATE(wo.custom_scheduled_application_time) >= %(from_date)s")
+        params["from_date"] = from_date
+    if to_date:
+        where.append("DATE(wo.custom_scheduled_application_time) <= %(to_date)s")
+        params["to_date"] = to_date
+    rows = frappe.db.sql(
+        f"""
+        SELECT se.name,
+               DATE(wo.custom_scheduled_application_time) AS spray_date,
+               COALESCE(tw.custom_farm, fw.custom_farm, '') AS farm
+        FROM   `tabStock Entry` se
+        JOIN   `tabWork Order`  wo ON wo.name = se.work_order
+        LEFT   JOIN `tabWarehouse` tw ON tw.name = se.to_warehouse
+        LEFT   JOIN `tabWarehouse` fw ON fw.name = se.from_warehouse
+        WHERE  {" AND ".join(where)}
+        ORDER  BY wo.custom_scheduled_application_time, se.creation
+        """,
+        params,
+        as_dict=True,
+    )
+    if farm:
+        rows = [r for r in rows if (r.get("farm") or "") == farm]
+    return rows
+
+
+def _early_labels(se_names: list[str]) -> tuple[list[dict], list[dict]]:
+    """Issue (idempotently) and collect the early labels for approved drafts."""
+    for name in se_names:
+        try:
+            chemical_labels.issue_for_stock_entry(
+                frappe.get_doc("Stock Entry", name), early=True
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"Early label issue failed: {name}")
+    frappe.db.commit()
+    labels, skipped = _collect_labels(se_names, require_image=False)
+    for lbl in labels:
+        lbl["draft"] = True
+    return labels, skipped
 
 
 @frappe.whitelist()
@@ -54,7 +123,11 @@ def get_print_jobs(farm: str | None = None, date: str | None = None) -> dict:
     purpose, work-order and farm filters), then expands each into per-item
     labels via ``_collect_labels`` and reshapes them with ``_to_print_job``.
 
-    Returns ``{"jobs": [...], "skipped": [...], "se_count": int}``.
+    Also includes the day's *approved drafts* (spray planned for ``date``), so the
+    store can print the night before the morning issue. Those jobs carry
+    ``draft: true``; their codes refuse to scan until the transfer is submitted.
+
+    Returns ``{"jobs": [...], "skipped": [...], "se_count": int, "draft_count": int}``.
     """
     if not farm or not date:
         frappe.throw("farm and date are required")
@@ -62,15 +135,30 @@ def get_print_jobs(farm: str | None = None, date: str | None = None) -> dict:
         farm=farm, from_date=date, to_date=date
     )
     se_names = [r["name"] for r in listing.get("rows", [])]
-    if not se_names:
-        return {"jobs": [], "skipped": [], "se_count": 0}
+    draft_names = [
+        r["name"] for r in _approved_drafts(farm=farm, from_date=date, to_date=date)
+        if r["name"] not in se_names
+    ]
+    if not se_names and not draft_names:
+        return {"jobs": [], "skipped": [], "se_count": 0, "draft_count": 0}
 
     # `require_image=False`: the printer draws the QR from `qr_payload` and is
     # never sent an image, so a missing PNG is no reason to withhold a label it
     # can print perfectly well.
-    labels, skipped = _collect_labels(se_names, require_image=False)
+    labels, skipped = (
+        _collect_labels(se_names, require_image=False) if se_names else ([], [])
+    )
+    if draft_names:
+        early, early_skipped = _early_labels(draft_names)
+        labels += early
+        skipped += early_skipped
     jobs = [_to_print_job(lbl) for lbl in labels]
-    return {"jobs": jobs, "skipped": skipped, "se_count": len(se_names)}
+    return {
+        "jobs": jobs,
+        "skipped": skipped,
+        "se_count": len(se_names) + len(draft_names),
+        "draft_count": len(draft_names),
+    }
 
 
 @frappe.whitelist()
@@ -143,4 +231,9 @@ def get_label_dates(farm: str | None = None, days: int = 60) -> dict:
         days = 60
     cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -abs(days))
     listing = store_keeper_api.list_submitted_transfers(farm=farm, from_date=cutoff)
-    return {"dates": _distinct_dates(listing.get("rows", []))}
+    dates = set(_distinct_dates(listing.get("rows", [])))
+    # Approved plans still waiting for the morning issue, by spray day — including
+    # tomorrow's, which is the whole point of printing early.
+    dates |= {str(r["spray_date"]) for r in _approved_drafts(farm=farm, from_date=cutoff)
+              if r.get("spray_date")}
+    return {"dates": sorted(dates, reverse=True)}

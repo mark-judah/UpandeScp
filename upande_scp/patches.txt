@@ -66,6 +66,10 @@ upande_scp.patches.v1_0.drop_scp_dashboard_block
 # Drops the SCP Scout Map custom block. This one was never on the workspace —
 # it rode in on a restored production database and nothing references it.
 upande_scp.patches.v1_0.drop_scp_scout_map_block
+# Five of six General Managers could not open the Spray Product list: its
+# permissions name only the SCP-prefixed roles and Frappe matches role names
+# exactly. Mirrors each SCP row onto its unprefixed twin.
+upande_scp.patches.v1_0.gms_can_open_spray_products
 # Work Order Item.custom_targets: which pests / diseases each chemical row of an
 # Application Floor Plan is for, so finance can record instead of guess.
 upande_scp.patches.v1_0.add_work_order_item_targets
@@ -78,3 +82,7 @@ upande_scp.patches.v1_0.add_spray_product_cost_group
 # Chemical targeting enforcement (Strict / Warn): existing sites start in Warn so the
 # Application Floor Plan never stops operations while product data is filled in.
 upande_scp.patches.v1_0.set_chemical_targeting_warn
+# A user holding only "SCP Spray Supervisor"/"SCP Scout" was refused on Work Order,
+# Stock Entry, logsheets etc.: their Custom DocPerms named only the unprefixed role.
+# Mirrors each unprefixed row onto its SCP twin (reverse of gms_can_open_spray_products).
+upande_scp.patches.v1_0.mirror_bare_roles_onto_scp_roles

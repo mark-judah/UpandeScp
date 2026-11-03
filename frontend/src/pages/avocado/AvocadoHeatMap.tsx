@@ -1,28 +1,31 @@
 /**
- * Avocado/coffee Jobsheet — a top-down (2D) view of the orchard showing ONE pest or
- * disease at a time (searchable pill). Every located scouting entry is a sample,
- * zero where scouted and not found; fixed-trap catches count for pests; the gaps
- * are filled by inverse-distance weighting (lib/idw.ts) across the block polygons
- * and drawn as a canvas image, faded with distance to the nearest scout.
+ * Avocado/coffee Application Floor Plan — one page to observe and prescribe.
  *
- * Reuses the shared avocado map plumbing (Map3D, MapHeader filters + single-farm
- * auto-select, cached useScouting, lean tree points) but renders a heatmap +
- * dots instead of the 3D TreesLayer. A thin, collapsible planning sidebar lists
- * the most-affected blocks; picking one shows its top pests/diseases and then the
- * prescription itself — observe and prescribe in one place, which is why this page is
- * the avocado **Jobsheet** rather than a heat map with a sidebar. The plan it creates
- * is an ordinary Application Floor Plan: same draft endpoint, same approval, same
- * transfer, with the block riding in `custom_greenhouse`.
+ * The **map on the left** is a top-down (2D) view of the orchard showing ONE pest or disease
+ * at a time (searchable pill). Every located scouting entry is a sample, zero where scouted
+ * and not found; fixed-trap catches count for pests; the gaps are filled by inverse-distance
+ * weighting (lib/idw.ts) across the block polygons and drawn as a canvas image, faded with
+ * distance to the nearest scout.
+ *
+ * The **docked column on the right** is the open-field planner (OpenFieldPlanner): the block
+ * list, one plan per selected block (each block is planned separately, with its own crop's
+ * targets, tank mixes and rates), the draft Work Orders created in one all-or-nothing batch,
+ * and the draft list. The map and the list pick the same blocks; clicking a block on the map
+ * also opens a card over the map with its top pests and diseases.
+ *
+ * Quantities follow the block's hectarage where the product has a Hectarage rate for the
+ * block's crop (lib/open-field), otherwise the water volume. The plans are ordinary
+ * Application Floor Plans: same draft path, same approval, same transfer, with the block in
+ * `custom_greenhouse`.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { ChevronDown, ClipboardList, Layers } from "lucide-react";
+import { ChevronDown, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
-import { MapPanelDock } from "@/components/maps/MapPanelDock";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { Map3D } from "@/components/Map3D";
-import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
+import { LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,11 +34,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { HEADER_PILL } from "@/components/header-controls";
-import { BlockSprayPlan } from "./BlockSprayPlan";
-import { BlockGroupsPanel, groupKey } from "./BlockGroupsPanel";
-import { featureTag, groupAdjacentBlocks } from "@/lib/block-groups";
-import { fetchCreatorBootstrap } from "@/lib/spray-plan-creator-api";
-import { BAND_COLOR, BAND_LABEL, bandRank, judgedLabel, perHectare, type Band, type HouseFigure } from "@/lib/pest-bands";
+import { OpenFieldPlanner } from "@/components/spray-plan/OpenFieldPlanner";
+import { featureTag } from "@/lib/block-groups";
+import type { OpenFieldGroup } from "@/lib/open-field";
+import { BAND_LABEL, bandRank, judgedLabel, perHectare, type Band, type HouseFigure } from "@/lib/pest-bands";
 import { useHouseFigures } from "@/hooks/use-house-figures";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import {
@@ -50,14 +52,13 @@ import { useObservationColors } from "@/lib/observation-colors";
 import { fetchTrapLocations, type TrapLocations } from "@/lib/scouting-api";
 import { classOf } from "@/lib/idw";
 import { computeField, FIELD_RADIUS_M, observationOptions, type ObsOption } from "@/lib/pest-heat";
-import { ObservationPicker, obsKey } from "./ObservationPicker";
+import { ObservationMultiPicker, obsOptionKey as obsKey } from "@/components/ObservationMultiPicker";
+import { computeMultiField, rankBlocks, type MultiField } from "@/lib/pest-heat-multi";
 
 /** Band colours of the field: none/low, medium, high. */
 const FIELD_COLORS: [string, string, string] = ["#5bb45d", "#e9a23b", "#dc2626"];
 /** A block's name as scouting entries carry it (same match `selectBlock` uses). */
 const blockTag = (p: any): string => p?.block || p?.block_label || p?.name || "";
-/** Blocks whose edges are this close (m) are sprayed as one run. */
-const JOIN_TOLERANCE_M = 15;
 
 const fmt = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : "-");
 function toNum(v: unknown): number | null {
@@ -133,25 +134,20 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [showBoundary, setShowBoundary] = useState(false);
   const [showTrees, setShowTrees] = useState(true);
-  const [planOpen, setPlanOpen] = useState(false);
   // Block areas, for count per hectare.
   const [blockAreas, setBlockAreas] = useState<Record<string, number>>({});
-  // Which pests this plan is aimed at. The rose planner asks the same question
-  // — what are we spraying for — and the answer rides onto the plan's scope.
-  const [targets, setTargets] = useState<string[]>([]);
-  // Blocks ticked for a spray run (map click or sidebar), in pick order; `selected`
-  // is the one most recently picked — its pests/diseases fill the detail below.
+  // Blocks picked for spraying: the same list the planning column ticks, in pick order.
   const [picked, setPicked] = useState<string[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  // Which run (groupKey) has its plan form open.
-  const [planKey, setPlanKey] = useState<string | null>(null);
-  const [bootCc, setBootCc] = useState<Record<string, string | null>>({});
-  const [bootAreas, setBootAreas] = useState<Record<string, number>>({});
-  // The one pest or disease the field shows (null = the most-seen pest).
-  const [pickedObs, setPickedObs] = useState<string | null>(null);
+  // A block to bring into view in that list (picked on the map).
+  const [focus, setFocus] = useState<string | null>(null);
+  // The blocks the user may plan on (the map only adds these to the plan).
+  const [plannable, setPlannable] = useState<Set<string>>(new Set());
+  // The block whose card is open over the map.
+  const [detail, setDetail] = useState<string | null>(null);
+  // The pests and diseases the field shows (null = all of them, so ones seen
+  // later in the window join in).
+  const [pickedObs, setPickedObs] = useState<Set<string> | null>(null);
   const [fixedTraps, setFixedTraps] = useState<TrapLocations>({});
-  // Targets belong to the block they were chosen on. Carrying them across would
-  // quietly plan a spray for pests nobody looked at on the new block.
 
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -193,21 +189,6 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     };
   }, [filters.farm]);
 
-  // Cost centre and area per block, as the planner will see them.
-  useEffect(() => {
-    let cancelled = false;
-    fetchCreatorBootstrap(filters.crop)
-      .then((b) => {
-        if (cancelled) return;
-        setBootCc(Object.fromEntries((b.blocks || []).map((x) => [x.name, x.cost_center || null])));
-        setBootAreas(Object.fromEntries((b.blocks || []).map((x) => [x.name, x.area_ha || 0])));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [filters.crop]);
-
   useEffect(() => {
     let cancelled = false;
     void fetchTrapLocations(filters.farm === ALL ? undefined : filters.farm).then((t) => {
@@ -218,21 +199,31 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     };
   }, [filters.farm]);
 
-  // The observations seen in the window; the field shows one of them.
+  // The observations seen in the window; the field shows the selected ones.
   const obsOptions = useMemo(() => (data ? observationOptions(data.entries) : []), [data]);
-  const obs: ObsOption | null =
-    obsOptions.find((o) => obsKey(o) === pickedObs) ??
-    obsOptions.find((o) => o.kind === "pest" && o.count > 0) ??
-    obsOptions[0] ??
-    null;
-  const obsId = obs ? obsKey(obs) : null;
-
-  // The field for the picked observation: every located entry is a sample
-  // (0 where scouted and not found), IDW-filled across the block polygons.
-  const fieldResult = useMemo(
-    () => (data && obs && blocks ? computeField(data.entries, obs, blocks, fixedTraps, blockTag, FIELD_COLORS) : null),
-    [data, obs, blocks, fixedTraps],
+  const selected = useMemo(
+    () => (pickedObs ? obsOptions.filter((o) => pickedObs.has(obsKey(o))) : obsOptions),
+    [obsOptions, pickedObs],
   );
+  const selectedKeys = useMemo(() => new Set(selected.map(obsKey)), [selected]);
+  // Exactly one selected keeps the single-pest field; several colour by the worst of them.
+  const obs: ObsOption | null = selected.length === 1 ? selected[0] : null;
+  const multi = selected.length > 1;
+  const obsLabel = obs ? obs.name : multi ? `${selected.length} pests and diseases` : "";
+  const onPick = (next: Set<string>) =>
+    setPickedObs(obsOptions.length > 0 && obsOptions.every((o) => next.has(obsKey(o))) ? null : next);
+
+  // The field: every located entry is a sample (0 where scouted and not found),
+  // IDW-filled across the block polygons.
+  const fieldResult: MultiField | ReturnType<typeof computeField> | null = useMemo(() => {
+    if (!data || !blocks || !selected.length) return null;
+    if (selected.length === 1)
+      return computeField(data.entries, selected[0], blocks, fixedTraps, blockTag, FIELD_COLORS);
+    return computeMultiField(
+      data.entries, selected, blocks, fixedTraps, blockTag,
+      (o) => (o.kind === "pest" ? pestColor(o.name) : diseaseColor(o.name)), FIELD_COLORS[0],
+    );
+  }, [data, selected, blocks, fixedTraps, pestColor, diseaseColor]);
   const heat = fieldResult?.kind === "ok" ? fieldResult : null;
   // Why the map is blank, said plainly (coffee blocks may not be keyed in yet).
   const emptyMsg =
@@ -240,7 +231,9 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       ? null
       : blocks.features.length === 0 || fieldResult?.kind === "no-blocks"
         ? "No blocks mapped for this crop yet"
-        : !obs || fieldResult?.kind === "no-samples"
+        : !selected.length
+          ? "Pick at least one pest or disease"
+          : fieldResult?.kind === "no-samples"
           ? "No geo-tagged scouting for this crop in this window"
           : null;
 
@@ -311,36 +304,17 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
 
   // Blocks ranked by the picked observation: mean of the filled field, and the
   // share of the filled area in the red band (not by total observations).
-  const ranked = useMemo(
-    () =>
-      (heat?.blocks ?? [])
-        .filter((b) => b.tag && b.coverage > 0)
-        .sort((x, y) => y.mean - x.mean || y.redShare - x.redShare),
-    [heat],
-  );
-  useEffect(() => {
-    if (!picked.length) setTargets([]);
-  }, [picked.length]);
-
-  const areas = useMemo(() => ({ ...bootAreas, ...blockAreas }), [bootAreas, blockAreas]);
-  // Touching picks join into one run; the rest stay separate runs.
-  const groups = useMemo(
-    () => (blocks ? groupAdjacentBlocks(blocks.features, picked, JOIN_TOLERANCE_M) : picked.map((b) => [b])),
-    [blocks, picked],
-  );
-  const planGroup = planKey ? groups.find((g) => groupKey(g) === planKey) || null : null;
-  useEffect(() => {
-    if (planKey && !planGroup) setPlanKey(null);
-  }, [planKey, planGroup]);
-
-  const selectedAgg = useMemo(
-    () => blockAggs.find((b) => b.block === selected) || null,
-    [blockAggs, selected],
+  const ranked = useMemo(() => rankBlocks(heat?.blocks ?? []), [heat]);
+  const multiHeat = heat && "share" in heat ? (heat as Extract<MultiField, { kind: "ok" }>) : null;
+  const dominantOf = (tag: string) => multiHeat?.dominant.get(tag);
+  const detailAgg = useMemo(
+    () => blockAggs.find((b) => b.block === detail) || null,
+    [blockAggs, detail],
   );
 
   // Each pest of the selected block, judged on the server exactly as the
   // alerts and the weekly sheet judge it (thresholds D8).
-  const houseFigs = useHouseFigures(filters.crop, selectedAgg?.block ?? null, filters.from, filters.to);
+  const houseFigs = useHouseFigures(filters.crop, detail, filters.from, filters.to);
 
   const onMapReady = (map: maplibregl.Map) => {
     mapRef.current = map;
@@ -459,20 +433,9 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         source: "block-sel",
         paint: { "line-color": "#d9a514", "line-width": 3, "line-opacity": 1 },
       });
-      // Joined runs: the members' outer edges again, thicker, as one outline.
-      map.addSource("block-group", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] } as never,
-      });
-      map.addLayer({
-        id: "block-group",
-        type: "line",
-        source: "block-group",
-        paint: { "line-color": "#8a6508", "line-width": 4.5, "line-opacity": 0.9 },
-      });
       map.on("click", "blocks-fill", (e) => {
         const tag = blockTag(e.features?.[0]?.properties);
-        if (tag) toggleRef.current(tag, false);
+        if (tag) pickOnMapRef.current(tag);
       });
       map.on("mouseenter", "blocks-fill", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "blocks-fill", () => (map.getCanvas().style.cursor = ""));
@@ -499,58 +462,50 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     if (b) map.fitBounds(b, { padding: 60, duration: 800 });
   }, [blocks, mapReady, filters.farm]);
 
-  // Tick / untick a block for the run. From the list the map flies to its
-  // observations (when it is the first pick); from a map click it stays put.
-  const toggleBlock = (block: string, fly = true) => {
-    const on = !picked.includes(block);
-    const next = on ? [...picked, block] : picked.filter((b) => b !== block);
-    setPicked(next);
-    setSelected(on ? block : next[next.length - 1] ?? null);
-    if (on) setPlanOpen(true);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+  const pickedRef = useRef(picked);
+  pickedRef.current = picked;
+  const plannableRef = useRef(plannable);
+  plannableRef.current = plannable;
+
+  const flyToBlock = (block: string) => {
     const map = mapRef.current;
-    const agg = blockAggs.find((b) => b.block === block);
-    if (fly && on && picked.length === 0 && map && agg && Number.isFinite(agg.minX)) {
-      map.fitBounds(
-        [
-          [agg.minX, agg.minY],
-          [agg.maxX, agg.maxY],
-        ],
-        { padding: 140, duration: 800, maxZoom: 18 },
-      );
+    const f = (blocksRef.current?.features ?? []).filter((x) => featureTag(x) === block);
+    const bb = allBlocksBounds({ type: "FeatureCollection", features: f } as GeoJsonFC);
+    if (map && bb) map.fitBounds(bb, { padding: 140, duration: 800, maxZoom: 18 });
+  };
+  /** From the list: a single new pick is flown to; the list scrolls to it. */
+  const onListSelect = (next: string[]) => {
+    const added = next.filter((n) => !pickedRef.current.includes(n));
+    setPicked(next);
+    if (added.length === 1) {
+      setFocus(added[0]);
+      setDetail(added[0]);
+      flyToBlock(added[0]);
     }
   };
-  // The list is clipped once there are picks, so a block picked on the map
-  // (or one of the tail ranks) can sit out of view: scroll its checked row in.
-  const listRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!selected || !picked.includes(selected)) return;
-    const box = listRef.current;
-    const row = box
-      ? Array.from(box.querySelectorAll<HTMLElement>("[data-block]")).find((r) => r.dataset.block === selected)
-      : null;
-    if (!box || !row) return;
-    const top = row.offsetTop - box.offsetTop;
-    if (top < box.scrollTop || top + row.offsetHeight > box.scrollTop + box.clientHeight)
-      box.scrollTop = Math.max(0, top - box.clientHeight / 2 + row.offsetHeight / 2);
-  }, [selected, picked, planOpen]);
-  const toggleRef = useRef(toggleBlock);
-  toggleRef.current = toggleBlock;
+  /** From the map: a plannable block joins the plan; the card opens either way. */
+  const pickOnMap = (block: string) => {
+    if (plannableRef.current.has(block) && !pickedRef.current.includes(block)) setPicked([...pickedRef.current, block]);
+    setFocus(block);
+    setDetail(block);
+  };
+  const pickOnMapRef = useRef(pickOnMap);
+  pickOnMapRef.current = pickOnMap;
+  const togglePick = (block: string) =>
+    setPicked((p) => (p.includes(block) ? p.filter((b) => b !== block) : [...p, block]));
 
-  // Outline + light fill for the picks; a thick outline for each joined run.
+  // Outline + light fill for the picks.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !blocks) return;
-    const byTag = new Map(blocks.features.map((f) => [featureTag(f), f]));
-    const feats = (names: string[]) => names.map((n) => byTag.get(n)).filter((f) => !!f);
+    const on = new Set(picked);
     (map.getSource("block-sel") as maplibregl.GeoJSONSource | undefined)?.setData({
       type: "FeatureCollection",
-      features: feats(picked),
+      features: blocks.features.filter((f) => on.has(featureTag(f))),
     } as never);
-    (map.getSource("block-group") as maplibregl.GeoJSONSource | undefined)?.setData({
-      type: "FeatureCollection",
-      features: groups.filter((g) => g.length > 1).flatMap(feats),
-    } as never);
-  }, [picked, groups, blocks, mapReady]);
+  }, [picked, blocks, mapReady]);
 
   const topN = (m: Map<string, number>, n = 5) =>
     Array.from(m.entries())
@@ -561,88 +516,86 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   // pest furthest over its threshold leads, not merely the biggest count. A pest
   // with no band keeps its place by count rather than being dropped.
   const rankedPests = useMemo(() => {
-    if (!selectedAgg) return [] as Array<readonly [string, number, Band, HouseFigure | null]>;
-    return Array.from(selectedAgg.pests.entries())
+    if (!detailAgg) return [] as Array<readonly [string, number, Band, HouseFigure | null]>;
+    return Array.from(detailAgg.pests.entries())
       .map(([name, count]) => {
         const f = houseFigs[name] ?? null;
         return [name, count, f?.band ?? null, f] as const;
       })
       .sort((a, b) => bandRank(b[2]) - bandRank(a[2]) || b[1] - a[1])
       .slice(0, 8);
-  }, [selectedAgg, houseFigs]);
+  }, [detailAgg, houseFigs]);
 
-  // First load (no scouting processed yet): the legend and panel headings
-  // stand, the counts and the affected-block list are skeletons.
+  // First load (no scouting processed yet): the legend stays, the counts are skeletons.
   // A failed load ends the skeletons and says so (below), rather than pulsing on.
   const first = firstLoad(loading || (!data && !error), !!data);
 
   return (
-    <div className="flex flex-col h-svh overflow-hidden">
+    <div className="flex h-svh flex-col overflow-y-auto lg:overflow-hidden">
       <MapHeader
-        // The sidebar has called this "Jobsheet" since the prescribe flow
-        // landed on it; the heading still said "Heat maps", so the page a
-        // manager was sent to did not match the name they were sent to.
-        title="Jobsheet"
-        subtitle={obs ? `${obs.name} · zeros count · estimated between scouts` : "Orchard pest & disease"}
+        title="Application Floor Plan"
+        subtitle={obsLabel ? `${obsLabel} · select blocks on the map or in the list, plan each` : "Pest & disease, then the plan"}
         value={filters}
         onChange={setFilters}
         showGreenhouse={false}
         rightSlot={
-          <>
-            <Button
-              variant={planOpen ? "default" : "outline"}
-              size="sm"
-              className={HEADER_PILL}
-              onClick={() => setPlanOpen((o) => !o)}
-            >
-              <ClipboardList className="h-3.5 w-3.5" />
-              Plan
-            </Button>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className={HEADER_PILL}>
-                  <Layers className="h-3.5 w-3.5" />
-                  Layers
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-44 p-2">
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
-                  <Checkbox
-                    checked={showTrees}
-                    onCheckedChange={(v) => setShowTrees(!!v)}
-                  />
-                  Trees
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
-                  <Checkbox
-                    checked={showBoundary}
-                    onCheckedChange={(v) => setShowBoundary(!!v)}
-                  />
-                  Boundary
-                </label>
-              </PopoverContent>
-            </Popover>
-          </>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className={HEADER_PILL}>
+                <Layers className="h-3.5 w-3.5" />
+                Layers
+                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-44 p-2">
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                <Checkbox checked={showTrees} onCheckedChange={(v) => setShowTrees(!!v)} />
+                Trees
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                <Checkbox checked={showBoundary} onCheckedChange={(v) => setShowBoundary(!!v)} />
+                Boundary
+              </label>
+            </PopoverContent>
+          </Popover>
         }
       />
 
-      <div className="flex items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b">
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground md:px-6" data-testid="heat-legend">
         {/* Was a full-screen overlay; inline here so the map shows through. */}
         {error && !data && !loading && (
           <span role="alert" className="text-destructive">{error}</span>
         )}
         <LoadProgress active={loading || loadingGeo} progress={loading ? progress : 100} />
-        <ObservationPicker options={obsOptions} value={obs} onChange={(o) => setPickedObs(obsKey(o))} />
-        {[
-          ["None / low", FIELD_COLORS[0]],
-          ["Medium", FIELD_COLORS[1]],
-          ["High", FIELD_COLORS[2]],
-        ].map(([label, c]) => (
+        <ObservationMultiPicker options={obsOptions} value={selectedKeys} onChange={onPick} />
+        {multi && multiHeat ? (
+          <>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full" style={{ background: FIELD_COLORS[0] }} /> None / low
+            </span>
+            {selected
+              .filter((o) => multiHeat.share.has(obsKey(o)))
+              .sort((a, b) => (multiHeat.share.get(obsKey(b)) || 0) - (multiHeat.share.get(obsKey(a)) || 0))
+              .slice(0, 6)
+              .map((o) => (
+                <span key={obsKey(o)} className="flex items-center gap-1.5" data-testid="legend-obs">
+                  <span className="h-2 w-2 rounded-full" style={{ background: o.kind === "pest" ? pestColor(o.name) : diseaseColor(o.name) }} />
+                  {o.name}
+                </span>
+              ))}
+            <span>Each patch takes the colour of the worst selected observation there; stronger means higher.</span>
+          </>
+        ) : (
+          [
+            ["None / low", FIELD_COLORS[0]],
+            ["Medium", FIELD_COLORS[1]],
+            ["High", FIELD_COLORS[2]],
+          ].map(([label, c]) => (
           <span key={label} className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full" style={{ background: c }} /> {label}
           </span>
-        ))}
+        ))
+        )}
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-4 rounded-full opacity-40" style={{ background: "linear-gradient(90deg, #e9a23b, transparent)" }} />
           Estimated (no scout within {FIELD_RADIUS_M} m)
@@ -662,8 +615,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         )}
       </div>
 
-      <div className="flex-1 min-h-0 px-4 pb-4 md:px-6 md:pb-6">
-        <div className="relative h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:px-6 md:pb-6 lg:flex-row">
+        <div
+          className="relative min-h-[420px] w-full flex-1 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)] lg:min-h-0"
+          data-testid="plan-map"
+        >
           <Map3D onReady={onMapReady} initialPitch={0} />
 
           {emptyMsg && (
@@ -678,201 +634,120 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
           <MapKpiPill>
             {first ? (
               <TextSkeleton width="24ch" />
+            ) : heat ? (
+              `${ranked.length} blocks · ${heat.samples} samples (${heat.hits} with ${obsLabel || "it"}${heat.traps ? `, ${heat.traps} traps` : ""})`
             ) : (
-              <>
-                {heat
-                  ? `${ranked.length} blocks · ${heat.samples} samples (${heat.hits} with ${obs?.name ?? "it"}${heat.traps ? `, ${heat.traps} traps` : ""})`
-                  : "No located samples"}
-              </>
+              "No located samples"
             )}
           </MapKpiPill>
 
-          <MapPanelDock>
-          {planOpen && (
-            // The plan is the working half of this page (a team, a kit, a
-            // rate per chemical, the targets), so this one card is a little
-            // wider than the standard 320px.
-            <MapFloatingCard
-              eyebrow="Plan"
-              title={picked.length ? `${picked.length} selected` : "Affected blocks"}
-              onClose={() => {
-                if (picked.length) {
-                  setPicked([]);
-                  setSelected(null);
-                  setPlanKey(null);
-                } else setPlanOpen(false);
-              }}
-              className="w-[min(400px,calc(100%-2rem))]"
-              closeLabel={picked.length ? "Clear selection" : "Close"}
-              testId="plan-card"
-            >
-            <div aria-busy={first || undefined}>
-              {first ? (
-                  <RowsSkeleton rows={6} />
-                ) : ranked.length ? (
-                  <div ref={listRef} className={picked.length ? "max-h-52 overflow-y-auto" : undefined}>
-                  {ranked.map((b) => (
-                    <label
-                      key={b.tag}
-                      data-block={b.tag}
-                      className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-muted"
-                    >
-                      <Checkbox checked={picked.includes(b.tag)} onCheckedChange={() => toggleBlock(b.tag)} />
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ background: FIELD_COLORS[heat ? classOf(b.mean, heat.cuts) : 0] }}
-                        aria-hidden
-                      />
-                      <span className="flex-1 truncate" title={b.tag}>
-                        {b.tag}
-                      </span>
-                      <span className="tabular-nums text-muted-foreground" title="Mean of the filled field · share of it in the red band">
-                        {fmt(b.mean)} · {Math.round(b.redShare * 100)}% red
-                      </span>
-                    </label>
-                  ))}
+          {detail && (
+            <MapFloatingCard eyebrow="Block" title={detail} onClose={() => setDetail(null)} testId="map-detail-card">
+              <div className="space-y-3 text-xs">
+                {detailAgg ? (
+                  <div className="text-muted-foreground">
+                    {detailAgg.obs} observations · {detailAgg.trees.size} trees scouted
+                    {(() => {
+                      const ha = perHectare(
+                        Array.from(detailAgg.pests.values()).reduce((s, c) => s + c, 0),
+                        blockAreas[detailAgg.block],
+                      );
+                      return ha != null ? ` · ${ha} pests / ha` : "";
+                    })()}
                   </div>
                 ) : (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No located samples for this observation
+                  <div className="text-muted-foreground">No scouting in this window</div>
+                )}
+                {detailAgg && (
+                  <div>
+                    <div className="mb-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">Top pests</div>
+                    {rankedPests.length ? (
+                      rankedPests.map(([name, count, band, judged]) => (
+                        <div key={name} className="flex items-center gap-2 px-1.5 py-1">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: pestColor(name) }} aria-hidden />
+                          <span className="flex-1 truncate" title={name}>{name}</span>
+                          {band && judged ? (
+                            <span className="tabular-nums text-[0.65rem] text-muted-foreground">{judgedLabel(judged as HouseFigure)}</span>
+                          ) : null}
+                          {band ? (
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide">
+                              {BAND_LABEL[band as "high"]}
+                            </span>
+                          ) : null}
+                          <span className="w-8 text-right tabular-nums text-muted-foreground">{count}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-1.5 py-1 text-muted-foreground">None</div>
+                    )}
+                    <div className="mb-1 mt-2 text-[0.7rem] uppercase tracking-wide text-muted-foreground">Top diseases</div>
+                    {detailAgg.diseases.size ? (
+                      topN(detailAgg.diseases).map(([name, count]) => (
+                        <div key={name} className="flex items-center gap-2 px-1.5 py-1">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: diseaseColor(name) }} aria-hidden />
+                          <span className="flex-1 truncate" title={name}>{name}</span>
+                          <span className="w-8 text-right tabular-nums text-muted-foreground">{count}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-1.5 py-1 text-muted-foreground">None</div>
+                    )}
                   </div>
                 )}
-              {picked.length > 0 && (
-                <div className="mt-2 space-y-3 border-t pt-2">
-                  <BlockGroupsPanel
-                    groups={groups}
-                    areas={areas}
-                    costCenters={bootCc}
-                    activeKey={planKey}
-                    onPlan={(g) => setPlanKey(groupKey(g))}
-                  />
-                </div>
-              )}
-              {selectedAgg && (
-                <div className="space-y-3 p-1 text-xs">
-                  <div className="border-t pt-2">
-                    <div className="text-sm font-semibold">
-                      {selectedAgg.block}
-                    </div>
-                    <div className="text-muted-foreground">
-                      {selectedAgg.obs} observations · {selectedAgg.trees.size}{" "}
-                      trees scouted
-                      {(() => {
-                        const ha = perHectare(
-                          Array.from(selectedAgg.pests.values()).reduce((s, c) => s + c, 0),
-                          blockAreas[selectedAgg.block],
-                        );
-                        return ha != null ? ` · ${ha} pests / ha` : "";
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Pests lead, ranked by pressure rather than by raw count,
-                      and each is selectable: choosing what to spray for is the
-                      first step of the rose flow and it belongs here too.
-                      Diseases stay informational — the plan targets pests. */}
-                  {[
-                    {
-                      title: "Top pests",
-                      rows: rankedPests,
-                      colorOf: pestColor,
-                      selectable: true,
-                    },
-                    {
-                      title: "Top diseases",
-                      rows: topN(selectedAgg.diseases).map(
-                        ([n, c]) => [n, c, null, null] as const,
-                      ),
-                      colorOf: diseaseColor,
-                      selectable: false,
-                    },
-                  ].map((s) => (
-                    <div key={s.title}>
-                      <div className="mb-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
-                        {s.title}
-                      </div>
-                      {s.rows.length ? (
-                        s.rows.map(([name, count, band, judged]) => (
-                          <label
-                            key={name}
-                            className={`flex items-center gap-2 rounded px-1.5 py-1 ${
-                              s.selectable ? "cursor-pointer hover:bg-muted" : ""
-                            }`}
-                          >
-                            {s.selectable ? (
-                              <Checkbox
-                                checked={targets.includes(name as string)}
-                                onCheckedChange={(v) =>
-                                  setTargets((t) =>
-                                    v
-                                      ? [...t, name as string]
-                                      : t.filter((x) => x !== name),
-                                  )
-                                }
-                              />
-                            ) : (
-                              <span
-                                className="h-2.5 w-2.5 shrink-0 rounded-full border"
-                                style={{ background: s.colorOf(name as string) }}
-                                aria-hidden
-                              />
-                            )}
-                            <span className="flex-1 truncate" title={name as string}>
-                              {name}
-                            </span>
-                            {/* Only when a band was actually computed. Without a
-                                threshold the "judged" figure is just the count
-                                again, and printing "56.0  56" reads as two
-                                different numbers that happen to agree. */}
-                            {band && judged ? (
-                              <span className="tabular-nums text-[0.65rem] text-muted-foreground">
-                                {judgedLabel(judged as HouseFigure)}
-                              </span>
-                            ) : null}
-                            {band ? (
-                              <span
-                                className="rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide"
-                                style={{
-                                  background: `${BAND_COLOR[band as "high"]}22`,
-                                  color: BAND_COLOR[band as "high"],
-                                }}
-                              >
-                                {BAND_LABEL[band as "high"]}
-                              </span>
-                            ) : null}
-                            <span className="w-8 text-right tabular-nums text-muted-foreground">
-                              {count}
-                            </span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className="px-1.5 py-1 text-muted-foreground">None</div>
-                      )}
-                    </div>
-                  ))}
-
-                </div>
-              )}
-              {planGroup && (
-                <div className="mt-2 border-t pt-2 text-xs">
-                  <div className="mb-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
-                    Plan spray
-                  </div>
-                  <BlockSprayPlan
-                    key={groupKey(planGroup)}
-                    blocks={planGroup}
-                    targets={targets}
-                    crop={filters.crop}
-                  />
-                </div>
-              )}
-            </div>
+                {plannable.has(detail) && (
+                  <Button
+                    size="sm"
+                    variant={picked.includes(detail) ? "outline" : "default"}
+                    className="w-full rounded-full"
+                    onClick={() => togglePick(detail)}
+                  >
+                    {picked.includes(detail) ? "Remove from the plan" : "Add to the plan"}
+                  </Button>
+                )}
+              </div>
             </MapFloatingCard>
           )}
-          </MapPanelDock>
         </div>
-      </div>
 
+        <aside
+          className="w-full shrink-0 lg:w-[min(460px,40%)] lg:min-h-0 lg:overflow-y-auto lg:pr-1"
+          data-testid="plan-column"
+          aria-label="Plan"
+        >
+          <OpenFieldPlanner
+            crop={filters.crop}
+            selected={picked}
+            onSelect={onListSelect}
+            focus={focus}
+            onBlocks={(gs: OpenFieldGroup[]) => setPlannable(new Set(gs.flatMap((g) => g.blocks.map((b) => b.name))))}
+            rowExtra={(b) => {
+              const r = ranked.find((x) => x.tag === b.name);
+              if (!r || !heat) return null;
+              const domKey = dominantOf(b.name);
+              const dom = domKey ? selected.find((o) => obsKey(o) === domKey) : undefined;
+              return (
+                <span
+                  className="flex items-center gap-1 text-[0.65rem] tabular-nums text-muted-foreground"
+                  title={`${dom ? `${dom.name} is the worst of ${obsLabel} on this block: ` : `${obs?.name ?? ""} on this block: `}mean of the filled field, ${Math.round(r.redShare * 100)}% in the red band`}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    data-testid="row-heat"
+                    style={{
+                      background: dom
+                        ? dom.kind === "pest" ? pestColor(dom.name) : diseaseColor(dom.name)
+                        : FIELD_COLORS[classOf(r.mean, heat.cuts)],
+                    }}
+                    aria-hidden
+                  />
+                  {dom && <span className="max-w-[5rem] truncate">{dom.name}</span>}
+                  {fmt(r.mean)}
+                </span>
+              );
+            }}
+          />
+        </aside>
+      </div>
     </div>
   );
 }

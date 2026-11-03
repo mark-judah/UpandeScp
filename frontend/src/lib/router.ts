@@ -102,6 +102,12 @@ export function cropDisplayName(slug: string): string {
     .join(" ");
 }
 
+/** Retired routes and where they live now: the open-field Spray Plan merged into the
+ *  avocado Application Floor Plan. */
+export const VIEW_ALIASES: Readonly<Record<string, View>> = {
+  "open-field-plan": "application-plan",
+};
+
 function isKnownView(v: string): v is View {
   return (KNOWN_VIEWS as Set<string>).has(v);
 }
@@ -111,7 +117,8 @@ function parseHash(): Route {
   const parts = raw.split("?")[0].split("/").filter(Boolean);
 
   if (parts.length >= 2) {
-    const view = parts[1].toLowerCase();
+    const rawView = parts[1].toLowerCase();
+    const view = VIEW_ALIASES[rawView] ?? rawView;
     return {
       crop: cropSlug(parts[0]),
       view: isKnownView(view) ? view : DEFAULT_VIEW,
@@ -141,7 +148,18 @@ export function useRoute(): [Route, (next: Partial<Route>) => void] {
   const [route, setRoute] = useState<Route>(parseHash);
 
   useEffect(() => {
-    const onChange = () => setRoute(parseHash());
+    // A retired route's link lands on its new page, and the address bar says so.
+    const canonical = () => {
+      const h = routeHash(parseHash());
+      const raw = (window.location.hash || "").split("?")[0];
+      if (raw !== h && Object.keys(VIEW_ALIASES).some((a) => raw.toLowerCase().endsWith(`/${a}`)))
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${h}`);
+    };
+    canonical();
+    const onChange = () => {
+      canonical();
+      setRoute(parseHash());
+    };
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);

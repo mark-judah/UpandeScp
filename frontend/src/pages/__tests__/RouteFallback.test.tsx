@@ -11,8 +11,8 @@ describe("route fallback (skeleton spec K5)", () => {
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
-  it("uses the crop's label: the avocado Jobsheet is the heatmaps route", () => {
-    expect(routeHeading("avocado", "heatmaps")).toEqual({ title: "Jobsheet", eyebrow: "Crop Protection" });
+  it("uses the crop's label: the avocado Application Floor Plan is the application-plan route", () => {
+    expect(routeHeading("avocado", "application-plan")).toEqual({ title: "Application Floor Plan", eyebrow: "Crop Protection" });
     expect(routeHeading("rose", "sprayers")).toEqual({ title: "Sprayers", eyebrow: "Personnel" });
   });
 

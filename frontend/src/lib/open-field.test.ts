@@ -1,0 +1,163 @@
+import { describe, expect, it } from "vitest";
+import type { RateRow } from "@/lib/spray-rates";
+import {
+  COLLAPSE_ABOVE,
+  effectiveArea,
+  chemicalQty,
+  defaultRate,
+  emptyPlan,
+  rateOutOfRange,
+  withRateRows,
+  groupState,
+  planProblems,
+  shouldCollapse,
+  toDraftPayload,
+  toggleGroup,
+  type OpenFieldBlock,
+} from "@/lib/open-field";
+
+const blk = (name: string, over: Partial<OpenFieldBlock> = {}): OpenFieldBlock => ({
+  name,
+  label: name.replace(/ - KL$/, ""),
+  farm: "Lokitela",
+  crop: "Avocado",
+  crop_label: "Avocado",
+  area_ha: 2,
+  cost_center: name,
+  ...over,
+});
+
+const twelve = Array.from({ length: 12 }, (_, i) => blk(`S1-B${i + 1} - KL`));
+
+describe("selection", () => {
+  it("select-all on a group adds every block of it, whatever the count", () => {
+    const next = toggleGroup([], twelve);
+    expect(next).toHaveLength(12);
+    expect(next[0]).toBe("S1-B1 - KL");
+  });
+
+  it("select-all keeps blocks already chosen elsewhere and the order of choice", () => {
+    const next = toggleGroup(["Avocado Block A - KL", "S1-B3 - KL"], twelve);
+    expect(next.slice(0, 2)).toEqual(["Avocado Block A - KL", "S1-B3 - KL"]);
+    expect(next).toHaveLength(13);
+  });
+
+  it("toggling a fully selected group clears just that group", () => {
+    const all = toggleGroup(["Avocado Block A - KL"], twelve);
+    expect(toggleGroup(all, twelve)).toEqual(["Avocado Block A - KL"]);
+  });
+
+  it("group state is none, some or all", () => {
+    expect(groupState([], twelve)).toBe("none");
+    expect(groupState(["S1-B1 - KL"], twelve)).toBe("some");
+    expect(groupState(twelve.map((b) => b.name), twelve)).toBe("all");
+  });
+});
+
+describe("collapse", () => {
+  it("collapses to one open block once more than two are selected", () => {
+    expect(COLLAPSE_ABOVE).toBe(2);
+    expect(shouldCollapse(1)).toBe(false);
+    expect(shouldCollapse(2)).toBe(false);
+    expect(shouldCollapse(3)).toBe(true);
+  });
+});
+
+describe("plan completeness", () => {
+  const ok = {
+    ...emptyPlan(),
+    classification: "Curative" as const,
+    team: "Spray 1",
+    bom: "BOM-1",
+    targets: ["Thrips"],
+    chemicals: [{ item_code: "X", item_name: "X", stock_uom: "Litre", basis: "Water" as const, rate: 1, source: "Chemical Store - KL" }],
+  };
+
+  it("at least one target is needed", () => {
+    expect(planProblems({ ...ok, targets: [] }, 2)).toContain("a target");
+  });
+
+  it("a new plan lacks everything", () => {
+    const p = planProblems(emptyPlan(), 2);
+    expect(p).toEqual(expect.arrayContaining(["Preventive or Curative", "team", "tank mix"]));
+  });
+
+  it("a finished plan has no problems", () => {
+    expect(planProblems(ok, 2)).toEqual([]);
+  });
+
+  it("preventive needs a 20 character reason", () => {
+    expect(planProblems({ ...ok, classification: "Preventive" }, 2)).toContain("a reason");
+    expect(
+      planProblems({ ...ok, classification: "Preventive", reason: "Routine fortnightly cover in the wet season" }, 2),
+    ).toEqual([]);
+  });
+
+  it("a block without area cannot be planned until one is typed", () => {
+    expect(planProblems(ok, 0)).toContain("an area");
+    const typed = { ...ok, area: "1.5" };
+    expect(effectiveArea(blk("A - KL", { area_ha: 0 }), typed)).toBe(1.5);
+    expect(planProblems(typed, effectiveArea(blk("A - KL", { area_ha: 0 }), typed))).toEqual([]);
+  });
+});
+
+describe("payload", () => {
+  it("is a one-block draft: block as greenhouse, area x 1000 L water, quantity = rate x litres / 1000", () => {
+    const p = toDraftPayload(blk("S1-B1 - KL"), {
+      ...emptyPlan(),
+      classification: "Curative",
+      team: "Spray 1",
+      bom: "BOM-1",
+      kit: "Kit 1",
+      targets: ["Thrips"],
+      chemicals: [{ item_code: "X", item_name: "X", stock_uom: "Litre", basis: "Water" as const, rate: 2, source: "Chemical Store - KL" }],
+    }, 2.5, "2026-10-30 06:00:00");
+    expect(p.custom_greenhouse).toBe("S1-B1 - KL");
+    expect(p.custom_blocks).toBeUndefined();
+    expect(p.custom_area).toBe(2.5);
+    expect(p.custom_water_volume).toBe(2500);
+    expect(p.chemicals[0]).toMatchObject({ item_code: "X", application_rate: 5, source_warehouse: "Chemical Store - KL" });
+    expect(p.production_item).toBe("BOM-1");
+    expect(p.custom_scope).toBe("Whole Block");
+    expect(p.custom_targets).toEqual(["Thrips"]);
+    expect(p.custom_scheduled_application_time).toBe("2026-10-30 06:00:00");
+  });
+});
+
+describe("rates by basis", () => {
+  const water: RateRow = { basis: "Water", lower: 0.5, upper: 1, crop: null, source: "default" };
+  const ha: RateRow = { basis: "Hectarage", lower: 2, upper: 4, crop: "Avocado", source: "crop" };
+  const chem = { item_code: "X", item_name: "X", stock_uom: "Litre", basis: "Water" as const, rate: 2 };
+
+  it("a Hectarage rate takes its quantity from the block's area (rate x m2 / 10,000)", () => {
+    expect(chemicalQty({ rate: 3, basis: "Hectarage" }, 2.5)).toBeCloseTo(7.5);
+  });
+  it("a Water rate takes it from the water volume (area x 1000 L)", () => {
+    expect(chemicalQty({ rate: 2, basis: "Water" }, 2.5)).toBeCloseTo(5);
+  });
+  it("no area, no quantity", () => {
+    expect(chemicalQty({ rate: 3, basis: "Hectarage" }, 0)).toBe(0);
+  });
+  it("a product with a Hectarage row for the crop is planned on it, at the middle of its range", () => {
+    const c = withRateRows(chem, [ha, water]);
+    expect(c).toMatchObject({ basis: "Hectarage", rate: 3, lower: 2, upper: 4 });
+  });
+  it("without one it stays on Water at the tank mix's own rate, keeping the water range", () => {
+    const c = withRateRows(chem, [water]);
+    expect(c).toMatchObject({ basis: "Water", rate: 2, lower: 0.5, upper: 1 });
+    expect(rateOutOfRange(c)).toBe(true);
+    expect(withRateRows(chem, undefined)).toMatchObject({ basis: "Water", rate: 2 });
+  });
+  it("one-sided ranges use the side that is set", () => {
+    expect(defaultRate({ lower: 0, upper: 5 })).toBe(5);
+    expect(defaultRate({ lower: 1.5, upper: 0 })).toBe(1.5);
+  });
+  it("the payload carries the absolute quantity, area-based for Hectarage", () => {
+    const p = toDraftPayload(blk("S1-B1 - KL"), {
+      ...emptyPlan(), classification: "Curative", team: "T", bom: "B", targets: ["Thrips"],
+      chemicals: [{ ...chem, basis: "Hectarage", rate: 3 }, { ...chem, item_code: "Y", rate: 2 }],
+    }, 2.5, "2026-10-30 06:00:00");
+    expect(p.chemicals.map((c) => c.application_rate)).toEqual([7.5, 5]);
+    expect(p.custom_water_volume).toBe(2500);
+  });
+});

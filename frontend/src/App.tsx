@@ -300,7 +300,13 @@ function renderView(crop: string, view: View): ReactNode {
     case "spray-plan-access":
       return <SprayPlanAccess />;
     case "application-plan":
-      return <ApplicationPlan initialCrop={cropName} />;
+      // Avocado's Application Floor Plan is the heat-map page (it kept that component when
+      // the Jobsheet was renamed), so #/avocado/application-plan lands there.
+      return crop === "avocado" ? (
+        <AvocadoHeatMap initialCrop={cropName} />
+      ) : (
+        <ApplicationPlan initialCrop={cropName} />
+      );
     case "chemical-dashboard":
       return <ChemicalDashboard />;
     case "spray-plan-transfers":
@@ -372,6 +378,7 @@ export function PageFallback({ crop, view }: { crop?: string; view?: View }) {
 /* Full-bleed map pages do not have KPI cards, so PageSkeleton would draw the
  * wrong silhouette and reflow on arrival. */
 const MAP_VIEWS = new Set<View>([
+  "application-plan",
   "scouting-map",
   "observations",
   "traps",
@@ -564,7 +571,7 @@ export function App() {
             const kView = k.slice(sep + 1) as View;
             const active = k === activeKey;
             const fallback =
-              kView === "application-plan" ? (
+              kView === "application-plan" && kCrop !== "avocado" ? (
                 <ApplicationPlanSkeleton />
               ) : (
                 <PageFallback crop={kCrop} view={kView} />

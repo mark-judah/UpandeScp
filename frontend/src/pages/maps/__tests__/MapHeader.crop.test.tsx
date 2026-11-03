@@ -24,7 +24,7 @@ describe("MapHeader on the avocado jobsheet", () => {
     const onChange = vi.fn();
     render(
       <MapHeader
-        title="Jobsheet"
+        title="Application Floor Plan"
         subtitle=""
         value={{ crop: "Avocado", farm: ALL, greenhouse: ALL, from: "2026-01-01", to: "2026-09-01" }}
         onChange={onChange}

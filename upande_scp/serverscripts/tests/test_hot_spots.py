@@ -254,27 +254,18 @@ class TestHotSpots(HotCase):
         self.assertEqual((w21.notified_band, self.told(U_CREATOR, w21.name)), ("High", 0))
         self.assertEqual(self.spot().status, "Resolved")                    # superseded
 
-    def test_an_avocado_block_names_rows(self):
+    def test_an_avocado_block_raises_no_hot_spot(self):
+        """A block crop is judged per hectare over the ISO week (the whole block,
+        one figure per pest): the 3 x 3 per-tree sections no longer raise hot spots."""
         block = F.avocado_block()
         farm = frappe.db.get_value("Warehouse", block, "custom_farm")
         TF.clear_all_bands("Avocado")
         TF.set_roster(farm, "creators", [U_CREATOR])
-        TF.set_roster(farm, "supervisors", [U_SUPER])
         TF.set_bands("Avocado", "Mealybugs", 5, 20, 50)
         TF.seed_hot_section(block, TF.WEEK_20[0], crop="Avocado", pest="Mealybugs", stage="Singles", block=True,
                             hot_infested=5)
         TC.check_crop("Avocado", SUN_20)
-        s = self.spot(gh=block, obs="Mealybugs")
-        self.assertEqual((s.section_label, s.value, s.sections_scouted), ("first rows · front", 100.0, 5))
-        subject = frappe.db.get_value("Notification Log", {"document_name": s.name, "for_user": U_CREATOR}, "subject")
-        self.assertIn(f"Hot spot in {block}, first rows · front: Mealybugs 100.0% (house 11.1%)", subject)
-        content = frappe.db.get_value("Notification Log", {"document_name": s.name, "for_user": U_CREATOR},
-                                      "email_content")
-        self.assertIn("5 trees scouted in this section", content)
-        row = next(r for r in TC.open_alerts("Avocado", greenhouse=block) if r.name == s.name)
-        self.assertEqual((row.house_value, row.station_word), (11.1, "tree"))
-        html = D.render([row], SUN_20)
-        self.assertIn("100.0% <span style='color:#777'>(house 11.1%) · 5 trees in this section</span>", html)
+        self.assertIsNone(self.spot(gh=block, obs="Mealybugs"))
 
     def test_three_of_five_is_noise_on_the_alerts_and_the_grid(self):
         # Final review: a Percentage section is judged on its Wilson lower bound.

@@ -28,8 +28,8 @@ export const BAND_COLOR: Record<"high" | "moderate" | "low", string> = {
 };
 
 export interface HouseFigure {
-  measure: "Percentage" | "Count";
-  /** "%", "per tree" or "per zone" */
+  measure: "Percentage" | "Count" | "Per ha";
+  /** "%", "per tree", "per zone", or "/ ha this week" (block crops: cumulative per hectare) */
   unit: string;
   value: number | null;
   margin: number | null;

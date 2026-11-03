@@ -33,6 +33,8 @@ import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
 import { VarietyTable } from "./VarietyTable";
 import { PrevalenceFigure } from "./PrevalenceFigure";
+import { PerHaBlocksCard, PerHaDistributionCard, PerHaSeverityCard } from "./PerHaCards";
+import { formatPerHa, perHaLabel } from "@/lib/cumulative-api";
 import { stagesFor, type PestsPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 import { ObservationName } from "@/components/gallery/ObservationGallery";
@@ -62,10 +64,12 @@ export function PestsTab({
 
   const opts = data?.filterOptions ?? { pests: [], sections: [], stages: [] };
   const ranking = data?.ranking ?? [];
-  const trendRows = data?.dailyPercent ?? [];
+  const trendRows = data?.perHa?.trend ?? data?.dailyPercent ?? [];
   const distribution = data?.distribution ?? [];
   const sectionSplit = data?.sectionSplit ?? [];
   const ghPressure = data?.greenhousePressure ?? [];
+  // Block-grown crops (avocado): per hectare this ISO week instead of station prevalence.
+  const perHa = data?.perHa;
 
   const trend = { rows: trendRows, pestName: pestName || "All pests" };
 
@@ -103,16 +107,16 @@ export function PestsTab({
         <Kpi loading={loading} goodDirection="down" series={series?.pests} label="Active Pests" value={total} hint="observations" />
         <Kpi
           loading={loading}
-          label="High Severity"
-          value={high}
-          tone={high > 0 ? "critical" : "default"}
-          hint="critical observations"
+          label={perHa ? "Over Threshold" : "High Severity"}
+          value={perHa ? perHa.overCount : high}
+          tone={(perHa ? perHa.overCount : high) > 0 ? "critical" : "default"}
+          hint={perHa ? "blocks over their / ha line" : "critical observations"}
         />
         <Kpi
           loading={loading}
           label="Top Pest"
-          value={top?.name || "—"}
-          hint={top ? `${top.total} observations` : "no pests recorded"}
+          value={(perHa ? perHa.ranking[0] : top)?.name || "—"}
+          hint={perHa ? (perHa.ranking[0] ? `${perHaLabel(perHa.ranking[0].perHa)} this week` : "none recorded this week") : top ? `${top.total} observations` : "no pests recorded"}
         />
       </KpiGrid>
 
@@ -122,7 +126,7 @@ export function PestsTab({
             <div>
               <CardTitle>Pest Trends</CardTitle>
               <CardDescription>
-                {trend.pestName} · adjusted prevalence (% of scouted stations) · weekly
+                {trend.pestName} · {perHa ? "cumulative per ha (scouted blocks) · weekly" : "adjusted prevalence (% of scouted stations) · weekly"}
               </CardDescription>
             </div>
             <DashFilterRow
@@ -156,13 +160,13 @@ export function PestsTab({
                     tickLine={false}
                     axisLine={false}
                     width={36}
-                    tickFormatter={(v: number) => `${v}%`}
+                    tickFormatter={(v: number) => (perHa ? formatPerHa(v) : `${v}%`)}
                   />
                   <ChartTooltip
                     content={
                       <ChartTooltipContent
                         indicator="line"
-                        formatter={(v) => (v == null ? "—" : `${v}%`)}
+                        formatter={(v) => (v == null ? "—" : perHa ? perHaLabel(Number(v)) : `${v}%`)}
                       />
                     }
                   />
@@ -186,7 +190,10 @@ export function PestsTab({
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="p-4">
+        {perHa ? (
+<PerHaDistributionCard title="Pests per hectare" perHa={perHa} colorFor={pestColor} loading={loading} />
+) : (
+<Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Pest Distribution</CardTitle>
             <CardDescription>Adjusted prevalence across the scope · latest scouted week</CardDescription>
@@ -237,6 +244,7 @@ export function PestsTab({
             )}
           </CardContent>
         </Card>
+)}
 
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
@@ -281,7 +289,10 @@ export function PestsTab({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="p-4">
+        {perHa ? (
+<PerHaSeverityCard title="Pests vs threshold (per ha)" kind="pest" perHa={perHa} colorFor={pestColor} loading={loading} />
+) : (
+<Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Severity Matrix</CardTitle>
             <CardDescription>Per pest · low / moderate / high</CardDescription>
@@ -337,8 +348,12 @@ export function PestsTab({
             )}
           </CardContent>
         </Card>
+)}
 
-        <Card className="p-4">
+        {perHa ? (
+<PerHaBlocksCard title="Pest Pressure by Block" perHa={perHa} observation={pestName} loading={loading} />
+) : (
+<Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Pest Pressure by Greenhouse</CardTitle>
             <CardDescription>Adjusted prevalence · each greenhouse's latest scouted week</CardDescription>
@@ -386,6 +401,7 @@ export function PestsTab({
             )}
           </CardContent>
         </Card>
+)}
 
         {pestName && (data?.varieties?.length ?? 0) > 0 && (
           <Card className="p-4">

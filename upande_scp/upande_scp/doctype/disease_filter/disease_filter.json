@@ -14,6 +14,7 @@
   "low_threshold",
   "moderate_threshold",
   "high_threshold",
+  "cumulative_per_ha_threshold",
   "stages",
   "priorities"
  ],
@@ -77,6 +78,14 @@
    "label": "High Threshold",
    "non_negative": 1,
    "precision": "4"
+  },
+  {
+   "description": "Block-grown crops: alert once per scouting round when this disease's cumulative count over the round, divided by the block's area in hectares, reaches this figure. 0 = no cumulative alert.",
+   "fieldname": "cumulative_per_ha_threshold",
+   "fieldtype": "Float",
+   "label": "Cumulative alert (per ha per round)",
+   "non_negative": 1,
+   "precision": "2"
   },
   {
    "description": "Per-stage threshold overrides. When a stage has thresholds set, severity for that stage uses them; otherwise it falls back to the values above.",

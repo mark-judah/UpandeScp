@@ -4,6 +4,7 @@
  * server; the browser only formats them.
  */
 import { call } from "./frappe";
+import { formatPerHa } from "./cumulative-api";
 
 export type AlertAction = "Alarming" | "Spray advised" | "Scout first" | "Hot spot";
 export type AlertType = "House" | "Hot spot";
@@ -25,8 +26,8 @@ export interface ScoutingAlert {
   section_col?: number;
   /** "first beds · front" / "last rows · back"; empty for a House alert */
   section_label?: string | null;
-  measure: "Percentage" | "Count";
-  /** "%", "per zone" or "per tree" */
+  measure: "Percentage" | "Count" | "Per ha";
+  /** "%", "per zone", "per tree", or "/ ha this week" (block-grown crops) */
   unit: string;
   value: number | null;
   /** A hot spot's house figure, same unit as ``value`` (0 / null for a House alert). */
@@ -69,8 +70,14 @@ export async function acknowledgeAlert(name: string): Promise<{ name: string; st
   return call(`${BASE}.acknowledge_alert`, { name });
 }
 
+/** A block-grown crop's alerts are cumulative per hectare over the ISO week. */
+export const PER_HA_UNIT = "/ ha this week";
+export const isPerHa = (unit?: string | null): boolean => unit === PER_HA_UNIT;
+
 function inUnit(value: number | null | undefined, unit: string): string {
-  return value == null ? "—" : unit === "%" ? `${value}%` : `${value} ${unit}`;
+  if (value == null) return "—";
+  if (unit === "%") return `${value}%`;
+  return isPerHa(unit) ? `${formatPerHa(value)} ${unit}` : `${value} ${unit}`;
 }
 
 /** "33.3% · ±18 · 9/9" — the figure in its unit, the margin, sections scouted.
@@ -81,6 +88,8 @@ export function alertFigureLine(
     Partial<Pick<ScoutingAlert, "alert_type" | "house_value" | "station_word">>,
 ): string {
   const value = inUnit(a.value, a.unit);
+  // No sample margin or section count on a cumulative per-hectare figure.
+  if (isPerHa(a.unit)) return `${value} · over its threshold`;
   if (a.alert_type === "Hot spot") {
     const house = a.house_value != null ? ` (house ${inUnit(a.house_value, a.unit)})` : "";
     const stations = a.station_word ? `${a.station_word}s` : "stations";

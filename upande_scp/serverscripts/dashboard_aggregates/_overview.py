@@ -63,7 +63,12 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
 
     publish_progress(job_id, 85, "computing summaries")
     daily, range_totals = _daily_and_totals(obs)
-    gh_health, cells, alerts_total = _classify_cells(obs, crop, weeks)
+    from upande_scp.serverscripts.dashboard_aggregates import _per_ha
+
+    # A block-grown crop's alerts are per-hectare crossings this ISO week (the
+    # same line the stored Scouting Alerts use), not station-prevalence bands.
+    per_ha = _per_ha.overview(crop, scope) if crop and _per_ha.active(crop) else None
+    gh_health, cells, alerts_total = _classify_cells(obs, crop, weeks, per_ha)
     active = _active_alerts_from_cells(cells)
     top_scouts, scouts_per_day, scout_perf = _scout_aggs(obs)
 
@@ -83,6 +88,7 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
         "scoutPerformance": scout_perf,
         "recentActivity": recent,
         "activeAlerts": active,
+        **({"perHa": {"round": per_ha["round"], "overTotal": per_ha["overTotal"]}} if per_ha else {}),
     }
 
 
@@ -186,7 +192,7 @@ def _daily_and_totals(obs: list) -> tuple:
     return sorted(by_date.values(), key=lambda x: x["date"]), totals
 
 
-def _classify_cells(obs: list, crop: str, weeks) -> tuple:
+def _classify_cells(obs: list, crop: str, weeks, per_ha: dict | None = None) -> tuple:
     """Single pass over ``obs`` produces:
 
       * ``by_gh``        — per-greenhouse counts + scouts + alerts
@@ -253,7 +259,10 @@ def _classify_cells(obs: list, crop: str, weeks) -> tuple:
             continue
         pct = fig["prevalence"]
         value = house_value(crop, kind, obs_name, stage, weeks, gh, fig)
-        sev = severity_for(crop, kind, obs_name, stage, value) if value is not None else None
+        # Per-hectare crops: no prevalence band; their crossings are added below.
+        sev = (
+            severity_for(crop, kind, obs_name, stage, value) if (value is not None and per_ha is None) else None
+        )
         if sev == "high":
             by_gh[gh]["alerts"] += 1
             total_alerts += 1
@@ -275,6 +284,12 @@ def _classify_cells(obs: list, crop: str, weeks) -> tuple:
                 if kind == "pest" and stage_roles.role_of(stage, roles) != stage_roles.SIGN else None
             ),
         })
+
+    if per_ha is not None:
+        for gh, n in per_ha["overByBlock"].items():
+            if n and gh in by_gh:
+                by_gh[gh]["alerts"] += n
+                total_alerts += n
 
     for gh, bucket in by_gh.items():
         bucket["scoutCount"] = len([s for s in scouts_by_gh[gh] if s])

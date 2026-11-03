@@ -278,8 +278,8 @@ class TestScoping(QualityCase):
 
     def test_cache_schema_is_psn1(self):
         from upande_scp.serverscripts.dashboard_aggregates import _common
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "psn1")
-        self.assertIn(":psn1:quality:", _common._build_key("quality", {"crop": "Rose"}))
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "pha1")
+        self.assertIn(":pha1:quality:", _common._build_key("quality", {"crop": "Rose"}))
 
 
 def _scan(filters, scope):

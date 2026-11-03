@@ -396,9 +396,62 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 		].width = 14
 	ws.freeze_panes = ws.cell(row=header_row + 1, column=first_pest_col)
 
+	_per_ha_sheet(wb, crop, blocks, areas, monday, sunday, pests)
+
 	buf = io.BytesIO()
 	wb.save(buf)
 	return buf.getvalue()
+
+
+def _per_ha_sheet(wb, crop, blocks, areas, monday, sunday, pests) -> None:
+	"""Second sheet: every pest's cumulative count over the week divided by the
+	block's hectares — the figure a block is judged on (and alerted on) for
+	block-grown crops, in place of any per-tree average. Same counting rules as
+	the alert (live stages, stage weights); a block with no area shows a dash."""
+	from openpyxl.styles import Alignment, Font, PatternFill
+
+	from upande_scp.serverscripts.scouting import cumulative_per_ha as CPH
+
+	figs = CPH.round_figures(crop, blocks, monday, sunday)
+	ws = wb.create_sheet("Per ha")
+	ws["A1"] = f"{crop} \u2014 cumulative count per hectare"
+	ws["A1"].font = Font(bold=True, size=14)
+	ws["A2"] = (
+		f"{monday} to {sunday}. Each cell is the pest's cumulative count over the week "
+		"divided by the block's area in hectares. Shaded = at or over the pest's "
+		"cumulative alert threshold. A block with no area shows \u2014."
+	)
+	ws["A2"].font = Font(italic=True, size=9, color="666666")
+	header = 4
+	ws.cell(row=header, column=1, value="Block")
+	ws.cell(row=header, column=2, value="Area (ha)")
+	for i, pest in enumerate(pests):
+		ws.cell(row=header, column=3 + i, value=pest)
+	for c in range(1, 3 + len(pests)):
+		cell = ws.cell(row=header, column=c)
+		cell.font = Font(bold=True)
+		cell.fill = PatternFill("solid", fgColor="DDDDDD")
+		cell.alignment = Alignment(horizontal="center", wrap_text=True)
+	over = PatternFill("solid", fgColor="F7B9B9")
+	for r, block in enumerate(blocks, start=header + 1):
+		area = areas.get(block)
+		ws.cell(row=r, column=1, value=block)
+		ws.cell(row=r, column=2, value=area if area else "\u2014")
+		by_pest = {f["observation"]: f for f in figs.get(block, []) if f["kind"] == "pest"}
+		for i, pest in enumerate(pests):
+			f = by_pest.get(pest)
+			if not area:
+				value = "\u2014"
+			else:
+				value = f["per_ha"] if f else 0
+			cell = ws.cell(row=r, column=3 + i, value=value)
+			if f and f["per_ha"] is not None and f["threshold_per_ha"] and f["per_ha"] >= f["threshold_per_ha"]:
+				cell.fill = over
+	ws.column_dimensions["A"].width = 32
+	ws.column_dimensions["B"].width = 10
+	for i in range(len(pests)):
+		ws.column_dimensions[ws.cell(row=header, column=3 + i).column_letter].width = 14
+	ws.freeze_panes = ws.cell(row=header + 1, column=3)
 
 
 @frappe.whitelist()

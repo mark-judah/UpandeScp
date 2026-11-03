@@ -45,6 +45,7 @@ import { cn } from "@/lib/utils";
 import {
   acknowledgeAlert,
   alertFigureLine,
+  isPerHa,
   listOpenAlerts,
   type ScoutingAlert,
 } from "@/lib/scouting-alerts-api";
@@ -206,7 +207,7 @@ export function OverviewTab({
           label="High Alerts"
           value={k.highAlerts}
           tone={k.highAlerts > 0 ? "critical" : "default"}
-          hint="critical levels"
+          hint={data?.perHa ? "block x pest over its / ha line this week" : "critical levels"}
         />
       </KpiGrid>
 
@@ -396,7 +397,7 @@ export function OverviewTab({
                       {a.stage ? ` · ${a.stage}` : ""}
                     </span>
                     <AlertActionPill action={a.action} />
-                    <ReliabilityPill value={a.reliability} />
+                    {isPerHa(a.unit) ? null : <ReliabilityPill value={a.reliability} />}
                   </div>
                   <div className="text-[0.7rem] text-muted-foreground truncate">
                     {a.warehouse}
@@ -432,7 +433,7 @@ export function OverviewTab({
                 </div>
               ))
             ) : (
-              <EmptyHint title="No active alerts" hint="No threshold crossed in the latest scouted week." />
+              <EmptyHint title="No active alerts" hint={data?.perHa ? "No pest or disease over its / ha line this week." : "No threshold crossed in the latest scouted week."} />
             )}
             {alerts.length > ALERTS_SHOWN ? (
               <Button

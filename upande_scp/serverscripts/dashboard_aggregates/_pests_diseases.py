@@ -115,6 +115,16 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
             if kind == "pest" and filters["observation"] else []
         ),
     }
+    from upande_scp.serverscripts.dashboard_aggregates import _per_ha
+
+    # A block-grown crop's figures are cumulative per hectare this ISO week: the
+    # tab swaps its prevalence cards for these. Roses carry no ``perHa`` at all.
+    if filters["crop"] and _per_ha.active(filters["crop"]):
+        publish_progress(job_id, 90, "computing per-hectare figures")
+        payload["perHa"] = _per_ha.kind_payload(
+            kind, filters["crop"], scope, filters, filters["from_date"], filters["to_date"],
+        )
+
     publish_progress(job_id, 100, "")
     return payload
 

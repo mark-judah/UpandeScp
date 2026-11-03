@@ -69,6 +69,7 @@ OVERRIDABLE = {
 	"rule_max_sprays": "As above.",
 	"rule_known_resistance": "As above.",
 	"rule_tank_mix_incompatible": "As above.",
+	"cumulative_alert_paused": "Per-hectare cumulative alerts only make sense for crops scouted by block.",
 }
 
 

@@ -1,0 +1,196 @@
+{
+ "actions": [],
+ "creation": "2026-11-02 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "crop",
+  "farm",
+  "warehouse",
+  "kind",
+  "observation",
+  "round_start",
+  "round_end",
+  "figure_section",
+  "cumulative",
+  "area_ha",
+  "per_ha",
+  "threshold_per_ha",
+  "crossed_on",
+  "days",
+  "scouts",
+  "email_section",
+  "status",
+  "emailed_at",
+  "recipients"
+ ],
+ "fields": [
+  {
+   "fieldname": "crop",
+   "fieldtype": "Link",
+   "label": "Crop",
+   "options": "Crop Scouted",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "label": "Farm",
+   "options": "Farm",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Block",
+   "options": "Warehouse",
+   "read_only": 1,
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "pest\ndisease",
+   "read_only": 1
+  },
+  {
+   "fieldname": "observation",
+   "fieldtype": "Data",
+   "label": "Pest / disease",
+   "read_only": 1,
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "round_start",
+   "fieldtype": "Date",
+   "label": "Round start",
+   "read_only": 1,
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "round_end",
+   "fieldtype": "Date",
+   "label": "Round end",
+   "read_only": 1
+  },
+  {
+   "fieldname": "figure_section",
+   "fieldtype": "Section Break",
+   "label": "Figure"
+  },
+  {
+   "fieldname": "cumulative",
+   "fieldtype": "Float",
+   "label": "Cumulative count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "area_ha",
+   "fieldtype": "Float",
+   "label": "Block area (ha)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "per_ha",
+   "fieldtype": "Float",
+   "label": "Cumulative per ha",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "threshold_per_ha",
+   "fieldtype": "Float",
+   "label": "Threshold per ha",
+   "read_only": 1
+  },
+  {
+   "fieldname": "crossed_on",
+   "fieldtype": "Date",
+   "label": "Crossed on",
+   "read_only": 1
+  },
+  {
+   "fieldname": "days",
+   "fieldtype": "Small Text",
+   "label": "Day by day (JSON)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scouts",
+   "fieldtype": "Small Text",
+   "label": "Scouts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "email_section",
+   "fieldtype": "Section Break",
+   "label": "Email"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Sent\nTest",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "emailed_at",
+   "fieldtype": "Datetime",
+   "label": "Emailed at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "recipients",
+   "fieldtype": "Small Text",
+   "label": "Recipients",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-02 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Cumulative Pest Alert",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "create": 1,
+   "delete": 1,
+   "write": 1,
+   "export": 1
+  },
+  {
+   "role": "SCP General Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1
+  },
+  {
+   "role": "SCP Spray Plan Creator",
+   "read": 1,
+   "report": 1
+  },
+  {
+   "role": "SCP Spray Plan Approver",
+   "read": 1,
+   "report": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "observation",
+ "track_changes": 0
+}

@@ -128,13 +128,13 @@
    "fieldname": "measure",
    "fieldtype": "Select",
    "label": "Measure",
-   "options": "Percentage\nCount"
+   "options": "Percentage\nCount\nPer ha"
   },
   {
    "fieldname": "value",
    "fieldtype": "Float",
    "label": "Value",
-   "precision": "1"
+   "precision": "2"
   },
   {
    "depends_on": "eval:doc.alert_type=='Hot spot'",

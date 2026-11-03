@@ -139,29 +139,19 @@ def get_foliar(item_code):
 
 
 def get_product_rate(item_code, crop=None):
-	"""Effective (lower, upper) rate limits per 1000L.
+	"""Effective (lower, upper) Water rate limits per 1000L.
 
-	The `crop_rates` row for `crop` wins where it sets either bound; otherwise
-	the product's `default_*` limits apply. Returns `(None, None)` for an Item
+	Resolved by `spray_rates.rates_for`: the crop's Water row, then a no-crop
+	Water row, then the product's `default_*` limits. Hectarage rows are not
+	comparable to a per-1000L rate and are ignored here. Returns `(None, None)` for an Item
 	with no Spray Product record, which callers already read as "no bound".
 	"""
 	name = _product_name(item_code)
 	if not name:
 		return (None, None)
-	if crop:
-		row = frappe.db.get_value(
-			"Spray Product Crop Rate",
-			{"parent": name, "parenttype": PRODUCT, "crop": crop},
-			["lower_rate_limit", "upper_rate_limit"],
-			as_dict=True,
-		)
-		if row and (row.lower_rate_limit or row.upper_rate_limit):
-			return (row.lower_rate_limit, row.upper_rate_limit)
-	d = frappe.db.get_value(
-		PRODUCT, name,
-		["default_lower_rate_limit", "default_upper_rate_limit"], as_dict=True,
-	)
-	return (d.default_lower_rate_limit, d.default_upper_rate_limit) if d else (None, None)
+	from upande_scp.serverscripts.common.spray_rates import water_bounds
+
+	return water_bounds(name, crop)
 
 
 def get_product_targets(item_code, crop=None):

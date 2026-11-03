@@ -26,8 +26,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CropRatesTable, hasDuplicateRates } from "./CropRatesTable";
+import { listCrops } from "@/lib/thresholds-api";
 import {
   saveChemical,
+  type CropRateRow,
   type ChemicalRow,
   type ChemicalTarget,
   type ChemicalType,
@@ -71,6 +74,8 @@ export function ChemicalEditDrawer({
   const [reentry, setReentry] = useState<string>("");
   const [lower, setLower] = useState<string>("");
   const [upper, setUpper] = useState<string>("");
+  const [cropRates, setCropRates] = useState<CropRateRow[]>([]);
+  const [cropNames, setCropNames] = useState<string[]>([]);
   const [lowStock, setLowStock] = useState<string>("");
   const [iracMoa, setIracMoa] = useState("");
   const [fracMoa, setFracMoa] = useState("");
@@ -84,6 +89,11 @@ export function ChemicalEditDrawer({
   const [targetQuery, setTargetQuery] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    listCrops().then((c) => setCropNames(c || [])).catch(() => setCropNames([]));
+  }, [open]);
 
   // Hydrate state from the picked chemical.
   useEffect(() => {
@@ -106,6 +116,7 @@ export function ChemicalEditDrawer({
         ? String(chemical.custom_upper_rate_limit)
         : "",
     );
+    setCropRates((chemical.crop_rates || []).map((r) => ({ ...r })));
     setLowStock(
       chemical.custom_low_stock_threshold != null &&
         chemical.custom_low_stock_threshold > 0
@@ -175,6 +186,10 @@ export function ChemicalEditDrawer({
 
   const handleSave = async () => {
     if (!chemical) return;
+    if (hasDuplicateRates(cropRates)) {
+      setError("Two rate rows share the same crop and determinant. One row each.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -203,6 +218,7 @@ export function ChemicalEditDrawer({
         reentry_interval_hrs: reentryNum,
         lower_rate_limit: lowerNum,
         upper_rate_limit: upperNum,
+        crop_rates: cropRates,
         low_stock_threshold: lowStockNum,
         ghs_description: ghsDescription,
         ghs,
@@ -217,6 +233,7 @@ export function ChemicalEditDrawer({
         custom_reentry_interval_hrs: reentryNum,
         custom_lower_rate_limit: lowerNum,
         custom_upper_rate_limit: upperNum,
+        crop_rates: cropRates.filter((r) => r.lower_rate_limit || r.upper_rate_limit),
         custom_low_stock_threshold: lowStockNum || null,
         custom_ghs_description: ghsDescription,
         ghs,
@@ -342,12 +359,12 @@ export function ChemicalEditDrawer({
           {/* Rate range */}
           <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <RateField
-              label="Lower rate limit (per 1000L)"
+              label="Default lower rate limit (Water, per 1000L)"
               value={lower}
               onChange={setLower}
             />
             <RateField
-              label="Upper rate limit (per 1000L)"
+              label="Default upper rate limit (Water, per 1000L)"
               value={upper}
               onChange={setUpper}
             />
@@ -357,6 +374,8 @@ export function ChemicalEditDrawer({
               onChange={setLowStock}
             />
           </section>
+
+          <CropRatesTable rows={cropRates} crops={cropNames} onChange={setCropRates} />
 
           {/* Resistance codes — chemicals only. Fertilizers don't carry
               insecticide / fungicide resistance classifications. */}

@@ -27,7 +27,7 @@ class SprayProduct(Document):
 		self._validate_crop_rates()
 
 	def _validate_crop_rates(self):
-		"""One row per crop, and a lower bound that is actually below the upper.
+		"""One row per crop and determinant, and a lower bound that is actually below the upper.
 
 		A duplicate crop row makes the effective rate depend on row order, and an
 		inverted pair rejects every dose — both fail silently at spray-planning
@@ -38,20 +38,21 @@ class SprayProduct(Document):
 		# exist yet and a direct access raises AttributeError mid-migration.
 		seen = set()
 		for row in self.get("crop_rates") or []:
-			if not row.crop:
-				continue
-			if row.crop in seen:
+			basis = row.get("basis") or "Water"
+			label = row.crop or "All crops"
+			key = (row.crop or "", basis)
+			if key in seen:
 				frappe.throw(
-					f"{row.crop} appears more than once in Per-Crop Rates. "
-					"One row per crop."
+					f"{label} / {basis} appears more than once in Per-Crop Rates. "
+					"One row per crop and determinant."
 				)
-			seen.add(row.crop)
+			seen.add(key)
 			if (
 				row.lower_rate_limit
 				and row.upper_rate_limit
 				and row.lower_rate_limit > row.upper_rate_limit
 			):
 				frappe.throw(
-					f"{row.crop}: lower rate limit ({row.lower_rate_limit}) is above "
+					f"{label} ({basis}): lower rate limit ({row.lower_rate_limit}) is above "
 					f"the upper limit ({row.upper_rate_limit})."
 				)

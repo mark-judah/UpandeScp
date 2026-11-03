@@ -23,9 +23,10 @@ import { fetchBomDetails } from "@/lib/scouting-api";
 import type { CreatorBootstrap } from "@/lib/spray-plan-creator-api";
 import type { BlockFindings } from "@/lib/open-field-api";
 import {
-  chemicalQty, effectiveArea, planProblems, shouldCollapse,
-  type BlockPlan, type OpenFieldBlock,
+  chemicalQty, effectiveArea, planProblems, rateOutOfRange, shouldCollapse, waterVolumeFor, withRateRows,
+  type BlockChemical, type BlockPlan, type OpenFieldBlock,
 } from "@/lib/open-field";
+import { BASIS_UNIT, fetchSprayProductRates, type RateRow } from "@/lib/spray-rates";
 import { cn } from "@/lib/utils";
 import { errorText } from "@/lib/errors";
 
@@ -223,16 +224,21 @@ function BlockSection({
     try {
       const d = await fetchBomDetails(bom, block.name);
       if (!d) return;
-      const chemicals = d.chemicals.map((c) => ({
+      // The tank mix's own rate is per 1000 L of water. Where the product has a Hectarage
+      // rate for this block's crop, the block's area decides the quantity instead.
+      const base: BlockChemical[] = d.chemicals.map((c) => ({
         item_code: c.item_code,
         item_name: c.item_name,
         stock_uom: c.stock_uom,
+        basis: "Water" as const,
         rate: Number(c.stock_qty) || 0,
         source:
           (c.is_fertilizer ? boot?.farm_stores?.[block.farm || ""]?.fertilizer_store : store) ||
           (c.is_fertilizer ? d.fertilizer_warehouses?.[0] : d.chemical_warehouses?.[0]) ||
           "",
       }));
+      const rates = await fetchSprayProductRates(base.map((c) => c.item_code), block.crop || block.crop_label).catch((): Record<string, RateRow[]> => ({}));
+      const chemicals = base.map((c) => withRateRows(c, rates[c.item_code]));
       onChange({ ...planRef.current, bom, chemicals });
     } catch (e) {
       setBomError(errorText(e, "Could not load this tank mix's chemicals."));
@@ -262,7 +268,7 @@ function BlockSection({
           />
         </div>
         <div className="pb-2 text-xs text-muted-foreground tabular-nums">
-          Water {(area * 1000).toFixed(0)} L
+          Water {waterVolumeFor(area).toFixed(0)} L
           {block.cost_center ? ` · cost centre ${block.cost_center}` : " · cost centre derived on save"}
         </div>
       </div>
@@ -379,7 +385,7 @@ function BlockSection({
             <thead>
               <tr className="border-b text-left text-[0.65rem] uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-1.5">Chemical</th>
-                <th className="px-2 py-1.5 text-right">Rate / 1000 L</th>
+                <th className="px-2 py-1.5 text-right">Rate</th>
                 <th className="px-3 py-1.5 text-right">Quantity</th>
               </tr>
             </thead>
@@ -391,6 +397,9 @@ function BlockSection({
                 <tr key={`${c.item_code}-${i}`} className="border-b last:border-b-0">
                   <td className="px-3 py-1.5">{c.item_name || c.item_code}</td>
                   <td className="px-2 py-1.5 text-right">
+                    <div className="mb-0.5 text-[0.65rem] text-muted-foreground" data-testid="rate-basis">
+                      {c.basis} · {BASIS_UNIT[c.basis]}
+                    </div>
                     <Input
                       type="number" step="any" min={0} aria-label={`Rate of ${c.item_name || c.item_code}`}
                       className="ml-auto h-8 w-24 text-right tabular-nums" value={c.rate}
@@ -400,7 +409,12 @@ function BlockSection({
                     />
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">
-                    {chemicalQty(c.rate, area).toFixed(2)} {c.stock_uom || ""}
+                    {chemicalQty(c, area).toFixed(2)} {c.stock_uom || ""}
+                    {rateOutOfRange(c) && (
+                      <div className="text-[0.65rem] text-amber-600">
+                        outside {c.lower ?? 0}-{c.upper ?? "open"}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -417,14 +431,20 @@ function BlockSection({
         currentItems={plan.chemicals.map((c) => c.item_code)}
         when={when}
         canAdd
-        onAdd={(p) =>
-          set({
-            chemicals: [
-              ...planRef.current.chemicals,
-              { item_code: p.item_code, item_name: p.item_name, stock_uom: p.stock_uom, rate: p.default_rate ?? 0, source: store },
-            ],
-          })
-        }
+        onAdd={(p) => {
+          const added: BlockChemical = { item_code: p.item_code, item_name: p.item_name, stock_uom: p.stock_uom, basis: "Water", rate: p.default_rate ?? 0, source: store };
+          set({ chemicals: [...planRef.current.chemicals, added] });
+          // Put it on the block's Hectarage rate when the product has one.
+          void fetchSprayProductRates([p.item_code], block.crop || block.crop_label)
+            .then((r) => {
+              if (!r[p.item_code]) return;
+              onChange({
+                ...planRef.current,
+                chemicals: planRef.current.chemicals.map((c) => (c === added ? withRateRows(c, r[p.item_code]) : c)),
+              });
+            })
+            .catch(() => undefined);
+        }}
       />
 
       {onNext && (

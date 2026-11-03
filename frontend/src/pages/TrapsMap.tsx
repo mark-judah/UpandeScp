@@ -1,3 +1,4 @@
+import { captureStamp } from "@/lib/capture-time";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ChevronDown } from "lucide-react";
@@ -64,7 +65,7 @@ interface TrapAgg {
 export { withAlpha };
 
 function stampOf(e: ScoutingEntry): string {
-  return `${e.date_of_capture || ""} ${e.time_of_capture || ""}`;
+  return captureStamp(e);
 }
 
 /** Where a trap is drawn: its fixed location when it has one, else the

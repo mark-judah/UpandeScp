@@ -109,3 +109,15 @@ describe("format12h", () => {
     expect(format12h("12:45")).toBe("12:45 PM");
   });
 });
+
+import { captureStamp, padTime } from "./capture-time";
+
+describe("capture time ordering", () => {
+  it("pads single-digit hours so 9:xx sorts before 10:xx", () => {
+    expect(padTime("9:17:22")).toBe("09:17:22");
+    expect(padTime("10:00:33")).toBe("10:00:33");
+    const walk = ["10:00:33", "9:17:22", "11:02:00", "9:59:44"].map((t) => ({ date_of_capture: "2026-10-06", time_of_capture: t }));
+    expect(walk.sort((a, b) => captureStamp(a).localeCompare(captureStamp(b))).map((e) => e.time_of_capture))
+      .toEqual(["9:17:22", "9:59:44", "10:00:33", "11:02:00"]);
+  });
+});

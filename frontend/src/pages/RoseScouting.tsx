@@ -17,6 +17,18 @@
  * + filter popovers always paint above the map.
  */
 
+import { captureStamp, padTime } from "@/lib/capture-time";
+import { FilterSelect } from "@/components/FilterSelect";
+import { TogglePill } from "@/components/TogglePill";
+import { StationCardBody } from "@/components/scouting/StationCard";
+import {
+  deriveStations,
+  stationDays,
+  stationScouts,
+  stationsInScope,
+  type Station,
+} from "@/lib/scouting-stations";
+import { createStationLayer, type StationLayerHandle } from "./maps/stations-leaflet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
@@ -78,10 +90,8 @@ const SCOUT_PALETTE = [
 
 /** "9:05:00" → "09:05:00". Times arrive unpadded, and "9:59" sorts after
  *  "10:00" as text, which put route steps (and first/last times) out of order. */
-export function padTime(t?: string | null): string {
-  if (!t) return "";
-  return t.replace(/^(\d):/, "0$1:");
-}
+// Shared with the avocado and trap maps; re-exported for existing imports.
+export { padTime } from "@/lib/capture-time";
 
 const ghOf = houseOf;
 
@@ -151,6 +161,11 @@ export function RoseScouting() {
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [selectedTrail, setSelectedTrail] = useState<string | null>(null);
+  // Stations: a marker where each record was taken. On by default.
+  const [showStations, setShowStations] = useState(true);
+  const [stationScout, setStationScout] = useState("");
+  const [stationDay, setStationDay] = useState("");
+  const [openStationId, setOpenStationId] = useState<string | null>(null);
 
   const ghForCall =
     filters.greenhouse === ALL ? undefined : filters.greenhouse;
@@ -300,11 +315,40 @@ export function RoseScouting() {
     return { list, colorMap };
   }, [aggByZone, nameOf]);
 
+  // ── Stations: one per zone a scout recorded in, per scout-day-greenhouse
+  //    walk, at the zone's centre (the entry's GPS when the zone has no geometry).
+  const allStations = useMemo<Station[]>(
+    () =>
+      deriveStations(dayEntries, {
+        keyOf: (e) => e.zone || null,
+        positionOf: (k) => {
+          const c = centroidByZone.get(k);
+          return c ? [c[1], c[0]] : null;
+        },
+        placeSource: "zone",
+      }),
+    [dayEntries, centroidByZone],
+  );
+  const stationView = useMemo(
+    () => stationsInScope(allStations, stationScout, stationDay),
+    [allStations, stationScout, stationDay],
+  );
+  const stationScoutOptions = useMemo(() => stationScouts(allStations), [allStations]);
+  const stationDayOptions = useMemo(() => stationDays(allStations), [allStations]);
+  useEffect(() => {
+    if (stationScout && !stationScoutOptions.includes(stationScout)) setStationScout("");
+    if (stationDay && !stationDayOptions.includes(stationDay)) setStationDay("");
+  }, [stationScout, stationDay, stationScoutOptions, stationDayOptions]);
+  const openStation = useMemo(
+    () => (openStationId ? stationView.stations.find((s) => s.id === openStationId) ?? null : null),
+    [openStationId, stationView],
+  );
+
   // ── Visits in time order — drives the per-scout flow polyline. ──
   const visitsByScout = useMemo(() => {
     const ordered = [...dayEntries].sort((a, b) => {
-      const ta = `${a.date_of_capture} ${padTime(a.time_of_capture)}`;
-      const tb = `${b.date_of_capture} ${padTime(b.time_of_capture)}`;
+      const ta = captureStamp(a);
+      const tb = captureStamp(b);
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
     const out = new Map<string, ScoutVisit[]>();
@@ -503,6 +547,38 @@ export function RoseScouting() {
     }
   }, [aggByZone, zoneByName, trails, scoutInfo, mapSettings, filters.farm, filters.greenhouse, nameOf]);
 
+  // Station markers (own pane, above the zones and routes).
+  const stationLayerRef = useRef<StationLayerHandle | null>(null);
+  const colorOfScout = useCallback(
+    (sc: string) => scoutInfo.colorMap.get(sc) || "#5BB45D",
+    [scoutInfo],
+  );
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    if (!stationLayerRef.current) {
+      stationLayerRef.current = createStationLayer(m, (id) => {
+        setSelectedZone(null);
+        setSelectedTrail(null);
+        setOpenStationId(id);
+      });
+    }
+    stationLayerRef.current.update(stationView, colorOfScout);
+    stationLayerRef.current.setVisible(showStations);
+    stationLayerRef.current.setOpen(showStations ? openStationId : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stationView, colorOfScout, showStations, openStationId, zones]);
+  useEffect(
+    () => () => {
+      stationLayerRef.current?.destroy();
+      stationLayerRef.current = null;
+    },
+    [],
+  );
+  useEffect(() => {
+    if (openStationId && !openStation) setOpenStationId(null);
+  }, [openStationId, openStation]);
+
   const trailLayers = useRef(new Map<string, TrailLayer>());
   const selectedRef = useRef<string | null>(null);
   const applySelection = (sel: string | null) =>
@@ -593,6 +669,38 @@ export function RoseScouting() {
         subtitle="Up to one week · zones scouted, with repeat-day overlap"
         value={filters}
         onChange={setFilters}
+        rightSlot={
+          <>
+            <TogglePill
+              pressed={showStations}
+              onPressedChange={setShowStations}
+              title="A marker at every station where a scout took a record"
+            >
+              Stations
+            </TogglePill>
+            {showStations ? (
+              <>
+                <FilterSelect
+                  label="Station scout"
+                  allLabel="All scouts"
+                  value={stationScout}
+                  onChange={setStationScout}
+                  options={stationScoutOptions}
+                  format={nameOf}
+                />
+                {!isSingleDay ? (
+                  <FilterSelect
+                    label="Station day"
+                    allLabel="All days"
+                    value={stationDay}
+                    onChange={setStationDay}
+                    options={stationDayOptions}
+                  />
+                ) : null}
+              </>
+            ) : null}
+          </>
+        }
       />
 
       {/* Inline under the header, not a full-screen overlay (skeleton spec K4):
@@ -619,6 +727,7 @@ export function RoseScouting() {
             ) : (
               <>
                 {stats.scouts} scouts · {stats.beds} beds · {stats.zones} zones · {stats.entries} entries
+                {showStations ? ` · ${stationView.stations.length} stations` : ""}
                 <span className="ml-2 text-muted-foreground">
                   {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
                 </span>
@@ -633,6 +742,24 @@ export function RoseScouting() {
               trail={openTrail}
               onClose={() => setSelectedTrail(null)}
             />
+          ) : null}
+
+          {openStation && showStations ? (
+            <MapFloatingCard
+              key={openStation.id}
+              eyebrow="Station"
+              title={openStation.key}
+              onClose={() => setOpenStationId(null)}
+              label={`Station ${openStation.key}`}
+              closeLabel="Close station card"
+              testId="station-card"
+            >
+              <StationCardBody
+                station={openStation}
+                scoutName={nameOf(openStation.scout)}
+                color={colorOfScout(openStation.scout)}
+              />
+            </MapFloatingCard>
           ) : null}
 
           {/* Clicked-zone detail: the same bottom-right card as the route card. */}

@@ -1,3 +1,4 @@
+import { captureStamp, padTime } from "@/lib/capture-time";
 import type { ProcessedData } from "@/lib/scouting-types";
 import type { TrapLocations } from "@/lib/scouting-api";
 import type { MarkerPoint } from "./tree-map-types";
@@ -33,11 +34,11 @@ export function deriveTrapMarkers(
         a = { latSum: 0, lngSum: 0, n: 0, count: 0, max: 0, pests: new Map() };
         agg.set(t.trap, a);
       }
-      const stamp = `${e.date_of_capture || ""} ${e.time_of_capture || ""}`;
+      const stamp = captureStamp(e);
       if (!a.latest || stamp > `${a.latest.date} ${a.latest.time}`) {
         a.latest = {
           date: e.date_of_capture || "",
-          time: (e.time_of_capture || "").split(".")[0],
+          time: padTime(e.time_of_capture).split(".")[0],
           scout: e.scouts_name || "",
           count: t.count || 0,
           pest: t.pest || "",

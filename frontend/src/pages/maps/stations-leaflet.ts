@@ -1,8 +1,8 @@
 /**
- * The "Stations" layer on a Leaflet map (rose scouting): one ring + dot per
- * recorded station in the scout's colour, drawn on its own pane above the zone
- * fills and routes, with a visit number beside it when zoomed in. Rings are
- * circle markers, so they keep a pixel size at every zoom.
+ * The "Stations" layer on a Leaflet map (rose scouting): one small solid dot per
+ * recorded station in the scout's colour (no ring), drawn on its own pane above the
+ * zone fills and routes, with a visit number beside it when zoomed in. Dots are
+ * circle markers, so they keep a pixel size at every zoom; the open one is larger.
  */
 import L from "leaflet";
 import type { StationView } from "@/lib/scouting-stations";
@@ -11,7 +11,8 @@ const PANE = "scp-stations";
 const NUMBER_ZOOM = 17;
 const MAX_NUMBERS = 700;
 
-const ringRadius = (z: number) => Math.max(4, Math.min(11, 2.5 + (z - 12) * 1.1));
+/** Dot radius by zoom: ~2 px zoomed out to ~5 px close in. */
+export const dotRadius = (z: number) => Math.max(2, Math.min(5, 2 + (z - 12) * 0.45));
 
 export interface StationLayerHandle {
   update: (view: StationView, colorOf: (scout: string) => string) => void;
@@ -35,17 +36,17 @@ export function createStationLayer(
   let colorOf: (s: string) => string = () => "#2BA6E0";
   let visible = true;
   let openId: string | null = null;
-  let rings: Array<{ id: string; ring: L.CircleMarker; dot: L.CircleMarker }> = [];
+  let dots: Array<{ id: string; dot: L.CircleMarker; hit: L.CircleMarker }> = [];
   let open: L.CircleMarker | null = null;
 
-  const radiusNow = () => ringRadius(map.getZoom());
+  const radiusNow = () => dotRadius(map.getZoom());
   const restyle = () => {
     const r = radiusNow();
-    for (const x of rings) {
-      x.ring.setRadius(r);
-      x.dot.setRadius(Math.max(1.8, r * 0.42));
+    for (const x of dots) {
+      x.dot.setRadius(r);
+      x.hit.setRadius(Math.max(7, r + 2));
     }
-    open?.setRadius(r + 4);
+    open?.setRadius(r + 2.5);
   };
   const drawNumbers = () => {
     numbers.clearLayers();
@@ -63,7 +64,7 @@ export function createStationLayer(
         icon: L.divIcon({
           className: "",
           iconSize: [0, 0],
-          html: `<div style="transform:translate(8px,-18px);font:700 11px var(--sd-font),Poppins,Arial,sans-serif;color:#0a0a0a;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff;white-space:nowrap">${s.order}</div>`,
+          html: `<div style="transform:translate(6px,-14px);font:700 11px var(--sd-font),Poppins,Arial,sans-serif;color:#0a0a0a;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff;white-space:nowrap">${s.order}</div>`,
         }),
       }).addTo(numbers);
     }
@@ -76,11 +77,11 @@ export function createStationLayer(
     open = L.circleMarker([s.lat, s.lng], {
       pane: PANE,
       renderer,
-      radius: radiusNow() + 4,
+      radius: radiusNow() + 2.5,
       color: "#0a0a0a",
       weight: 2,
-      fillColor: "#0a0a0a",
-      fillOpacity: 0.18,
+      fillColor: colorOf(s.scout),
+      fillOpacity: 1,
       interactive: false,
     }).addTo(group);
   };
@@ -93,37 +94,38 @@ export function createStationLayer(
       view = v;
       colorOf = c;
       group.clearLayers();
-      rings = [];
+      dots = [];
       const r = radiusNow();
       for (const s of v.stations) {
         const color = colorOf(s.scout);
-        const ring = L.circleMarker([s.lat, s.lng], {
+        // Invisible, larger click target under the dot so a 2 px dot stays easy to hit.
+        const hit = L.circleMarker([s.lat, s.lng], {
           pane: PANE,
           renderer,
-          radius: r,
-          color,
-          weight: 2.5,
-          fillColor: "#ffffff",
-          fillOpacity: 1,
+          radius: Math.max(7, r + 2),
+          stroke: false,
+          fill: true,
+          fillOpacity: 0,
           bubblingMouseEvents: false,
         });
-        ring.on("click", (e) => {
+        hit.on("click", (e) => {
           L.DomEvent.stopPropagation(e);
           onOpen(s.id);
         });
-        ring.bindTooltip(`${v.numbered ? `#${s.order} · ` : ""}${s.key}`, { direction: "top" });
+        hit.bindTooltip(`${v.numbered ? `#${s.order} · ` : ""}${s.key}`, { direction: "top" });
         const dot = L.circleMarker([s.lat, s.lng], {
           pane: PANE,
           renderer,
-          radius: Math.max(1.8, r * 0.42),
-          stroke: false,
+          radius: r,
+          color: "#ffffff",
+          weight: 0.75,
           fillColor: color,
           fillOpacity: 1,
           interactive: false,
         });
-        ring.addTo(group);
+        hit.addTo(group);
         dot.addTo(group);
-        rings.push({ id: s.id, ring, dot });
+        dots.push({ id: s.id, dot, hit });
       }
       syncOpen();
       drawNumbers();

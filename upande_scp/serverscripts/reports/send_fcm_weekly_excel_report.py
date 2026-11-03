@@ -39,6 +39,7 @@ from datetime import date, timedelta
 
 import frappe
 
+from upande_scp.serverscripts.reports.report_sender import report_sender, sender_for_farms
 from upande_scp.serverscripts.scouting.scouting_metrics import (
     MOTH_OTHERS,
     get_fcm_larvae_weekly,
@@ -760,6 +761,7 @@ def send_fcm_weekly_excel_report():
             subject=f"FCM Weekly Monitoring Report — {farm_display} — {week_range_str} ({current_year})",
             message=_build_email_html(week_range_str, current_year, farm_display, kephis_id),
             attachments=[{"fname": fname, "fcontent": excel_bytes}],
+            sender=sender_for_farms([farm]),
         )
         sent += 1
         frappe.logger().info(
@@ -782,7 +784,7 @@ def trigger_fcm_email(farm=None, week=None):
         current_year = date.today().year
         excel_bytes, fname, _, week_range_str, _, farm_display = _build_workbook_bytes(farm, week=week)
         if excel_bytes is None:
-            _send_no_data_email(current_year, week_range_str, farm_display=farm_display)
+            _send_no_data_email(current_year, week_range_str, farm_display=farm_display, farm=farm)
             return {"ok": False, "farm": farm_display, "reason": "no data"}
         _, kephis_id, _ = _resolve_farm(farm)
         frappe.sendmail(
@@ -790,6 +792,7 @@ def trigger_fcm_email(farm=None, week=None):
             subject=f"FCM Weekly Monitoring Report — {farm_display} — {week_range_str} ({current_year})",
             message=_build_email_html(week_range_str, current_year, farm_display, kephis_id),
             attachments=[{"fname": fname, "fcontent": excel_bytes}],
+            sender=sender_for_farms([farm]),
         )
         return {"ok": True, "farm": farm_display, "recipients": _recipients()}
 
@@ -1067,7 +1070,7 @@ def _week_range_str_now():
     return last_week_mon.strftime("%d %b") + " - " + last_week_sun.strftime("%d %b %Y")
 
 
-def _send_no_data_email(current_year, week_range_str, farm_display=None):
+def _send_no_data_email(current_year, week_range_str, farm_display=None, farm=None):
     """Send a brief notice when no scouting data exists."""
     recipients = _recipients()
 
@@ -1081,4 +1084,5 @@ def _send_no_data_email(current_year, week_range_str, farm_display=None):
             f"The FCM weekly Excel report was not generated.</p>"
             f"<p>Regards,<br>Upande System</p>"
         ),
+        sender=sender_for_farms([farm] if farm else []),
     )

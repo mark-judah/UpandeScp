@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PlacePicker } from "@/components/PlacePicker";
 import {
   Mail,
   Download,
@@ -89,6 +90,16 @@ const REPORTS: ReportSpec[] = [
       "upande_scp.serverscripts.reports.send_weekly_trap_report.trigger_weekly_email",
     downloadUrl: () =>
       "/api/method/upande_scp.serverscripts.reports.send_weekly_trap_report.download_weekly_pdf",
+  },
+  {
+    key: "weekly_coverage",
+    title: "Weekly Greenhouse Coverage",
+    description:
+      "Last week, house by house: was it scouted, on which days, and by whom. Unscouted houses are listed first — emailed every Monday morning, or trigger now.",
+    emailMethod:
+      "upande_scp.serverscripts.reports.send_weekly_coverage_report.trigger_coverage_email",
+    downloadUrl: () =>
+      "/api/method/upande_scp.serverscripts.reports.send_weekly_coverage_report.download_coverage_pdf",
   },
   {
     key: "fcm",
@@ -265,25 +276,24 @@ function RoseReports() {
                 <div className="contents" aria-busy={farmsLoading || weeksLoading || undefined}>
                   <div className="flex flex-col gap-1">
                     <Label>Farm</Label>
-                    <Select
-                      value={farm}
-                      onValueChange={setFarm}
+                    <PlacePicker
+                      level="farm"
+                      variant="field"
+                      remember={false}
+                      allLabel={false}
+                      farms={farms.map((f) => f.farm)}
+                      label={`${r.title} farm`}
+                      placeholder={farmsLoading ? "Loading farms…" : "Pick a farm"}
+                      value={{ farm, greenhouse: "" }}
+                      onChange={(p) => setFarm(p.farm)}
                       disabled={!farms.length}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue
-                          placeholder={farmsLoading ? <TextSkeleton width="14ch" /> : "Pick a farm"}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {farms.map((f) => (
-                          <SelectItem key={f.farm} value={f.farm}>
-                            {f.display}
-                            {f.kephis_farm_id ? ` — ${f.kephis_farm_id}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
+                    {(() => {
+                      const k = farms.find((f) => f.farm === farm)?.kephis_farm_id;
+                      return k ? (
+                        <span className="text-xs text-muted-foreground">KEPHIS farm ID {k}</span>
+                      ) : null;
+                    })()}
                   </div>
                   <div className="flex flex-col gap-1">
                     <Label>ISO week (Mon–Sun)</Label>

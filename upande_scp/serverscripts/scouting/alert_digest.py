@@ -19,6 +19,7 @@ import frappe
 from upande_scp.serverscripts.common import threshold_bands as B
 from upande_scp.serverscripts.dashboard_aggregates import _common
 from upande_scp.serverscripts.reports.send_chemical_progress_email import _email_for
+from upande_scp.serverscripts.reports.report_sender import report_sender, sender_for_farms
 from upande_scp.serverscripts.scouting import spread
 from upande_scp.serverscripts.scouting import thresholds_check as TC
 
@@ -103,6 +104,8 @@ def _figure(a) -> str:
             f"{text} <span style='color:#777'>{house}{int(a.sections_scouted or 0)} "
             f"{esc(B.stations_word(a.get('station_word')))} in this section</span>"
         )
+    if a.get("measure") == B.PER_HA:
+        return f"{text} <span style='color:#777'>(cumulative this ISO week ÷ block area)</span>"
     margin = TC._margin(a)
     if margin is None:
         return f"{text} <span style='color:#777'>(too clustered to judge)</span>"
@@ -137,7 +140,7 @@ def render(alerts, day) -> str:
         f"{_patch_suffix(a, notes)}</td>"
         f"<td style='{cell}'>{esc(a.observation)}{(' · ' + esc(a.stage)) if a.stage else ''}</td>"
         f"<td style='{cell};text-align:right'>{_figure(a)}</td>"
-        f"<td style='{cell}'>{esc(a.reliability or '')}</td>"
+        f"<td style='{cell}'>{esc('' if a.get('measure') == B.PER_HA else (a.reliability or ''))}</td>"
         f"<td style='{cell}'>{esc(a.iso_week)}</td>"
         "</tr>"
         for a in alerts
@@ -222,6 +225,9 @@ def send_alert_digest(now=None) -> dict:
                     subject=f"Scouting alerts — {frappe.utils.formatdate(day, 'dd-MMM-yyyy')} ({len(alerts)})",
                     message=render(alerts, day),
                     reference_doctype=TC.DOCTYPE,
+                    # One company's alerts go out from its account; a digest that
+                    # spans companies uses the default.
+                    sender=sender_for_farms(a.farm for a in alerts),
                 )
                 _set_marker(user, TC.eat_stamp(now))
                 frappe.db.commit()

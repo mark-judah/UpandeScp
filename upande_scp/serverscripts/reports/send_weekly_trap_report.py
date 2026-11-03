@@ -18,6 +18,8 @@ Hook in hooks.py:
 import frappe
 from frappe.utils.pdf import get_pdf
 
+from upande_scp.serverscripts.reports.report_sender import report_sender
+
 
 HIGH_COUNT_THRESHOLD = 10
 TARGET_PESTS = ["FCM", "Spodoptera", "Helicoverpa", "Duponchella"]
@@ -614,7 +616,9 @@ def _filename_base():
 
 def send_weekly_trap_report():
     """Scheduler entry point — builds and sends the weekly trap email."""
-    frappe.sendmail(recipients=_recipients(), subject=_subject(), message=build_html())
+    frappe.sendmail(
+        recipients=_recipients(), subject=_subject(), message=build_html(), sender=report_sender()
+    )
 
 
 @frappe.whitelist()

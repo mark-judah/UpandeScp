@@ -29,6 +29,7 @@ import re
 
 import frappe
 
+from upande_scp.serverscripts.reports.report_sender import company_of_warehouse, report_sender
 from upande_scp.serverscripts.scouting import capture_settings
 
 REFUSED_MESSAGE = (
@@ -184,7 +185,8 @@ def attach_scouting_photo():
     try:
         recipients = _gm_recipients() if is_unidentified else []
         if recipients:
-            gh = frappe.db.get_value("Scouting Entry", entry, "greenhouse") or ""
+            gh, block = frappe.db.get_value("Scouting Entry", entry, ["greenhouse", "block"]) or ("", "")
+            gh = gh or ""
             esc = frappe.utils.escape_html
             label = subject_name
             frappe.sendmail(
@@ -201,6 +203,7 @@ def attach_scouting_photo():
                     + "</ul><p>Photo attached.</p>"
                 ),
                 attachments=[{"fname": fname, "fcontent": content}],
+                sender=report_sender(company_of_warehouse(gh or block)),
             )
     except Exception:
         frappe.log_error("attach_scouting_photo: GM email failed", frappe.get_traceback())

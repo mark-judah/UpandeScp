@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TrapPhotoCard } from "@/components/settings/TrapPhotoCard";
+import { ReportSenderCard } from "@/components/settings/ReportSenderCard";
 import { ScoutCaptureCard, maxCountError } from "@/components/settings/ScoutCaptureCard";
 import {
   saveSprayPlanSettings,
@@ -798,6 +799,13 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      <ReportSenderCard
+        value={draft.report_email_account ?? ""}
+        onChange={(name) => set("report_email_account", name)}
+        rows={draft.report_sender_accounts ?? []}
+        onRowsChange={(rows) => set("report_sender_accounts", rows)}
+      />
 
       <div className="lg:col-span-2 flex items-center justify-end gap-3 pt-1">
         {error && (

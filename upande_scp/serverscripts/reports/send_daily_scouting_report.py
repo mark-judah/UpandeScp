@@ -18,6 +18,8 @@ Hook in hooks.py:
 import frappe
 from frappe.utils.pdf import get_pdf
 
+from upande_scp.serverscripts.reports.report_sender import report_sender
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -388,6 +390,7 @@ def send_daily_scouting_report():
         recipients=_recipients(),
         subject="Scouting & Crop Protection: Daily Summary (" + subject_date + ")",
         message=html,
+        sender=report_sender(),
     )
 
 

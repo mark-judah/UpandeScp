@@ -18,6 +18,12 @@ class ScoutingandCropProtectionSettings(Document):
                 + ", ".join(sorted(overlap))
             )
 
+        seen = set()
+        for r in self.get("report_sender_accounts") or []:
+            if r.company in seen:
+                frappe.throw(f"Sending account: {r.company} appears more than once.")
+            seen.add(r.company)
+
         # Scout capture (pieces 5–6). A loaded Single reads a missing Check as 0
         # and saves a None Int as 0; never let that switch capture off or zero
         # the cap. An Int cannot tell 0 from unset, so 0 means the default.

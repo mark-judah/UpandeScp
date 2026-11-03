@@ -27,6 +27,7 @@ import frappe
 
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import _derive_farm
 from upande_scp.serverscripts.spray_plan_creator.lifecycle import AFP_TYPE, get_lifecycle
+from upande_scp.serverscripts.reports.report_sender import report_sender, sender_for_farms
 
 
 EAT = ZoneInfo("Africa/Nairobi")
@@ -316,6 +317,7 @@ def _build_and_send(target_date, dry_run: bool = False) -> dict:
                 message=render_v2(mine, target_date),
                 attachments=attachments,
                 reference_doctype="Scouting and Crop Protection Settings",
+                sender=sender_for_farms(mine),
             )
             sent.append(email)
         except Exception:

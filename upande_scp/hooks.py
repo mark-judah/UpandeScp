@@ -343,7 +343,16 @@ doc_events = {
     # is hooked individually — the invalidator bumps the cache version stamp,
     # and publish_scouting_dirty nudges live clients to re-sync the affected
     # month (see docs/data_caching.md L4 section).
-    "Scouting Entry": _SCP_SCOUTING_EVENTS,
+    "Scouting Entry": {
+        **_SCP_SCOUTING_EVENTS,
+        # Block crops: queue the block's cumulative per-ha recompute (enqueue
+        # only; never inline in the scout's save).
+        "on_update": [
+            _SCP_CACHE_INVALIDATOR,
+            _SCP_REALTIME_DIRTY,
+            "upande_scp.serverscripts.scouting.cumulative_per_ha.on_scouting_entry",
+        ],
+    },
     "Pests Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Diseases Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Trap Scouting Entry": _SCP_SCOUTING_EVENTS,
@@ -411,7 +420,9 @@ scheduler_events = {
         ],
         # Weekly Trap Scouting Report — Mondays 08:00 EAT (05:00 UTC)
         "0 5 * * 1": [
-            "upande_scp.serverscripts.reports.send_weekly_trap_report.send_weekly_trap_report"
+            "upande_scp.serverscripts.reports.send_weekly_trap_report.send_weekly_trap_report",
+            # Weekly Greenhouse Coverage — was every house scouted, and by whom
+            "upande_scp.serverscripts.reports.send_weekly_coverage_report.send_weekly_coverage_report",
         ],
         # KEPHIS FCM Weekly Excel — Tuesdays 08:00
         "0 8 * * 2": [
@@ -666,7 +677,7 @@ fixtures = [
         "filters": [["name", "in", [
             "SCP General Manager", "SCP Spray Supervisor", "SCP Spray Plan Creator",
             "SCP Spray Plan Approver", "SCP Scout", "SCP Chemical Store Keeper",
-            "SCP Scouting User", "SCP Production Supervisor"
+            "SCP Scouting User", "SCP Production Supervisor", "SCP Farm Manager"
         ]]]
     }
     # NOTE: We deliberately do NOT export permissions (Custom DocPerm) from

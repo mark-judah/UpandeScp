@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import frappe
 
+from upande_scp.serverscripts.common import crew_availability
 from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invalidate
 
 from .admin import _require_admin
@@ -148,6 +149,14 @@ def get_settings_bundle() -> dict:
             "auto_cancel_enabled": int(settings.auto_cancel_enabled or 0),
             "auto_cancel_apply_to_backlog": int(settings.auto_cancel_apply_to_backlog or 0),
             "auto_cancel_dormant_days": settings.auto_cancel_dormant_days or 3,
+            # Spray cutoff + postponement bounds (read back with the server's own defaults
+            # so the editor never shows a blank that behaves as 10:00), and the crew
+            # leave check (blank reads as Warn, as `normalise_mode` enforces).
+            "spray_cutoff_time": str(settings.spray_cutoff_time or "10:00:00"),
+            "postponement_max_days": settings.postponement_max_days or 7,
+            "postponement_grace_minutes": int(settings.postponement_grace_minutes or 0),
+            "crew_leave_check": crew_availability.normalise_mode(settings.get("crew_leave_check")),
+            "crew_require_checkin": int(settings.get("crew_require_checkin") or 0),
             "auto_cancel_activated_on": str(settings.auto_cancel_activated_on or ""),
             "loaning_enabled": int(settings.loaning_enabled or 0),
             "loaning_depletion_pct": settings.loaning_depletion_pct or 15,
@@ -211,6 +220,11 @@ def save_spray_plan_settings(payload) -> dict:
         "auto_cancel_enabled",
         "auto_cancel_apply_to_backlog",
         "auto_cancel_dormant_days",
+        "spray_cutoff_time",
+        "postponement_max_days",
+        "postponement_grace_minutes",
+        "crew_leave_check",
+        "crew_require_checkin",
         "loaning_enabled",
         "loaning_depletion_pct",
         "loaning_timeout_hours",
@@ -222,6 +236,10 @@ def save_spray_plan_settings(payload) -> dict:
     for f in scalar_fields:
         if f in payload:
             settings.set(f, payload[f])
+    if "crew_leave_check" in payload:
+        settings.crew_leave_check = crew_availability.normalise_mode(payload["crew_leave_check"])
+    if "crew_require_checkin" in payload:
+        settings.crew_require_checkin = 1 if frappe.utils.cint(payload["crew_require_checkin"]) else 0
 
     # Capture fields this save set on purpose: the Single's validate fills the
     # default on any capture field with no stored row, except these.

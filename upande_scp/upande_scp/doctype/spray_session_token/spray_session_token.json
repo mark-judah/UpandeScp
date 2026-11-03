@@ -1,0 +1,237 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:token",
+ "creation": "2026-08-17 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "token",
+  "work_order",
+  "greenhouse",
+  "farm",
+  "status",
+  "cb_times",
+  "mix_at",
+  "started_at",
+  "ended_at",
+  "device_skew_seconds",
+  "past_cutoff",
+  "crew_warnings",
+  "sec_scans",
+  "scans",
+  "sec_result",
+  "manufacture_stock_entry",
+  "issue_stock_entry",
+  "logsheet",
+  "cb_result",
+  "synced_at",
+  "synced_by",
+  "refusal"
+ ],
+ "fields": [
+  {
+   "description": "Generated on the handset. The token IS this record's name, so a re-sync finds what it already created instead of creating it twice.",
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Token",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Spray Plan",
+   "options": "Work Order",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Greenhouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Farm",
+   "options": "Farm",
+   "read_only": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nSynced\nPartial\nRefused\nHeld \u2014 too short\nHeld \u2014 incomplete",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "cb_times",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mix_at",
+   "fieldtype": "Datetime",
+   "label": "Tank Mix Made At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Spray Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Spray Ended At",
+   "read_only": 1
+  },
+  {
+   "description": "Device clock minus server clock at the last successful contact. Recorded so a suspect timestamp is auditable rather than invisible.",
+   "fieldname": "device_skew_seconds",
+   "fieldtype": "Int",
+   "label": "Device Clock Skew (s)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The spray began after its daily cutoff. Recorded, not refused \u2014 the session happened, and losing the record would be worse than flagging it.",
+   "fieldname": "past_cutoff",
+   "fieldtype": "Check",
+   "label": "Started After Cutoff",
+   "read_only": 1
+  },
+  {
+   "description": "Crew members who were on leave (or not clocked in), and a phone clock more than 2 hours out. Recorded, never refused: the spray already happened.",
+   "fieldname": "crew_warnings",
+   "fieldtype": "Small Text",
+   "label": "Crew / clock warnings",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_scans",
+   "fieldtype": "Section Break",
+   "label": "Scanned Chemicals"
+  },
+  {
+   "fieldname": "scans",
+   "fieldtype": "Table",
+   "label": "Scans",
+   "options": "Spray Session Scan"
+  },
+  {
+   "fieldname": "sec_result",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "manufacture_stock_entry",
+   "fieldtype": "Link",
+   "label": "Manufacture Entry",
+   "options": "Stock Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "issue_stock_entry",
+   "fieldtype": "Link",
+   "label": "Material Issue",
+   "options": "Stock Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "logsheet",
+   "fieldtype": "Link",
+   "label": "Logsheet",
+   "options": "Spray Application Logsheet",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "synced_at",
+   "fieldtype": "Datetime",
+   "label": "Synced At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "synced_by",
+   "fieldtype": "Link",
+   "label": "Synced By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refusal",
+   "fieldtype": "Small Text",
+   "label": "Why It Was Refused",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-15 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Spray Session Token",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "export": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "work_order"
+}

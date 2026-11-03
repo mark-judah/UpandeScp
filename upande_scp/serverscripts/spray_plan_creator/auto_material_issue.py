@@ -95,7 +95,9 @@ def resolve_expense_account(item_code: str, company: str) -> str:
     )
 
 
-def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
+def build_material_issue(
+    manufacture_se, wo, supervisor_employee: str, posting_moment=None
+) -> dict:
     """Return a dict ready to ``frappe.get_doc()`` for the Material Issue.
 
     Throws (rolling back the triggering transaction) on any missing input.
@@ -163,7 +165,9 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
         if _emp_fields else {}
     ) or {}
 
-    posting = now_datetime()
+    # `set_posting_time` below honours an explicit moment, so an offline session posts at
+    # the time it happened rather than the time it synced.
+    posting = frappe.utils.get_datetime(posting_moment) if posting_moment else now_datetime()
     return {
         "doctype": "Stock Entry",
         "stock_entry_type": "Material Issue",
@@ -193,7 +197,7 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
     }
 
 
-def build_and_submit_material_issue(wo, manufacture_se):
+def build_and_submit_material_issue(wo, manufacture_se, posting_moment=None):
     """Create + submit the Material Issue SE that consumes the tank-mix.
 
     Called from ``end_spray_session`` once the supervisor closes the spray.
@@ -202,7 +206,9 @@ def build_and_submit_material_issue(wo, manufacture_se):
     rolls back.
     """
     supervisor = resolve_supervisor_employee(wo)
-    payload = build_material_issue(manufacture_se, wo, supervisor)
+    payload = build_material_issue(
+        manufacture_se, wo, supervisor, posting_moment=posting_moment
+    )
 
     mi = frappe.get_doc(payload)
     mi.flags.ignore_permissions = True

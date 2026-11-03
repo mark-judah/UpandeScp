@@ -18,11 +18,15 @@ Endpoints:
 """
 from __future__ import annotations
 
+import hashlib
 import json
+from contextlib import contextmanager
 from typing import Any
 
 import frappe
-from frappe.utils import flt, now_datetime, today
+from frappe.utils import flt, get_datetime, getdate, now_datetime, today
+
+from upande_scp.serverscripts.common.timezone import to_site_naive
 
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import (
     _derive_farm,
@@ -33,6 +37,7 @@ from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
     resolve_supervisor_employee,
 )
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
+from upande_scp.serverscripts.spray_plan_creator.refusals import log_refusals
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 
 AFP_TYPE = "Application Floor Plan"
@@ -59,6 +64,34 @@ def _lock_wo(wo_name: str) -> str:
     return row[0]["workflow_state"] or ""
 
 
+@contextmanager
+def wo_mutex(work_order: str, wait: int = 30):
+    """Serialise whole requests for one Work Order, snapshot included.
+
+    ``_lock_wo`` (SELECT ... FOR UPDATE) serialises the state *read*, but a request that
+    waited on it still works from rows it read BEFORE the lock. This takes a named
+    advisory lock first, commits to drop the read snapshot, runs the step, COMMITS, and
+    only then releases — so a second tap converges on what the first one wrote instead
+    of failing on stale ``produced_qty``. GET_LOCK is re-entrant per connection.
+    """
+    key = "scp_wo_" + hashlib.md5(str(work_order).encode()).hexdigest()
+    got = frappe.db.sql("SELECT GET_LOCK(%s, %s)", (key, wait))[0][0]
+    if got != 1:
+        frappe.throw(
+            "This plan is still being processed from another request. "
+            "Wait a moment and try again."
+        )
+    try:
+        frappe.db.commit()  # fresh read snapshot now that we hold the lock
+        yield
+        frappe.db.commit()  # visible to the next holder BEFORE we release
+    finally:
+        try:
+            frappe.db.sql("SELECT RELEASE_LOCK(%s)", (key,))
+        except Exception:
+            pass
+
+
 def _ensure_afp(wo) -> None:
     if getattr(wo, "custom_type", None) != AFP_TYPE:
         frappe.throw(
@@ -67,8 +100,16 @@ def _ensure_afp(wo) -> None:
         )
 
 
-def _resolve_employee_from_session() -> str:
-    """Find the Employee linked to the calling user. Throws if none."""
+def _resolve_employee_from_session(employee: str | None = None) -> str:
+    """Find the Employee to credit a scan to. Throws if there is none.
+
+    ``employee`` names who actually took the chemical, for a session recorded offline and
+    replayed later; without it the scan is credited to whoever pressed Sync.
+    """
+    if employee and frappe.db.exists(
+        "Employee", {"name": employee, "status": "Active"}
+    ):
+        return employee
     user = frappe.session.user
     if user and user not in ("Guest", "Administrator"):
         emp = frappe.db.get_value(
@@ -135,6 +176,8 @@ def register_csu_scan(
     gps_lat: float | None = None,
     gps_lon: float | None = None,
     via_tick: int | str | None = None,
+    scanned_at=None,
+    employee: str | None = None,
 ) -> dict[str, Any]:
     """Upsert one chemical's scan row on a Work Order.
 
@@ -178,8 +221,10 @@ def register_csu_scan(
             f"Item {item_code} is not in this Work Order's required chemicals."
         )
 
-    employee = _resolve_employee_from_session()
-    now = now_datetime()
+    employee = _resolve_employee_from_session(employee)
+    # `scanned_at` is the moment the label was actually scanned, for a session recorded
+    # offline. It dates the audit row only; manufacture is its own explicit step.
+    now = to_site_naive(scanned_at) or now_datetime()
 
     # Upsert on (work_order, item_code) via direct child-row operations. We
     # deliberately avoid ``wo.save()`` here — the WO is docstatus=1 and a full
@@ -329,7 +374,7 @@ def _rebuild_manufacture_from_transfer(se_doc, wo_name: str, wip: str) -> None:
         idx = idx + 1
 
 
-def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
+def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None, posting_moment=None):
     """Build Manufacture SE + SAL draft, flip WO to Tank Mix Manufactured.
 
     Caller must already hold the WO row lock and have verified all chemicals
@@ -347,6 +392,15 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
     se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
     if not getattr(se_doc, "to_warehouse", None):
         se_doc.to_warehouse = wo.fg_warehouse or wo.custom_greenhouse
+
+    # An offline session is posted at the moment the mix was actually made, so the cost
+    # lands in the month the spray did. The caller clamps it to the transfer anchor
+    # (`offline_session.resolve_moments`); the ledger refuses anything earlier.
+    if posting_moment:
+        moment = get_datetime(posting_moment)
+        se_doc.set_posting_time = 1
+        se_doc.posting_date = moment.date()
+        se_doc.posting_time = moment.time()
 
     # Floor-plan-is-truth: rebuild the raw consumption from what was actually
     # transferred into the CSU for this WO, instead of the template BOM's
@@ -476,8 +530,27 @@ def get_manufacture_reconciliation(work_order: str) -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@log_refusals("manufacture_tank_mix")
 def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
+    """Confirm the tank mix (HTTP entry): serialised per Work Order, posts at now.
+
+    There is deliberately no client-supplied posting moment here: a back-dated mix comes
+    only from the offline replay, which clamps the moment and calls
+    ``_manufacture_tank_mix``.
+    """
+    if not work_order:
+        frappe.throw("work_order is required.")
+    if not frappe.db.exists("Work Order", work_order):
+        frappe.throw(f"Work Order {work_order} not found.")
+    with wo_mutex(work_order):
+        return _manufacture_tank_mix(work_order)
+
+
+def _manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]:
     """Explicitly manufacture the tank mix for a fully-scanned WO.
+
+    ``posting_moment`` back-dates the Manufacture to when the mix was actually made, for a
+    session recorded offline and synced later.
 
     This is the deliberate replacement for the old auto-promote-on-last-scan:
     the supervisor confirms the spray team and then presses "Confirm Tank Mix",
@@ -547,7 +620,9 @@ def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
             ),
         }
 
-    manu_se_name, sal_name = _promote_to_tank_mix_manufactured(wo, None)
+    manu_se_name, sal_name = _promote_to_tank_mix_manufactured(
+        wo, None, posting_moment=posting_moment
+    )
     wo = frappe.get_doc("Work Order", work_order)   # reload post-manufacture
     return {
         "workflow_state": STATE_TANK_MIX_MANUFACTURED,
@@ -684,8 +759,37 @@ def _create_sal_draft(wo, manufacture_se) -> str:
 
 
 @frappe.whitelist()
-def start_spray_session(work_order: str) -> dict[str, Any]:
+@log_refusals("start_spray_session")
+def start_spray_session(
+    work_order: str,
+    started_at=None,
+    employee: str | None = None,
+) -> dict[str, Any]:
+    """Open a Sprayer Movement Session — the HTTP entry point.
+
+    Always enforces the daily cutoff and (per the setting) the crew leave check. The
+    replay switch lives on ``_start_spray_session`` and is not reachable over HTTP.
+    """
+    if not work_order:
+        frappe.throw("work_order is required.")
+    with wo_mutex(work_order):
+        return _start_spray_session(
+            work_order, started_at=started_at, enforce_cutoff=True, employee=employee
+        )
+
+
+def _start_spray_session(
+    work_order: str,
+    started_at=None,
+    enforce_cutoff: bool = True,
+    employee: str | None = None,
+) -> dict[str, Any]:
     """Open a Sprayer Movement Session for an Application Floor Plan WO.
+
+    ``started_at`` is when the spray actually began (offline session). ``enforce_cutoff``
+    False is for replaying a session that already happened: the cutoff stops somebody
+    *deciding to start* late, not recording a spray that was done; the session is flagged
+    ``past_cutoff`` on its token instead, and the crew leave check records, never refuses.
 
     Preconditions: WO state == Tank Mix Manufactured, SAL linked. Side effects:
     creates an Active Sprayer Movement Session, stamps the SAL's
@@ -699,11 +803,42 @@ def start_spray_session(work_order: str) -> dict[str, Any]:
     wo = frappe.get_doc("Work Order", work_order)
     _ensure_afp(wo)
 
+    # Idempotent: already spraying (or done) is success, so a retry converges.
+    if current_state in (STATE_SPRAYING_IN_PROGRESS, STATE_COMPLETED):
+        started = wo.get("actual_start_date")
+        return {
+            "workflow_state": current_state,
+            "sprayer_movement_session": _any_sms_for(wo.name),
+            "sal": wo.get("custom_spray_application_logsheet"),
+            "started_at": get_datetime(started).isoformat() if started else None,
+            "crew_warnings": [],
+            "already": True,
+        }
+
     if current_state != STATE_TANK_MIX_MANUFACTURED:
         frappe.throw(
             f"Cannot start spray: Work Order is in {current_state!r}, expected "
             f"{STATE_TANK_MIX_MANUFACTURED!r}."
         )
+
+    # The daily cutoff: a late plan is postponed, not sprayed late.
+    if enforce_cutoff:
+        from upande_scp.serverscripts.spray_plan_creator import postponement
+
+        postponement.assert_within_cutoff(work_order)
+
+    # Crew availability: a live start checks TODAY; a replay checks the day the spray
+    # happened and never refuses.
+    if enforce_cutoff or not started_at:
+        crew_day = getdate(today())
+    else:
+        crew_day = get_datetime(started_at).date()
+    crew_check = _check_crew(
+        wo.name,
+        [getattr(r, "employee", None) for r in (wo.custom_spray_plan_team_members or [])],
+        crew_day,
+        can_block=enforce_cutoff,
+    )
 
     sal_name = wo.custom_spray_application_logsheet
     if not sal_name:
@@ -712,8 +847,8 @@ def start_spray_session(work_order: str) -> dict[str, Any]:
             "Logsheet linked. Re-run the chemical-scan flow."
         )
 
-    employee = _resolve_employee_from_session()
-    now = now_datetime()
+    employee = _resolve_employee_from_session(employee)
+    now = get_datetime(started_at) if started_at else now_datetime()
 
     sms = frappe.get_doc(
         {
@@ -728,13 +863,18 @@ def start_spray_session(work_order: str) -> dict[str, Any]:
     sms.flags.ignore_permissions = True
     sms.insert()
 
+    sal_start = {
+        "application_start_time": now.time(),
+        "start_time": now.time(),
+    }
+    # A Time carries no date; the datetime twin keeps a midnight-crossing or next-morning
+    # synced session reconstructable.
+    if frappe.get_meta("Spray Application Logsheet").get_field("custom_application_start_at"):
+        sal_start["custom_application_start_at"] = now
     frappe.db.set_value(
         "Spray Application Logsheet",
         sal_name,
-        {
-            "application_start_time": now.time(),
-            "start_time": now.time(),
-        },
+        sal_start,
         update_modified=True,
     )
 
@@ -763,6 +903,7 @@ def start_spray_session(work_order: str) -> dict[str, Any]:
         "sprayer_movement_session": sms.name,
         "sal": sal_name,
         "started_at": now.isoformat(),
+        "crew_warnings": crew_check["messages"],
     }
 
 
@@ -796,6 +937,70 @@ def _open_sms_for(wo_name: str) -> str | None:
     return rows[0].name if rows else None
 
 
+def _any_sms_for(wo_name: str) -> str | None:
+    rows = frappe.get_all(
+        "Sprayer Movement Session",
+        filters={"work_order": wo_name},
+        fields=["name"],
+        order_by="started_at DESC",
+        limit=1,
+    )
+    return rows[0].name if rows else None
+
+
+def _check_crew(work_order: str, employees, on_date, can_block: bool = True) -> dict:
+    """Run the crew leave check for one plan and act on it.
+
+    Block mode (and ``can_block``) refuses with names and reasons. Otherwise the warnings
+    go on the Work Order as comments — once each — and back to the caller.
+    """
+    from upande_scp.serverscripts.common import crew_availability as CA
+
+    result = CA.check_crew([e for e in employees if e], on_date, can_block=can_block)
+    if result["blocked"]:
+        frappe.throw(CA.refusal_message(result["blocked"], on_date), title="Crew not available")
+    if result["messages"]:
+        CA.comment_on_work_order(work_order, result["messages"])
+    return result
+
+
+@frappe.whitelist()
+def get_crew_availability(work_order: str = None, employees=None, on_date=None) -> dict[str, Any]:
+    """Who on a crew is on leave / leave pending / not clocked in, for a date.
+
+    ``employees`` defaults to the plan's crew and ``on_date`` to its planned start date
+    (today when neither is given). Read-only: never refuses, never comments.
+    """
+    from upande_scp.serverscripts.common import crew_availability as CA
+
+    if isinstance(employees, str):
+        employees = json.loads(employees or "[]") if employees.strip().startswith("[") else [employees]
+    employees = [str(e).strip() for e in (employees or []) if e]
+    if work_order:
+        if not frappe.has_permission("Work Order", "read", work_order):
+            frappe.throw(f"Not permitted to read {work_order}.", frappe.PermissionError)
+        if not employees:
+            employees = frappe.get_all(
+                "Custom Spray Plan Team Member",
+                filters={"parent": work_order, "parenttype": "Work Order",
+                         "parentfield": "custom_spray_plan_team_members"},
+                pluck="employee",
+                order_by="idx asc",
+            )
+        if not on_date:
+            planned = frappe.db.get_value("Work Order", work_order, "planned_start_date")
+            on_date = getdate(planned) if planned else None
+    day = getdate(on_date) if on_date else getdate(today())
+    cfg = CA.settings()
+    avail = CA.availability(employees, day, cfg["require_checkin"]) if cfg["mode"] != CA.OFF else {}
+    return {
+        "mode": cfg["mode"],
+        "require_checkin": cfg["require_checkin"],
+        "on_date": str(day),
+        "members": avail,
+    }
+
+
 def _team_applicators(wo) -> list[dict[str, Any]]:
     """Build SAL applicator rows from wo.custom_spray_plan_team_members.
 
@@ -817,6 +1022,15 @@ def _team_applicators(wo) -> list[dict[str, Any]]:
 
 @frappe.whitelist()
 def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
+    """Record who is spraying — the HTTP entry point. Always enforces the leave check per
+    the setting; the non-refusing replay path is ``_update_work_order_team``, which is
+    server-internal so a client cannot send ``enforce_leave=0`` to bypass Block."""
+    return _update_work_order_team(work_order, team, enforce_leave=True)
+
+
+def _update_work_order_team(
+    work_order: str = None, team=None, enforce_leave: bool = True
+) -> dict[str, Any]:
     """Record who is spraying, just before the spray starts.
 
     Reached at the bare path ``/api/method/update_work_order_team``, which had no
@@ -873,6 +1087,15 @@ def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
     if not rows:
         frappe.throw("A spray team needs at least one member with an employee.")
 
+    # Crew availability TODAY (the morning the crew sprays). Block refuses, Warn saves and
+    # comments. ``enforce_leave=False`` is the offline replay: recorded, not refused.
+    crew_check = _check_crew(
+        work_order,
+        [r["employee"] for r in rows],
+        getdate(today()),
+        can_block=bool(enforce_leave),
+    )
+
     frappe.db.delete(
         "Custom Spray Plan Team Member",
         {
@@ -906,12 +1129,30 @@ def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
         update_modified=False,
     )
 
-    return {"success": True, "work_order": work_order, "members": len(rows)}
+    return {
+        "success": True,
+        "work_order": work_order,
+        "members": len(rows),
+        "crew_warnings": crew_check["messages"],
+    }
 
 
 @frappe.whitelist()
-def end_spray_session(work_order: str) -> dict[str, Any]:
+@log_refusals("end_spray_session")
+def end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
+    """Close out a spray (HTTP entry): serialised per Work Order, idempotent."""
+    if not work_order:
+        frappe.throw("work_order is required.")
+    with wo_mutex(work_order):
+        return _end_spray_session(work_order, ended_at=ended_at)
+
+
+def _end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
     """Close out a spray: fire Material Issue, submit SAL, close SMS, mark WO Completed.
+
+    ``ended_at`` is when the spray actually finished (offline session). It dates the SAL
+    close, the session close, actual_end_date and the Material Issue, which is the entry
+    that decides the costing month.
 
     Preconditions: WO state == Spraying In Progress, Manufacture SE on file,
     SAL drafted. Side effects:
@@ -969,11 +1210,13 @@ def end_spray_session(work_order: str) -> dict[str, Any]:
     # Stop never throws just because the person pressing it has no linked
     # Employee — the same robust resolution the Material Issue already uses.
     supervisor_emp = resolve_supervisor_employee(wo)
-    now = now_datetime()
+    now = get_datetime(ended_at) if ended_at else now_datetime()
 
     # Fill SAL closing fields, then submit.
     sal.application_stop_time = now.time()
     sal.end_time = now.time()
+    if sal.meta.get_field("custom_application_stop_at"):
+        sal.custom_application_stop_at = now
     sal.supervisor_name = supervisor_emp
     sal.applicators = []
     for app in _team_applicators(wo):
@@ -985,7 +1228,7 @@ def end_spray_session(work_order: str) -> dict[str, Any]:
     # Fire the Material Issue. Any throw here rolls back the SAL submit + all
     # downstream state. ``build_and_submit_material_issue`` rebuilds the issue
     # payload from the Manufacture SE, so we don't need to track FG rows here.
-    mi_name = build_and_submit_material_issue(wo, manu_se)
+    mi_name = build_and_submit_material_issue(wo, manu_se, posting_moment=now)
 
     # Close the SMS (best-effort discovery — there should be exactly one open
     # session for this WO).

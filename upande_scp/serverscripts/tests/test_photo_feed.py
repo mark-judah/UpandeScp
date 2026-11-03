@@ -136,7 +136,7 @@ class TestScope(FeedCase):
             self.feed(crop="Avocado")
 
     def test_no_aggregate_schema_change(self):
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "psn1")
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "pha1")
 
 
 class TestHms(unittest.TestCase):

@@ -40,3 +40,18 @@ describe("alertFigureLine for a hot spot", () => {
     ).toBe("3 per tree (house 0.4 per tree) · 5 trees in this section");
   });
 });
+
+describe("alertFigureLine for a block crop (per hectare)", () => {
+  it("reads as per ha this week, with no margin or section count", () => {
+    const line = alertFigureLine({
+      value: 12.4, unit: "/ ha this week", margin: null, sections_scouted: 0, sections_total: 0,
+    });
+    expect(line).toBe("12.4 / ha this week · over its threshold");
+    expect(line).not.toMatch(/clustered|\/9/);
+  });
+  it("keeps two decimals under 10", () => {
+    expect(
+      alertFigureLine({ value: 0.46, unit: "/ ha this week", margin: null, sections_scouted: 0, sections_total: 0 }),
+    ).toContain("0.46 / ha this week");
+  });
+});

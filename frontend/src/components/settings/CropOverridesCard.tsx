@@ -55,6 +55,7 @@ const LABELS: Record<string, string> = {
   auto_cancel_enabled: "Auto-cancel dormant plans (1 or 0)",
   auto_cancel_dormant_days: "Dormant window (days)",
   csu_scan_verification: "CSU scan verification",
+  cumulative_alert_paused: "Pause cumulative per-ha alert emails (1 or 0)",
 };
 
 /** The order they read in — weather together, then rotation, then the day's
@@ -90,6 +91,10 @@ const GROUPS: Array<{ title: string; keys: string[] }> = [
     keys: ["auto_cancel_enabled", "auto_cancel_dormant_days"],
   },
   { title: "Store handover", keys: ["csu_scan_verification"] },
+  {
+    title: "Cumulative alerts (block crops)",
+    keys: ["cumulative_alert_paused"],
+  },
 ];
 
 export function CropOverridesCard({ crop }: { crop: string }) {

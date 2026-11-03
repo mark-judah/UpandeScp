@@ -64,7 +64,9 @@ interface SeriesPoint {
 
 interface Summary {
   obsKind: ObsKind;
-  measure: "Percentage" | "Count";
+  measure: "Percentage" | "Count" | "Per ha";
+  /** block crops: the block has no area, so no per-ha figure */
+  no_area?: boolean;
   threshold: { low: number; moderate: number; high: number; measure: string } | null;
   latest: (PrevalenceFigures & { value: number | null; band: string | null }) | null;
   series: SeriesPoint[];
@@ -266,7 +268,8 @@ function SummaryBlock({ summary, loading }: { summary: Summary | null; loading: 
   }
   if (!summary) return null;
   const { latest, threshold, series } = summary;
-  const unit = summary.measure === "Count" ? " per station" : "%";
+  const perHa = summary.measure === "Per ha";
+  const unit = perHa ? " / ha this week" : summary.measure === "Count" ? " per station" : "%";
   return (
     <div className="flex flex-col gap-3" data-testid="heatmap-summary">
       <div className="flex flex-col gap-1.5 rounded-md border bg-card p-3 text-xs">
@@ -280,7 +283,7 @@ function SummaryBlock({ summary, loading }: { summary: Summary | null; loading: 
                 {latest.value ?? "—"}
                 {latest.value != null ? unit : ""}
               </span>
-              <ReliabilityPill value={latest.reliability} />
+              {perHa ? null : <ReliabilityPill value={latest.reliability} />}
               {latest.band ? (
                 <span
                   data-testid="band-pill"
@@ -294,13 +297,21 @@ function SummaryBlock({ summary, loading }: { summary: Summary | null; loading: 
                 </span>
               ) : null}
             </div>
-            <div className="text-muted-foreground">{figureLine(latest)}</div>
+            <div className="text-muted-foreground">
+              {perHa ? "Cumulative over the ISO week, per hectare of the block" : figureLine(latest)}
+            </div>
           </>
         ) : (
-          <div className="text-muted-foreground">No scouted stations in this window.</div>
+          <div className="text-muted-foreground">
+            {summary.no_area ? "No area set for this block, so no per-ha figure." : "No scouted stations in this window."}
+          </div>
         )}
         <div className="text-muted-foreground">
-          {threshold
+          {perHa
+            ? threshold
+              ? `Threshold: ${threshold.high}${unit}`
+              : "No per-ha threshold set for this pest."
+            : threshold
             ? `Bands: low ${threshold.low} · moderate ${threshold.moderate} · high ${threshold.high}${unit}`
             : "No threshold bands set for this pest."}
         </div>

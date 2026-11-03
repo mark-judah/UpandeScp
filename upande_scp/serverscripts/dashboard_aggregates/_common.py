@@ -351,7 +351,9 @@ K_DASH_AGG_PREFIX = "scp:dash_agg"
 # "hot1": greenhouse_detail sections carry ``hot`` (hot-spots spec H7).
 # "prev1": percentages are station prevalence per ISO week over stations SCOUTED
 # (common/prevalence.py), and payloads carry margin / sections / reliability.
-K_DASH_AGG_SCHEMA = "psn1"
+# "pha1": a block-grown crop's Overview / Pests / Diseases payloads carry per-hectare
+# figures (``perHa``) and judge alerts against the per-ha threshold.
+K_DASH_AGG_SCHEMA = "pha1"
 # Versioning the key with K_SCOUTING_PAYLOAD_VERSION was the original design,
 # but every Scouting Entry insert/update bumps that stamp via
 # cache_utils.invalidate_on_change — on a busy site (mobile syncs) the

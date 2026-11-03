@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Download, AlertCircle, Layers } from "lucide-react";
+import { PlacePicker } from "@/components/PlacePicker";
+import { Download, AlertCircle, Layers, Mail } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -19,6 +20,8 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
 import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
+import { previewCumulativeAlertEmail, sendTestCumulativeAlert } from "@/lib/cumulative-api";
+import { errorText } from "@/lib/errors";
 
 const NS = "upande_scp.serverscripts.reports.block_weekly_report";
 
@@ -62,6 +65,9 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
   const [week, setWeek] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [weeksLoading, setWeeksLoading] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [alertBusy, setAlertBusy] = useState<"preview" | "test" | null>(null);
+  const [alertNote, setAlertNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -99,6 +105,34 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
       `&year=${encodeURIComponent(year)}&week=${encodeURIComponent(wk)}`;
   };
 
+  const previewAlert = async () => {
+    setAlertBusy("preview");
+    setAlertNote(null);
+    try {
+      setPreviewHtml(await previewCumulativeAlertEmail(crop));
+    } catch (e) {
+      setAlertNote({ ok: false, text: errorText(e, "Could not build the preview.") });
+    } finally {
+      setAlertBusy(null);
+    }
+  };
+  const testAlert = async () => {
+    setAlertBusy("test");
+    setAlertNote(null);
+    try {
+      const r = await sendTestCumulativeAlert(crop);
+      setAlertNote(
+        r.sent
+          ? { ok: true, text: `Test email sent to ${r.to}.` }
+          : { ok: false, text: r.reason || "Test email was not sent." },
+      );
+    } catch (e) {
+      setAlertNote({ ok: false, text: errorText(e, "Test email failed.") });
+    } finally {
+      setAlertBusy(null);
+    }
+  };
+
   const ready = avail?.ready ?? [];
   const blocked = avail?.blocked ?? [];
 
@@ -132,18 +166,24 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
                 <Label>Farm</Label>
-                <Select value={farm} onValueChange={setFarm} disabled={loading}>
-                  <SelectTrigger className="w-56">
-                    <SelectValue placeholder={loading ? <TextSkeleton width="16ch" /> : "Pick a farm"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ready.map((f) => (
-                      <SelectItem key={f.farm} value={f.farm}>
-                        {f.farm} ({f.blocks} blocks)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <PlacePicker
+                  level="farm"
+                  variant="field"
+                  allLabel={false}
+                  className="w-56"
+                  farms={ready.map((f) => f.farm)}
+                  label="Block report farm"
+                  placeholder={loading ? "Loading farms…" : "Pick a farm"}
+                  value={{ farm, greenhouse: "" }}
+                  onChange={(p) => setFarm(p.farm)}
+                  disabled={loading}
+                />
+                {(() => {
+                  const n = ready.find((f) => f.farm === farm)?.blocks;
+                  return n !== undefined ? (
+                    <span className="block text-xs text-muted-foreground">{n} blocks</span>
+                  ) : null;
+                })()}
               </div>
 
               <div className="space-y-1">
@@ -190,6 +230,43 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
                 ))}
               </ul>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-4 w-4" /> Cumulative threshold email
+          </CardTitle>
+          <CardDescription>
+            A block is too large to cover in a day, so it is judged on its whole scouting round:
+            the cumulative count of a pest divided by the block&rsquo;s hectares. When that passes
+            the pest&rsquo;s threshold, one email goes to that farm&rsquo;s company: its spray plan
+            creators and managers. One per block, pest and ISO week (Monday to Sunday). Preview it here, or send a test to yourself only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="outline" onClick={previewAlert} disabled={alertBusy !== null}>
+              {alertBusy === "preview" ? "Building…" : "Preview"}
+            </Button>
+            <Button onClick={testAlert} disabled={alertBusy !== null}>
+              {alertBusy === "test" ? "Sending…" : "Send test to me"}
+            </Button>
+            {alertNote && (
+              <span className={`text-sm ${alertNote.ok ? "text-muted-foreground" : "text-destructive"}`}>
+                {alertNote.text}
+              </span>
+            )}
+          </div>
+          {previewHtml && (
+            <iframe
+              title="Cumulative threshold email preview"
+              srcDoc={previewHtml}
+              sandbox=""
+              className="h-[760px] w-full rounded-md border"
+            />
           )}
         </CardContent>
       </Card>

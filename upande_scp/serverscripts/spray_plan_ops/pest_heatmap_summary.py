@@ -26,7 +26,39 @@ def _band_json(spec):
     return {"low": spec["low"], "moderate": spec["mod"], "high": spec["high"], "measure": spec["measure"]}
 
 
+def _build_per_ha(block, obs_name, obs_kind, crop, from_date, to_date) -> dict:
+    """The block's figure per ISO week as cumulative count per hectare (a block
+    crop is judged on its whole round, not on a per-station average), against the
+    observation's ``cumulative_per_ha_threshold``. No area: no figure, said so."""
+    from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+    limit = C.thresholds(crop).get((obs_kind, obs_name), 0.0)
+    area = (C.block_info([block]).get(block) or {}).get("area_ha")
+    weekly = C.weekly_per_ha(crop, [block], from_date, to_date, obs_kind, obs_name)
+    series = []
+    for w in weekly:
+        v = w["per_ha"]
+        series.append({
+            "week": w["week"], "value": v, "prevalence": None, "reliability": "Good",
+            "band": (("high" if v >= limit else None) if (limit and v is not None) else None),
+        })
+    latest = series[-1] if series else None
+    return {
+        "greenhouse": block, "obsName": obs_name, "obsKind": obs_kind,
+        "from_date": from_date, "to_date": to_date,
+        "measure": B.PER_HA,
+        "threshold": {"low": 0, "moderate": 0, "high": limit, "measure": B.PER_HA} if limit else None,
+        "area_ha": area, "no_area": area is None,
+        "latest": ({**P.public(None), "value": latest["value"], "band": latest["band"], "reliability": "Good"} if latest else None),
+        "series": series,
+    }
+
+
 def build(greenhouse, obs_name, obs_kind, crop, from_date, to_date) -> dict:
+    from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+    if crop and C.is_block_crop(crop):
+        return _build_per_ha(greenhouse, obs_name, obs_kind, crop, from_date, to_date)
     weeks = _prevalence_rows.StationWeeks.load(
         from_date, to_date, crop, [greenhouse], lookback_days=0, weeks=_prevalence_rows.WINDOW,
     )

@@ -19,7 +19,14 @@ import math
 
 PERCENTAGE = "Percentage"
 COUNT = "Count"
+#: Block-grown crops (avocado): the cumulative count over the ISO week per
+#: hectare of the block (scouting.cumulative_per_ha), judged against the single
+#: ``cumulative_per_ha_threshold`` line rather than low / moderate / high bands.
+PER_HA = "Per ha"
 MEASURES = (PERCENTAGE, COUNT)
+#: What a stored Scouting Alert may carry (the editor still only offers MEASURES).
+ALERT_MEASURES = (PERCENTAGE, COUNT, PER_HA)
+PER_HA_UNIT = "/ ha this week"
 
 ALARMING = "Alarming"
 SPRAY_ADVISED = "Spray advised"
@@ -102,7 +109,10 @@ def count_allowed(kind, reading_types) -> bool:
 
 
 def unit_label(measure, station="zone") -> str:
-    """``%`` for a Percentage; ``per zone`` / ``per tree`` for a Count."""
+    """``%`` for a Percentage; ``per zone`` / ``per tree`` for a Count;
+    ``/ ha this week`` for a per-hectare figure."""
+    if measure == PER_HA:
+        return PER_HA_UNIT
     return "%" if measure != COUNT else f"per {station or 'zone'}"
 
 

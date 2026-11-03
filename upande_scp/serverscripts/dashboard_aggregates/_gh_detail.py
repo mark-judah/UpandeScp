@@ -120,8 +120,13 @@ def _build(filters: dict, job_id: str = "") -> dict:
     # per-stage thresholds (with aggregate fallback) on Crop Scouted. Traps stay
     # count-based until trap thresholds get the same treatment.
     gh = filters["greenhouse"]
+    # A block of a block-grown crop is judged per hectare over the ISO week: its
+    # alerts are the observations over their line, and ``perHa`` lists them.
+    per_ha = _per_ha_rows(filters["crop"], gh)
+    if per_ha is not None:
+        alerts += sum(1 for r in per_ha if r["over"])
     for kind in ("pest", "disease"):
-        for stage in sorted(stages[kind]):
+        for stage in (sorted(stages[kind]) if per_ha is None else ()):
             for obs_name, fig in weeks.latest_by_house(kind, stage=stage).get(gh, {}).items():
                 if fig["prevalence"] is None:
                     continue
@@ -173,9 +178,29 @@ def _build(filters: dict, job_id: str = "") -> dict:
                        if (r.scouts_name or "").strip()}),
         "alerts": alerts,
         "prevalence": prevalence_rows,
+        **({"perHa": per_ha} if per_ha is not None else {}),
     }
     publish_progress(job_id, 100, "")
     return payload
+
+
+def _per_ha_rows(crop, block):
+    """The block's observations this ISO week as cumulative per hectare (worst
+    first), or None for a crop that is not scouted by block. ``perHa`` is None on
+    a row of a block without an area ("no area", never an invented figure)."""
+    from upande_scp.serverscripts.dashboard_aggregates import _per_ha
+
+    if not crop or not _per_ha.active(crop):
+        return None
+    from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+    start, end, _rnd = _per_ha._round(crop)
+    figs = C.round_figures(crop, [block], start, end).get(block, [])
+    return [
+        {"kind": f["kind"], "name": f["observation"], "perHa": f["per_ha"], "cumulative": f["cumulative"],
+         "areaHa": f["area_ha"], "threshold": f["threshold_per_ha"] or None, "over": _per_ha._is_over(f)}
+        for f in figs
+    ]
 
 
 def _mark_hot(crop, kind, obs, weeks, gh, fig) -> list:

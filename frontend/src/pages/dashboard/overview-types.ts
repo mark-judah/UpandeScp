@@ -51,4 +51,6 @@ export interface OverviewPayload {
   scoutPerformance: ScoutPerf[];
   recentActivity: RecentRow[];
   activeAlerts: ActiveAlert[];
+  /** block-grown crops: alerts are cumulative per hectare this ISO week */
+  perHa?: { round: { start: string; end: string; days: number; label: string }; overTotal: number };
 }

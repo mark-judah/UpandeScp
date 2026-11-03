@@ -107,9 +107,27 @@ def clear_gate(key) -> None:
 # ── evaluation ─────────────────────────────────────────────────────────────
 
 
+def per_ha_crop(crop) -> bool:
+    """A block-grown crop (avocado): judged per hectare over the ISO week, by
+    ``scouting.cumulative_per_ha``, not by station bands. Read from the crop's
+    houses (``_common.station_word``), never its name."""
+    from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+    return C.is_block_crop(crop)
+
+
 def banded_crops() -> list:
-    """Crops with at least one usable band."""
-    return [c for c in crop_catalog.catalog().get("crops", []) if _common.load_thresholds(c)]
+    """Crops with at least one usable band (a per-hectare line for a block crop)."""
+    from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+    out = []
+    for c in crop_catalog.catalog().get("crops", []):
+        if per_ha_crop(c):
+            if C.thresholds(c):
+                out.append(c)
+        elif _common.load_thresholds(c):
+            out.append(c)
+    return out
 
 
 def _figure(weeks, wh, week, kind, obs, stage, spec):
@@ -129,6 +147,10 @@ def evaluate(crop, today=None) -> list:
     finding with ``action`` None resolves rather than raises: a house below
     Moderate ("" or "low"), or a section that does not meet hot-spots H2."""
     crop = crop_catalog.canonical(crop)
+    if crop and per_ha_crop(crop):
+        from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+        return C.alert_findings(crop, today or now_eat().date())
     keys = sorted(_common.load_thresholds(crop)) if crop else []
     if not keys:
         return []
@@ -425,12 +447,18 @@ def _notify(name, finding, action, note="") -> list:
             f"{action}: {finding['observation']}{stage} {value} in {finding['warehouse']} "
             f"({finding['iso_week']}){tail}"
         )
-        margin = f"±{finding['margin']}" if finding["margin"] is not None else "too clustered to judge"
-        body = (
-            f"{note + ' ' if note else ''}{subject}. {finding['crop']} · {margin} · "
-            f"{finding['sections_scouted']}/{finding['sections_total']} sections scouted · "
-            f"reliability {finding['reliability']}."
-        )
+        if finding["measure"] == B.PER_HA:
+            body = (
+                f"{note + ' ' if note else ''}{subject}. {finding['crop']} · cumulative over the ISO week "
+                f"÷ block area · threshold {finding.get('threshold')} {finding['unit']}."
+            )
+        else:
+            margin = f"±{finding['margin']}" if finding["margin"] is not None else "too clustered to judge"
+            body = (
+                f"{note + ' ' if note else ''}{subject}. {finding['crop']} · {margin} · "
+                f"{finding['sections_scouted']}/{finding['sections_total']} sections scouted · "
+                f"reliability {finding['reliability']}."
+            )
     return notifications.notify(
         users, subject, body, DOCTYPE, name, category="scouting",
         link=dashboard_link(finding["crop"]),
@@ -510,14 +538,24 @@ def sweep(crop, today=None, latest=None, actionable=None) -> int:
         return 0
     today = today or now_eat().date()
     window_start = today - timedelta(days=EVAL_WINDOW_DAYS - 1)
-    banded = {(KIND_LABEL[k], obs, stage or "") for k, obs, stage in _common.load_thresholds(crop)}
+    per_ha = per_ha_crop(crop)
+    if per_ha:
+        from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+        banded = {(KIND_LABEL[k], obs, "") for k, obs in C.thresholds(crop)}
+    else:
+        banded = {(KIND_LABEL[k], obs, stage or "") for k, obs, stage in _common.load_thresholds(crop)}
     rows = frappe.get_all(
         DOCTYPE, filters={"crop": crop, "status": ["in", list(OPEN_STATES)]},
-        fields=["name", "kind", "observation", "stage", "iso_week"], limit_page_length=0,
+        fields=["name", "kind", "observation", "stage", "iso_week", "measure", "alert_type"],
+        limit_page_length=0,
     )
+    # A per-hectare crop has one house-level figure per observation: an alert in
+    # another measure (an older per-tree band, or a hot spot) is no longer judged.
     stale = [
         r.name for r in rows
         if (r.kind, r.observation, r.stage or "") not in banded or _week_ended(r.iso_week, window_start)
+        or (per_ha and (r.measure != B.PER_HA or r.alert_type == B.HOT_SPOT))
     ]
     for name in stale:
         frappe.db.set_value(DOCTYPE, name, "status", "Resolved")
@@ -758,6 +796,8 @@ def figures_for_houses(crop, houses, from_date, to_date) -> dict:
     houses = sorted({h for h in (houses or ()) if h})
     if not crop or not houses:
         return {}
+    if per_ha_crop(crop):
+        return _per_ha_figures(crop, houses, to_date)
     weeks = R.StationWeeks.load(from_date, to_date, crop, houses, kinds=("pest",), lookback_days=0)
     station = _common.station_word(crop)
     out = {}
@@ -776,6 +816,42 @@ def figures_for_houses(crop, houses, from_date, to_date) -> dict:
                 "sections_scouted": fig.get("sections_scouted") or 0,
                 "sections_total": fig.get("sections_total") or P.SECTIONS,
                 "band": band, "action": B.action_for(band, fig.get("reliability")), "week": week,
+            }
+        out[wh] = per
+    return out
+
+
+def _per_ha_figures(crop, houses, to_date) -> dict:
+    """``figures_for_houses`` for a block crop: each block's pests this ISO week
+    (the week holding ``to_date``, else the week before it when the block was
+    not scouted yet), as cumulative count per hectare judged against the pest's
+    ``cumulative_per_ha_threshold``. A block without an area has ``value`` None
+    (shown as "no area"), never a made-up figure."""
+    from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+    from upande_scp.serverscripts.common import cumulative_rules as CR
+
+    day = CR.as_date(to_date or now_eat().date())
+    spans = [CR.round_bounds(day - timedelta(days=7 * i), C.round_days(crop)) for i in (0, 1)]
+    scouted = [C._scouted_blocks(houses, a, b) for a, b in spans]
+    figs = {i: C.round_figures(crop, sorted(scouted[i]), *spans[i]) for i in (0, 1) if scouted[i]}
+    out = {}
+    for wh in houses:
+        i = next((i for i in (0, 1) if wh in scouted[i]), None)
+        if i is None:
+            continue
+        per = {}
+        for f in figs[i].get(wh, []):
+            if f["kind"] != "pest":
+                continue
+            thr = f["threshold_per_ha"]
+            value = f["per_ha"]
+            band = None if (value is None or not thr) else ("high" if value >= thr else "")
+            per[f["observation"]] = {
+                "measure": B.PER_HA, "unit": B.PER_HA_UNIT, "value": value, "margin": None,
+                "reliability": "Good", "sections_scouted": 0, "sections_total": 0,
+                "band": band, "action": B.SPRAY_ADVISED if band == "high" else None,
+                "week": C.iso_label(spans[i][0]), "threshold": thr or None, "area_ha": f["area_ha"],
+                "no_area": value is None,
             }
         out[wh] = per
     return out

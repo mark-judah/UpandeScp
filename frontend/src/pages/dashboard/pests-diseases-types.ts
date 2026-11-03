@@ -42,6 +42,8 @@ export interface PestsPayload {
   trendSeries: TrendSeries;
   /** the selected pest by rose variety (S7); [] without a selected pest or variety */
   varieties?: VarietyRow[];
+  /** block-grown crops only: cumulative per hectare this ISO week */
+  perHa?: PerHaPayload;
 }
 
 export interface DiseasesPayload extends Omit<PestsPayload, "filterOptions"> {
@@ -60,4 +62,41 @@ export function stagesFor(
   if (!selected) return opts.stages;
   const narrowed = opts.stagesByItem?.[selected];
   return narrowed && narrowed.length ? narrowed : opts.stages;
+}
+
+/** A block-grown crop's (avocado) per-hectare figures for the tab, cumulative over
+ *  the ISO week holding today (`round`). Absent for a greenhouse crop (roses),
+ *  whose tabs keep their station-prevalence figures. */
+export interface PerHaRankingRow {
+  name: string;
+  perHa: number | null;
+  cumulative: number;
+  /** area of the blocks scouted this round that have one */
+  areaHa: number;
+  /** cumulative_per_ha_threshold; null = no line set */
+  threshold: number | null;
+  blocksOver: number;
+  blocks: number;
+  worst: { block: string; per_ha: number | null } | null;
+  over: boolean;
+}
+export interface PerHaBlockRow {
+  name: string;
+  perHa: number | null;
+  cumulative: number;
+  areaHa: number | null;
+  /** a block without an area has no per-ha figure */
+  noArea: boolean;
+  threshold: number | null;
+  over: boolean;
+}
+export interface PerHaTrendRow { date: string; week: string; value: number | null; cumulative: number; areaHa: number }
+export interface PerHaPayload {
+  round: { start: string; end: string; days: number; label: string };
+  ranking: PerHaRankingRow[];
+  byBlock: PerHaBlockRow[];
+  trend: PerHaTrendRow[];
+  noArea: string[];
+  /** block x observation pairs over their line this week */
+  overCount: number;
 }

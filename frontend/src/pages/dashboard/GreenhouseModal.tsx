@@ -15,12 +15,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ChartSkeleton, TextSkeleton } from "@/components/Loading";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RevealLTR } from "@/components/RevealLTR";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
 import type { PrevalenceFigures, SectionCell, VarietyRow } from "@/lib/prevalence";
+import { formatPerHa, perHaLabel } from "@/lib/cumulative-api";
 import { PrevalenceFigure } from "./PrevalenceFigure";
 import { HouseSpread } from "./HouseSpread";
 import { VarietyTable } from "./VarietyTable";
@@ -50,6 +51,11 @@ export interface GhDetailPayload {
   scouts:      number;
   alerts:      number;
   prevalence?: GhPrevalence[];
+  /** block-grown crops: this ISO week's observations, cumulative per hectare */
+  perHa?: Array<{
+    kind: "pest" | "disease"; name: string; perHa: number | null; cumulative: number;
+    areaHa: number | null; threshold: number | null; over: boolean;
+  }>;
 }
 
 export interface GreenhouseModalProps {
@@ -231,7 +237,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                   );
                 })}
               </div>
-              <PrevalenceFigure fig={current} />
+              {detail.perHa ? null : <PrevalenceFigure fig={current} />}
               <HouseSpread
                 crop={crop}
                 greenhouse={greenhouse ?? ""}
@@ -241,6 +247,32 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                 sections={current.sections}
               />
               {current.kind === "pest" && <VarietyTable rows={current.varieties} pest={current.name} />}
+            </CardContent>
+          </Card>
+        )}
+
+        {detail.perHa && (
+          <Card className="p-4">
+            <CardHeader className="p-0 pb-2">
+              <CardTitle>This week, per hectare</CardTitle>
+              <CardDescription>Cumulative over the ISO week ÷ the block's area</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0 flex flex-col gap-1" data-testid="gh-per-ha">
+              {loading ? (
+                <MiniRowsSkeleton />
+              ) : detail.perHa.length ? (
+                detail.perHa.slice(0, 12).map((r) => (
+                  <div key={`${r.kind}:${r.name}`} className="flex items-center justify-between rounded bg-[var(--sd-bg-soft)] px-2 py-1 text-xs">
+                    <span className="truncate">{r.name}</span>
+                    <span className="tabular-nums" style={r.over ? { color: "var(--sd-data-red)" } : undefined}>
+                      {r.perHa === null ? "no area" : perHaLabel(r.perHa)}
+                      {r.threshold ? ` · line ${formatPerHa(r.threshold)}` : ""}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground">Nothing recorded on this block this week.</div>
+              )}
             </CardContent>
           </Card>
         )}

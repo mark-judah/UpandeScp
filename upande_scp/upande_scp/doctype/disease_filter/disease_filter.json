@@ -14,6 +14,7 @@
   "low_threshold",
   "moderate_threshold",
   "high_threshold",
+  "cumulative_per_ha_threshold",
   "stages",
   "priorities"
  ],
@@ -79,6 +80,14 @@
    "precision": "4"
   },
   {
+   "description": "Block-grown crops (avocado): alert once per scouting round when this disease's cumulative count over the round, divided by the block's area in hectares, reaches this figure. 0 = no cumulative alert.",
+   "fieldname": "cumulative_per_ha_threshold",
+   "fieldtype": "Float",
+   "label": "Cumulative alert (per ha per round)",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
    "description": "Per-stage threshold overrides. When a stage has thresholds set, severity for that stage uses them; otherwise it falls back to the values above.",
    "fieldname": "stages",
    "fieldtype": "Table",
@@ -96,7 +105,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 12:00:00.000000",
+ "modified": "2026-11-02 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Disease Filter",

@@ -7,16 +7,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PlacePicker } from "@/components/PlacePicker";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import {
   fetchCrops,
-  fetchFarmsAndWarehouses,
   DEFAULT_CROP,
 } from "@/lib/scouting-api";
 
 export const ALL = "__all__";
+const fromAll = (v: string) => (v === ALL ? "" : v);
 
 export interface MapFilterValue {
   crop: string;
@@ -62,7 +64,9 @@ export function MapHeader({
   const [crops, setCrops] = useState<
     Array<{ name: string; crop_name: string; farms?: string[] }>
   >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
-  const [farms, setFarms] = useState<Record<string, string[]>>({});
+  // Farms for the crop only, narrowed on the server.
+  const { farms, loading: farmsLoading } = useCropFarms(value.crop);
+  const farmList = Object.keys(farms);
 
   useEffect(() => {
     fetchCrops().then((r) => {
@@ -74,16 +78,7 @@ export function MapHeader({
           : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
       );
     });
-    fetchFarmsAndWarehouses().then(setFarms);
   }, []);
-
-  const farmList = (() => {
-    const cropAllow = crops.find((c) => c.crop_name === value.crop)?.farms || [];
-    const all = Object.keys(farms);
-    if (!cropAllow.length) return all;
-    const allowSet = new Set(cropAllow);
-    return all.filter((f) => allowSet.has(f));
-  })();
 
   // Single-farm crop (e.g. avocado → Lokitela): auto-select that farm on load
   // instead of leaving it on "All Farms" — several map layers (orchard trees,
@@ -98,11 +93,6 @@ export function MapHeader({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [farmList.length]);
-
-  const greenhouseList =
-    value.farm === ALL
-      ? Array.from(new Set(farmList.flatMap((f) => farms[f] || []))).sort()
-      : (farms[value.farm] || []).slice().sort();
 
   return (
     <PageHeader title={title} eyebrow={subtitle}>
@@ -126,42 +116,14 @@ export function MapHeader({
         </Select>
       )}
 
-      <Select
-        value={value.farm}
-        onValueChange={(v) => onChange({ ...value, farm: v, greenhouse: ALL })}
-      >
-        <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All Farms</SelectItem>
-          {farmList.map((f) => (
-            <SelectItem key={f} value={f}>
-              {f}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {showGreenhouse && (
-        <Select
-          value={value.greenhouse}
-          onValueChange={(v) => onChange({ ...value, greenhouse: v })}
-          disabled={!greenhouseList.length}
-        >
-          <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
-            <SelectValue placeholder="All" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All Greenhouses</SelectItem>
-            {greenhouseList.map((g) => (
-              <SelectItem key={g} value={g}>
-                {g}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+      <PlacePicker
+        farms={farms}
+        crop={value.crop}
+        level={showGreenhouse ? "both" : "farm"}
+        value={{ farm: fromAll(value.farm), greenhouse: showGreenhouse ? fromAll(value.greenhouse) : "" }}
+        onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
+        disabled={farmsLoading}
+      />
 
       <DatePicker
         value={value.from}

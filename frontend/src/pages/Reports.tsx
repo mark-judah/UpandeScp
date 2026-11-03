@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { PlacePicker } from "@/components/PlacePicker";
 import {
   Mail,
   Download,
@@ -240,23 +241,18 @@ export function Reports() {
                 <>
                   <div className="flex flex-col gap-1">
                     <Label>Farm</Label>
-                    <Select
-                      value={farm}
-                      onValueChange={setFarm}
+                    <PlacePicker
+                      level="farm"
+                      variant="field"
+                      remember={false}
+                      allLabel={false}
+                      farms={farms.map((f) => f.farm)}
+                      label={`${r.title} farm`}
+                      placeholder={farms.length ? "Pick a farm" : "Loading…"}
+                      value={{ farm, greenhouse: "" }}
+                      onChange={(p) => setFarm(p.farm)}
                       disabled={!farms.length}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder={farms.length ? "Pick a farm" : "Loading…"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {farms.map((f) => (
-                          <SelectItem key={f.farm} value={f.farm}>
-                            {f.display}
-                            {f.kephis_farm_id ? ` — ${f.kephis_farm_id}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    />
                   </div>
                   <div className="flex flex-col gap-1">
                     <Label>ISO week (Mon–Sun)</Label>

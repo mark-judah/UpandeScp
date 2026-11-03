@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PlacePicker } from "@/components/PlacePicker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -110,19 +111,18 @@ export function AssetChecksCard() {
                 )}
                 {rows.map((r, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-                    <select
-                      aria-label="Farm"
-                      className="h-9 rounded-md border bg-background px-2 text-xs"
-                      value={r.farm}
-                      onChange={(e) => update(i, { farm: e.target.value })}
-                    >
-                      <option value="">Farm...</option>
-                      {data.farms.map((o) => (
-                        <option key={o} value={o}>
-                          {o}
-                        </option>
-                      ))}
-                    </select>
+                    <PlacePicker
+                      level="farm"
+                      variant="field"
+                      remember={false}
+                      allLabel={false}
+                      farms={data.farms}
+                      label="Farm"
+                      placeholder="Farm..."
+                      className="h-9 w-44"
+                      value={{ farm: r.farm, greenhouse: "" }}
+                      onChange={(p) => update(i, { farm: p.farm })}
+                    />
                     <select
                       aria-label="Asset category"
                       className="h-9 rounded-md border bg-background px-2 text-xs"

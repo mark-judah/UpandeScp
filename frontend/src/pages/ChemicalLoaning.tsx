@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { HEADER_PILL } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Loader2,
@@ -88,18 +89,16 @@ export function ChemicalLoaning() {
       >
           <div className="flex items-center gap-2">
             {farms.length > 0 && (
-              <Select value={farm} onValueChange={setFarm}>
-                <SelectTrigger className={HEADER_PILL}>
-                  <SelectValue placeholder="Your farm" />
-                </SelectTrigger>
-                <SelectContent>
-                  {farms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PlacePicker
+                level="farm"
+                farms={farms}
+                value={{ farm, greenhouse: "" }}
+                onChange={(p) => setFarm(p.farm)}
+                allLabel={false}
+                placeholder="Your farm"
+                label="Your farm"
+                remember={false}
+              />
             )}
           </div>
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>

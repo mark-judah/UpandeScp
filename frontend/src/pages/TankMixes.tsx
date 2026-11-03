@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PlacePicker } from "@/components/PlacePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
 import { LoadingStrip } from "@/components/LoadingStrip";
@@ -108,21 +109,12 @@ export function TankMixes() {
           </div>
           {/* See Historical: a one-option picker is noise. `farms` is already
               scoped server-side to what this user may see. */}
-          {farms.length > 1 && (
-          <Select value={farm} onValueChange={setFarm}>
-            <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_FARMS}>All Farms</SelectItem>
-              {farms.map((f) => (
-                <SelectItem key={f} value={f}>
-                  {f}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          )}
+          <PlacePicker
+            level="farm"
+            farms={farms}
+            value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
+            onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+          />
           <Select
             value={activeOnly ? "active" : "all"}
             onValueChange={(v) => setActiveOnly(v === "active")}

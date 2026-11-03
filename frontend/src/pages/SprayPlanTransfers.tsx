@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import {
   Select,
@@ -340,19 +341,12 @@ export function SprayPlanTransfers() {
 
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex items-center">
-              <Select value={farm} onValueChange={setFarm}>
-                <SelectTrigger id="spt-farm" className={HEADER_PILL}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_FARMS}>All farms</SelectItem>
-                  {farms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PlacePicker
+                level="farm"
+                farms={farms}
+                value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
+                onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+              />
             </div>
             <div className="flex items-center">
               <DatePicker value={fromDate} onChange={setFromDate} />

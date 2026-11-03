@@ -28,9 +28,9 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { HeaderIconButton } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
@@ -318,13 +318,15 @@ export function CreatorStock() {
           </Card>
         )}
 
-        {data && data.farms.length > 1 && (
-          <FarmSwitcher
-            farms={data.farms}
-            selected={selectedFarm}
-            allValue={ALL_FARMS}
-            onSelect={setSelectedFarm}
-          />
+        {data && (
+          <div className="flex justify-start">
+            <PlacePicker
+              level="farm"
+              farms={data.farms}
+              value={{ farm: selectedFarm === ALL_FARMS ? "" : selectedFarm, greenhouse: "" }}
+              onChange={(p) => setSelectedFarm(p.farm || ALL_FARMS)}
+            />
+          </div>
         )}
 
         <AlertsCard
@@ -1329,34 +1331,6 @@ function fmtAge(days: number): string {
   return `${Math.round(days)}d`;
 }
 
-
-function FarmSwitcher({
-  farms,
-  selected,
-  allValue,
-  onSelect,
-}: {
-  farms: string[];
-  selected: string;
-  allValue: string;
-  onSelect: (next: string) => void;
-}) {
-  return (
-    <div className="flex justify-start">
-      {/* Reference `.pillgroup` switcher (native shadcn Tabs). */}
-      <Tabs value={selected} onValueChange={onSelect} className="w-auto">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value={allValue}>All Farms</TabsTrigger>
-          {farms.map((f) => (
-            <TabsTrigger key={f} value={f}>
-              {f}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-    </div>
-  );
-}
 
 function Kpi({
   label,

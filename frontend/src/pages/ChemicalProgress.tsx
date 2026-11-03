@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { LifecycleTimeline } from "@/components/spray-plan/LifecycleTimeline";
@@ -143,19 +144,12 @@ export function ChemicalProgress() {
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6">
         <DatePicker value={from} onChange={setFrom} />
         <DatePicker value={to} onChange={setTo} />
-        <Select value={farm} onValueChange={setFarm}>
-          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All Farms</SelectItem>
-            {farms.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PlacePicker
+          level="farm"
+          farms={farms}
+          value={{ farm: farm === ALL ? "" : farm, greenhouse: "" }}
+          onChange={(p) => setFarm(p.farm || ALL)}
+        />
       </div>
 
       <div className="px-4 md:px-6 py-4 flex-1">

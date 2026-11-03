@@ -58,6 +58,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { ymd, cn } from "@/lib/utils";
@@ -265,10 +266,11 @@ export function Approvals() {
     });
   }, [visibleWos]);
 
-  const ghOptions = useMemo(() => {
-    if (farm === ALL) return [];
-    return farmsData.greenhouses_by_farm[farm] || [];
-  }, [farm, farmsData]);
+  // farm → houses for the place pill; every farm listed, even one with no houses.
+  const placeFarms = useMemo(
+    () => Object.fromEntries(farmsData.farms.map((f) => [f, farmsData.greenhouses_by_farm[f] || []])),
+    [farmsData],
+  );
 
   const allChecked =
     visibleWos.length > 0 && visibleWos.every((w) => checked.has(w.name));
@@ -519,42 +521,14 @@ export function Approvals() {
           <div className="flex items-center">
             <DatePicker value={to} onChange={setTo} />
           </div>
-          <div className="flex items-center">
-            <Select value={farm} onValueChange={setFarm}>
-              <SelectTrigger className={HEADER_PILL}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All Farms</SelectItem>
-                {farmsData.farms.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center">
-            <Select
-              value={greenhouse}
-              onValueChange={setGreenhouse}
-              disabled={farm === ALL}
-            >
-              <SelectTrigger className={HEADER_PILL}>
-                <SelectValue
-                  placeholder={farm === ALL ? "Pick a farm first" : "All"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All</SelectItem>
-                {ghOptions.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <PlacePicker
+            farms={placeFarms}
+            value={{ farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse }}
+            onChange={(p) => {
+              setFarm(p.farm || ALL);
+              setGreenhouse(p.greenhouse || ALL);
+            }}
+          />
           <Button
             variant="ghost"
             size="sm"

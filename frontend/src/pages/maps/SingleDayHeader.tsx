@@ -19,13 +19,15 @@ import { Label } from "@/components/ui/label";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
+import { PlacePicker } from "@/components/PlacePicker";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 import {
   fetchCrops,
-  fetchFarmsAndWarehouses,
   DEFAULT_CROP,
 } from "@/lib/scouting-api";
 
 export const ALL = "__all__";
+const fromAll = (v: string) => (v === ALL ? "" : v);
 
 export interface SingleDayFilterValue {
   crop: string;
@@ -57,7 +59,8 @@ export function SingleDayHeader({
   const [crops, setCrops] = useState<
     Array<{ name: string; crop_name: string; farms?: string[] }>
   >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
-  const [farms, setFarms] = useState<Record<string, string[]>>({});
+  // Farms for the crop only, narrowed on the server.
+  const { farms, loading: farmsLoading } = useCropFarms(value.crop);
 
   useEffect(() => {
     fetchCrops().then((r) => {
@@ -69,22 +72,7 @@ export function SingleDayHeader({
           : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
       );
     });
-    fetchFarmsAndWarehouses().then(setFarms);
   }, []);
-
-  const farmList = (() => {
-    const cropAllow =
-      crops.find((c) => c.crop_name === value.crop)?.farms || [];
-    const all = Object.keys(farms);
-    if (!cropAllow.length) return all;
-    const allowSet = new Set(cropAllow);
-    return all.filter((f) => allowSet.has(f));
-  })();
-
-  const greenhouseList =
-    value.farm === ALL
-      ? Array.from(new Set(farmList.flatMap((f) => farms[f] || []))).sort()
-      : (farms[value.farm] || []).slice().sort();
 
   return (
     <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
@@ -127,49 +115,16 @@ export function SingleDayHeader({
           )}
 
           <div className="flex flex-col gap-1 min-w-32">
-            <Label>Farm</Label>
-            <Select
-              value={value.farm}
-              onValueChange={(v) =>
-                onChange({ ...value, farm: v, greenhouse: ALL })
-              }
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All Farms</SelectItem>
-                {farmList.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>{showGreenhouse ? "Farm / greenhouse" : "Farm"}</Label>
+            <PlacePicker
+        farms={farms}
+        crop={value.crop}
+        level={showGreenhouse ? "both" : "farm"}
+        value={{ farm: fromAll(value.farm), greenhouse: showGreenhouse ? fromAll(value.greenhouse) : "" }}
+        onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
+        disabled={farmsLoading}
+      />
           </div>
-
-          {showGreenhouse && (
-            <div className="flex flex-col gap-1 min-w-40">
-              <Label>Greenhouse</Label>
-              <Select
-                value={value.greenhouse}
-                onValueChange={(v) => onChange({ ...value, greenhouse: v })}
-                disabled={!greenhouseList.length}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>All Greenhouses</SelectItem>
-                  {greenhouseList.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           <div className="flex flex-col gap-1">
             <Label>Date</Label>

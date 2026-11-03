@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { Loader2, MapPin, Plus, Save, Trash2 } from "lucide-react";
+import { PlacePicker } from "@/components/PlacePicker";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -48,7 +49,7 @@ const PICKER_PLACEHOLDER = "__pick__";
 
 export function FarmMapTab({ initial, farms, onSaved }: Props) {
   const [draft, setDraft] = useState<MapSettings>(initial);
-  const [pickFarm, setPickFarm] = useState<string>("");
+  const [pickedFarm, setPickFarm] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -113,6 +114,8 @@ export function FarmMapTab({ initial, farms, onSaved }: Props) {
   const availableFarms = farms.filter(
     (f) => !draft.farm_coordinates.some((c) => c.farm === f),
   );
+  // A lone remaining farm is shown as itself by the picker, so it is the pick.
+  const pickFarm = availableFarms.length === 1 ? availableFarms[0] : pickedFarm;
 
   return (
     <div className="flex flex-col gap-4">
@@ -164,24 +167,17 @@ export function FarmMapTab({ initial, farms, onSaved }: Props) {
           <div className="flex gap-2 items-end">
             <div className="flex-1">
               <Label className="text-[0.7rem]">Add farm</Label>
-              <Select
-                value={pickFarm || PICKER_PLACEHOLDER}
-                onValueChange={setPickFarm}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Pick a farm…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PICKER_PLACEHOLDER} disabled>
-                    Pick a farm…
-                  </SelectItem>
-                  {availableFarms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PlacePicker
+                level="farm"
+                variant="field"
+                remember={false}
+                allLabel={false}
+                farms={availableFarms}
+                label="Add farm"
+                placeholder="Pick a farm…"
+                value={{ farm: pickFarm, greenhouse: "" }}
+                onChange={(p) => setPickFarm(p.farm)}
+              />
             </div>
             <Button
               onClick={addCoord}

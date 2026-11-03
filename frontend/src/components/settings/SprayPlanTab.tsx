@@ -3,6 +3,7 @@
  * thresholds, gating flags, allowed farms, exclude keywords.
  */
 
+import { PlacePicker } from "@/components/PlacePicker";
 import { useMemo, useState } from "react";
 import {
   Loader2,
@@ -59,7 +60,7 @@ export function SprayPlanTab({ initial, farms, warehouses, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
-  const [pickFarm, setPickFarm] = useState<string>("");
+  const [pickedFarm, setPickFarm] = useState<string>("");
   const [keyword, setKeyword] = useState<string>("");
 
   const set = <K extends keyof SprayPlanSettings>(
@@ -118,6 +119,8 @@ export function SprayPlanTab({ initial, farms, warehouses, onSaved }: Props) {
   const availableFarms = farms.filter(
     (f) => !draft.allowed_farms.some((af) => af.farm === f),
   );
+  // A lone remaining farm is shown as itself by the picker, so it is the pick.
+  const pickFarm = availableFarms.length === 1 ? availableFarms[0] : pickedFarm;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -227,21 +230,17 @@ export function SprayPlanTab({ initial, farms, warehouses, onSaved }: Props) {
           <div className="flex gap-2 items-end">
             <div className="flex-1">
               <Label className="text-[0.7rem]">Add farm</Label>
-              <Select value={pickFarm || ALL_FARM_PICKER} onValueChange={setPickFarm}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Pick a farm…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_FARM_PICKER} disabled>
-                    Pick a farm…
-                  </SelectItem>
-                  {availableFarms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PlacePicker
+                level="farm"
+                variant="field"
+                remember={false}
+                allLabel={false}
+                farms={availableFarms}
+                label="Add farm"
+                placeholder="Pick a farm…"
+                value={{ farm: pickFarm, greenhouse: "" }}
+                onChange={(p) => setPickFarm(p.farm)}
+              />
             </div>
             <Button
               onClick={addFarm}

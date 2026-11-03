@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import {
   Select,
@@ -653,22 +654,12 @@ export function Labels() {
         <Card className="lg:col-span-2 flex flex-col min-h-0">
           <CardHeader className="pb-3">
             <div className="flex items-end gap-3 flex-wrap">
-              <div className="grid gap-1.5">
-                <Label className="text-xs">Farm</Label>
-                <Select value={farm} onValueChange={setFarm}>
-                  <SelectTrigger className="h-8 w-44">
-                    <SelectValue placeholder="All farms" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_FARMS}>All farms</SelectItem>
-                    {farms.map((f) => (
-                      <SelectItem key={f} value={f}>
-                        {f}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <PlacePicker
+                level="farm"
+                farms={farms}
+                value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
+                onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+              />
               <DatePicker value={fromDate} onChange={setFromDate} />
               <DatePicker value={toDate} onChange={setToDate} />
               <div className="ml-auto text-xs text-muted-foreground">

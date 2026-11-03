@@ -6,13 +6,11 @@
  */
 import { useEffect, useState } from "react";
 import { Loader2, RotateCcw, Save, Users } from "lucide-react";
+import { PlacePicker } from "@/components/PlacePicker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import {
   Table, TableBody, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -20,7 +18,6 @@ import { TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import { TeamMembersEditor, sameMembers } from "@/components/teams/TeamMembersEditor";
 import { saveSprayTeam, type SprayTeam, type TeamsContext } from "@/lib/teams-api";
 
-const NO_FARM = "__none__";
 
 function sameTeam(a: SprayTeam, b: SprayTeam): boolean {
   if (a.farm !== b.farm || !!a.enabled !== !!b.enabled) return false;
@@ -76,20 +73,18 @@ function TeamCard({
           {!draft.enabled && <Badge variant="outline">Disabled</Badge>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Select
-            value={draft.farm || NO_FARM}
-            onValueChange={(v) => setDraft((d) => ({ ...d, farm: v === NO_FARM ? null : v }))}
-          >
-            <SelectTrigger aria-label={`Farm of ${team.name}`} className="h-8 w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(ctx.manager || !team.farm) && <SelectItem value={NO_FARM}>No farm</SelectItem>}
-              {ctx.farms.map((f) => (
-                <SelectItem key={f} value={f}>{f}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PlacePicker
+            level="farm"
+            remember={false}
+            farms={ctx.farms}
+            label={`Farm of ${team.name}`}
+            allLabel={ctx.manager || !team.farm ? "No farm" : false}
+            fixedWhenSingle={!(ctx.manager || !team.farm)}
+            placeholder="No farm"
+            className="w-40"
+            value={{ farm: draft.farm || "", greenhouse: "" }}
+            onChange={(p) => setDraft((d) => ({ ...d, farm: p.farm || null }))}
+          />
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               aria-label={`Enabled ${team.name}`}
@@ -175,11 +170,7 @@ export function SprayTeamsSkeleton({ cards = 2 }: { cards?: number }) {
               <TextSkeleton width="14ch" />
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Select disabled>
-                <SelectTrigger aria-label="Farm" className="h-8 w-40">
-                  <SelectValue />
-                </SelectTrigger>
-              </Select>
+              <PlacePicker level="farm" remember={false} farms={[]} label="Farm" placeholder="Farm" className="w-40" value={{ farm: "", greenhouse: "" }} onChange={() => {}} disabled />
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Checkbox disabled aria-label="Enabled" />
                 Enabled

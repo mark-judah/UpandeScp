@@ -31,6 +31,7 @@ from frappe.utils import cint, flt, get_datetime, now_datetime
 from upande_scp.serverscripts.common import crop_protection as CP
 from upande_scp.serverscripts.common import crop_scope
 from upande_scp.serverscripts.common import notifications as N
+from upande_scp.serverscripts.reports.report_sender import report_sender
 
 CATEGORY = "reentry"
 
@@ -231,8 +232,9 @@ def _recipients(wo, farm: str | None) -> tuple[list[str], list[str]]:
 	return clean, clean
 
 
-def _send_email(users: list[str], subject: str, body: str, wo_name: str) -> list[str]:
+def _send_email(users: list[str], subject: str, body: str, wo_name: str, company: str | None = None) -> list[str]:
 	sent = []
+	sender = report_sender(company)
 	for user in users:
 		addr = _email_for(user)
 		if not addr:
@@ -244,6 +246,7 @@ def _send_email(users: list[str], subject: str, body: str, wo_name: str) -> list
 				message=f"<p>{frappe.utils.escape_html(body)}</p>",
 				reference_doctype="Work Order",
 				reference_name=wo_name,
+				sender=sender,
 			)
 			sent.append(addr)
 		except Exception:
@@ -255,7 +258,7 @@ def _announce(wo, farm, subject_prefix: str, text: str, houses: list[str]) -> li
 	link = f"#/{_crop_slug_for_farm(farm)}/reentry"
 	bell, mail = _recipients(wo, farm)
 	notified = N.notify(bell, text, text, "Work Order", wo.name, category=CATEGORY, link=link)
-	_send_email(mail, f"{subject_prefix}: {', '.join(house_label(h) for h in houses)}", text, wo.name)
+	_send_email(mail, f"{subject_prefix}: {', '.join(house_label(h) for h in houses)}", text, wo.name, wo.get("company"))
 	return notified
 
 

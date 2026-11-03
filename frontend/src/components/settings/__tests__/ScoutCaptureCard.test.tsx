@@ -48,6 +48,8 @@ const initial: SprayPlanSettings = {
   loaning_timeout_hours: 72,
   progress_email_enabled: 0,
   progress_email_hour: 18,
+  report_email_account: "",
+  report_sender_accounts: [],
   allow_scout_photos: 1,
   allow_scout_comments: 1,
   max_count_per_observation: 15,

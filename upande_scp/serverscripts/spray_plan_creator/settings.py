@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import frappe
 
+from upande_scp.serverscripts.reports import report_sender
 from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invalidate
 from upande_scp.serverscripts.scouting import capture_settings
 from upande_scp.serverscripts.common import crew_availability
@@ -122,6 +123,7 @@ def get_settings_bundle() -> dict:
             "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
             "progress_email_enabled": int(settings.progress_email_enabled or 0),
             "progress_email_hour": settings.progress_email_hour if settings.progress_email_hour is not None else 18,
+            "report_email_account": settings.get("report_email_account") or "",
             # Blank/unknown reads back as "labels" so the editor shows the
             # scan-required state whenever the setting isn't explicitly "tick",
             # matching spray_session.get_scan_verification_method.
@@ -142,6 +144,10 @@ def get_settings_bundle() -> dict:
                 for p, req in capture_settings.trap_photo_rules().items()
             ],
             "allowed_farms": allowed_farms,
+            "report_sender_accounts": [
+                {"company": r.company, "email_account": r.email_account}
+                for r in (settings.get("report_sender_accounts") or [])
+            ],
             "exclude_keywords": exclude_keywords,
             "station_warehouse_types": station_warehouse_types,
         },
@@ -202,6 +208,7 @@ def save_spray_plan_settings(payload) -> dict:
         "loaning_timeout_hours",
         "progress_email_enabled",
         "progress_email_hour",
+        "report_email_account",
         # Only "labels" / "tick" are valid; the field is a Select, so Frappe
         # rejects anything else on save rather than letting a bad value through
         # and silently dropping the CSU scan check.
@@ -228,6 +235,8 @@ def save_spray_plan_settings(payload) -> dict:
         payload["crew_leave_check"] = crew_availability.normalise_mode(payload["crew_leave_check"])
     if "crew_require_checkin" in payload:
         payload["crew_require_checkin"] = 1 if frappe.utils.cint(payload["crew_require_checkin"]) else 0
+    if "report_email_account" in payload:
+        payload["report_email_account"] = _clean_report_account(payload["report_email_account"])
     for f in scalar_fields:
         if f in payload:
             settings.set(f, payload[f])
@@ -249,6 +258,19 @@ def save_spray_plan_settings(payload) -> dict:
             farm = (r.get("farm") if isinstance(r, dict) else r) or ""
             if farm:
                 settings.append("allowed_farms", {"farm": farm})
+
+    if "report_sender_accounts" in payload:
+        settings.set("report_sender_accounts", [])
+        seen = set()
+        for r in payload.get("report_sender_accounts") or []:
+            company = ((r.get("company") if isinstance(r, dict) else "") or "").strip()
+            account = _clean_report_account(r.get("email_account") if isinstance(r, dict) else "")
+            if not company or not account:
+                continue
+            if company in seen:
+                frappe.throw(f"Sending account: {company} appears more than once.")
+            seen.add(company)
+            settings.append("report_sender_accounts", {"company": company, "email_account": account})
 
     if "exclude_keywords" in payload:
         settings.set("exclude_keywords", [])
@@ -274,6 +296,24 @@ def save_spray_plan_settings(payload) -> dict:
     # allowed-farms / exclude-keywords / station-type set immediately.
     invalidate(K_AFP_WAREHOUSES)
     return {"ok": True}
+
+
+def _clean_report_account(name) -> str | None:
+    """Blank, or an Email Account that can send — anything else throws."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    if not frappe.db.get_value("Email Account", name, "enable_outgoing"):
+        frappe.throw(f"Email Account {name} does not exist or has outgoing email turned off.")
+    return name
+
+
+@frappe.whitelist()
+def get_report_email_accounts() -> dict:
+    """Outgoing Email Accounts with how many emails each sent in the last hour,
+    for picking the account SCP emails go out from."""
+    _require_admin()
+    return report_sender.account_rates()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -447,6 +487,7 @@ def list_chemicals(
         r["custom_toxicity"] = sidecar.toxicity if sidecar else None
         r["custom_lower_rate_limit"] = sidecar.default_lower_rate_limit if sidecar else 0
         r["custom_upper_rate_limit"] = sidecar.default_upper_rate_limit if sidecar else 0
+        r["crop_rates"] = _crop_rate_rows(code)
         r["custom_low_stock_threshold"] = sidecar.low_stock_threshold if sidecar else 0
         r["custom_reentry_interval_hrs"] = sidecar.reentry_interval_hrs if sidecar else 0
         r["custom_frac_moa"] = sidecar.frac_moa if sidecar else None
@@ -505,6 +546,20 @@ def save_chemical(item_code: str, payload) -> dict:
     return {"ok": True, "item_code": item_code}
 
 
+def _crop_rate_rows(item_code):
+    return [
+        {"crop": x.crop or "", "basis": x.basis or "Water",
+         "lower_rate_limit": x.lower_rate_limit or 0,
+         "upper_rate_limit": x.upper_rate_limit or 0}
+        for x in frappe.get_all(
+            "Spray Product Crop Rate",
+            filters={"parent": item_code, "parenttype": "Spray Product"},
+            fields=["crop", "basis", "lower_rate_limit", "upper_rate_limit"],
+            order_by="idx asc",
+        )
+    ]
+
+
 def _save_product_fields(doc, payload):
     """Write the editor payload to a Spray Product (rate limits map to the
     record's ``default_*`` fields; targets to ``default_targets``)."""
@@ -526,6 +581,21 @@ def _save_product_fields(doc, payload):
             for code in payload.get(payload_key) or []:
                 if code:
                     doc.append(payload_key, {"code": code})
+    if "crop_rates" in payload:
+        doc.set("crop_rates", [])
+        for row in payload.get("crop_rates") or []:
+            if not isinstance(row, dict):
+                continue
+            lower = frappe.utils.flt(row.get("lower_rate_limit"))
+            upper = frappe.utils.flt(row.get("upper_rate_limit"))
+            if not (lower or upper):
+                continue
+            doc.append("crop_rates", {
+                "crop": row.get("crop") or None,
+                "basis": "Hectarage" if row.get("basis") == "Hectarage" else "Water",
+                "lower_rate_limit": lower,
+                "upper_rate_limit": upper,
+            })
     if "targets" in payload:
         doc.set("default_targets", [])
         for row in payload.get("targets") or []:

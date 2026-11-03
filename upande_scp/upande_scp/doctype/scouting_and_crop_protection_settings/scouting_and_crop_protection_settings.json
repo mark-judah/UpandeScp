@@ -71,6 +71,10 @@
   "progress_email_enabled",
   "progress_email_hour",
   "progress_email_last_sent",
+  "report_email_section",
+  "report_email_account",
+  "report_sender_accounts",
+  "cumulative_alert_paused",
   "crop_overrides_section",
   "crop_overrides",
   "accounts_tab",
@@ -539,6 +543,31 @@
    "fieldtype": "Date",
    "label": "Progress email last sent",
    "read_only": 1
+  },
+  {
+   "fieldname": "report_email_section",
+   "fieldtype": "Section Break",
+   "label": "Report Emails"
+  },
+  {
+   "fieldname": "report_email_account",
+   "fieldtype": "Link",
+   "label": "Default sending account",
+   "options": "Email Account",
+   "description": "The outgoing Email Account SCP report, digest and notification emails are sent from when the company has no row in the table below, or its account cannot send. Blank = the site's default outgoing account."
+  },
+  {
+   "description": "One sending account per company. An email about a farm of that company goes out from its account; emails spanning several companies use the default above.",
+   "fieldname": "report_sender_accounts",
+   "fieldtype": "Table",
+   "label": "Sending account per company",
+   "options": "Report Sender Account"
+  },
+  {
+   "description": "Block-grown crops email once per block, pest and ISO week (Mon-Sun) when the cumulative count per hectare passes the pest's cumulative threshold. Recipients: the farm company's spray plan creators and managers. Tick to pause those emails.",
+   "fieldname": "cumulative_alert_paused",
+   "fieldtype": "Check",
+   "label": "Pause cumulative per-ha alert emails"
   },
   {
    "fieldname": "crop_overrides_section",

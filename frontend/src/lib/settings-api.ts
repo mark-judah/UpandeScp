@@ -76,6 +76,10 @@ export interface SprayPlanSettings {
   loaning_timeout_hours: number;
   progress_email_enabled: number;
   progress_email_hour: number;
+  /** Email Account every SCP report, digest and notification email is sent from when a company has no row. "" = the site's default outgoing account. */
+  report_email_account: string;
+  /** One sending account per company; a company with no row uses report_email_account. */
+  report_sender_accounts?: ReportSenderRow[];
   /**
    * Scouting capture (pieces 5–6), read by the scout app with its
    * observations. 1 = the app draws the camera / the Comments tab; 0 = it does
@@ -132,6 +136,41 @@ export async function saveSprayPlanSettings(
   return call(`${PREFIX}.save_spray_plan_settings`, {
     payload: JSON.stringify(payload),
   });
+}
+
+export interface ReportEmailAccount {
+  name: string;
+  email_id: string;
+  is_default: number;
+  server: string;
+  /** Emails this account sent in the last 60 minutes — how busy it is. */
+  last_hour: number;
+  /** Waiting to send on it right now. */
+  queued: number;
+  /** Errored in the last 24 hours — the account may not deliver. */
+  failed: number;
+}
+
+export interface ReportSenderRow {
+  company: string;
+  email_account: string;
+}
+
+export interface ReportEmailAccounts {
+  /** Every Company, for the Add company picker. */
+  companies?: string[];
+  chosen: string | null;
+  /** False when the saved account was deleted or lost outgoing — reports fall back to the default. */
+  chosen_valid: boolean;
+  default: string | null;
+  /** Not failing, then least busy (sent last hour + queued). */
+  suggested: string | null;
+  as_of: string;
+  accounts: ReportEmailAccount[];
+}
+
+export async function fetchReportEmailAccounts(): Promise<ReportEmailAccounts> {
+  return call<ReportEmailAccounts>(`${PREFIX}.get_report_email_accounts`);
 }
 
 export async function saveFarmCoordinates(
@@ -192,6 +231,14 @@ export type ToxicityClass = "" | "I" | "II" | "III" | "IV";
  *  items. Fertilizers don't get a target picker; chemicals do. */
 export type ChemicalKind = "chemical" | "fertilizer";
 
+/** One row of a Spray Product's crop_rates table. `crop` "" = every crop. */
+export interface CropRateRow {
+  crop: string;
+  basis: "Water" | "Hectarage";
+  lower_rate_limit: number;
+  upper_rate_limit: number;
+}
+
 export interface ChemicalRow {
   item_code: string;
   item_name: string;
@@ -202,6 +249,7 @@ export interface ChemicalRow {
   kind: ChemicalKind;
   custom_lower_rate_limit: number | null;
   custom_upper_rate_limit: number | null;
+  crop_rates?: CropRateRow[];
   custom_low_stock_threshold: number | null;
   custom_type: ChemicalType | null;
   custom_toxicity: ToxicityClass | null;
@@ -243,6 +291,7 @@ export interface SaveChemicalPayload {
   enabled?: boolean;
   lower_rate_limit?: number;
   upper_rate_limit?: number;
+  crop_rates?: CropRateRow[];
   low_stock_threshold?: number;
   type?: ChemicalType;
   toxicity?: ToxicityClass;

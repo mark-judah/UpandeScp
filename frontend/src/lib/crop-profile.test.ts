@@ -29,7 +29,7 @@ describe("crop profile", () => {
 
   it("a block-grown crop gets the block nav (Application Plan) whatever it is called", () => {
     __setCropProfiles([p("passion-fruit", true)]);
-    expect(viewNavMeta("application-plan", "passion-fruit")).toEqual({ label: "Application Plan", section: "Crop Protection" });
+    expect(viewNavMeta("application-plan", "passion-fruit")).toEqual({ label: "Application Floor Plan", section: "Crop Protection" });
     __setCropProfiles([p("passion-fruit", false)]);
     expect(viewNavMeta("heatmaps", "passion-fruit")?.label).toBe("Heatmaps");
   });

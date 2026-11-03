@@ -17,7 +17,7 @@ describe("route fallback (skeleton spec K5)", () => {
     __setCropProfiles([
       { crop: "Avocado", label: "Avocado", slug: "avocado", station_type: "Block", block_grown: true, level_labels: [] },
     ]);
-    expect(routeHeading("avocado", "application-plan")).toEqual({ title: "Application Plan", eyebrow: "Crop Protection" });
+    expect(routeHeading("avocado", "application-plan")).toEqual({ title: "Application Floor Plan", eyebrow: "Crop Protection" });
     expect(routeHeading("rose", "sprayers")).toEqual({ title: "Sprayers", eyebrow: "Personnel" });
   });
 

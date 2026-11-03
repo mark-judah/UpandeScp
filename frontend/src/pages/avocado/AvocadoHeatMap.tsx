@@ -52,7 +52,9 @@ import { trapPlacement, trapUnitLayers } from "@/lib/trap-units";
 import { TRAP_FOCUS_ZOOM } from "@/lib/trap-pulse";
 import { unitKey } from "@/lib/unit-key";
 import { triadObsColors } from "@/lib/triad-colors";
-import { ObservationPicker, obsKey } from "./ObservationPicker";
+import { ObservationMultiPicker, obsOptionKey as obsKey } from "@/components/ObservationMultiPicker";
+import { computeMultiField, rankBlocks, type MultiField } from "@/lib/pest-heat-multi";
+import { multiUnitColors } from "@/lib/triad-multi";
 import { addFieldLayers, blockColors, paintFieldColors, pointFeatures, setFieldVisibility } from "../maps/field-layers";
 import { addTrapMarkers, drawTrapUnits, flyToTrap } from "../maps/trap-layers";
 import { SpheresLayer } from "../maps/SpheresLayer";
@@ -137,7 +139,8 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const [focus, setFocus] = useState<string | null>(null);
   const [plannable, setPlannable] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [pickedObs, setPickedObs] = useState<string | null>(null);
+  // The pests and diseases the map shows (null = all of them, so ones seen later join in).
+  const [pickedObs, setPickedObs] = useState<Set<string> | null>(null);
   const [traps, setTraps] = useState<TrapLocations>({});
 
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -196,32 +199,52 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     };
   }, [filters.farm]);
 
-  // The observations seen in the window; the map shows one of them.
+  // The observations seen in the window; the map shows the selected ones.
   const obsOptions = useMemo(() => (data ? observationOptions(data.entries) : []), [data]);
-  const obs: ObsOption | null =
-    obsOptions.find((o) => obsKey(o) === pickedObs) ??
-    obsOptions.find((o) => o.kind === "pest" && o.count > 0) ??
-    obsOptions[0] ??
-    null;
-  // The observation's own colour; its tones (low, medium, high, clean) paint every unit.
-  const obsColor = obs ? hexOf(obs.kind === "pest" ? pestColor(obs.name) : diseaseColor(obs.name)) : NO_OBS;
+  const selected = useMemo(
+    () => (pickedObs ? obsOptions.filter((o) => pickedObs.has(obsKey(o))) : obsOptions),
+    [obsOptions, pickedObs],
+  );
+  const selectedKeys = useMemo(() => new Set(selected.map(obsKey)), [selected]);
+  // Exactly one selected keeps the single-observation behaviour; several take, per patch, the
+  // colour of the worst selected observation there.
+  const obs: ObsOption | null = selected.length === 1 ? selected[0] : null;
+  const multi = selected.length > 1;
+  const obsLabel = obs ? obs.name : multi ? `${selected.length} pests and diseases` : "";
+  const onPick = (next: Set<string>) =>
+    setPickedObs(obsOptions.length > 0 && obsOptions.every((o) => next.has(obsKey(o))) ? null : next);
+  const colorOfObs = (o: { kind: string; name: string }) => hexOf(o.kind === "pest" ? pestColor(o.name) : diseaseColor(o.name));
+  // The observation's own colour; its tones (low, medium, high, clean) paint every unit. With
+  // several selected there is no single colour: the neutral stands in for the clean wash.
+  const obsColor = obs ? colorOfObs(obs) : NO_OBS;
   const tones = useMemo(() => toneBands(obsColor), [obsColor]);
 
   // Smear blocks feed the field; Solid blocks are painted per hexagon / unit.
   const styles = useMemo(() => (blocks ? splitByHeatStyle(blocks, hexBlocks) : null), [blocks, hexBlocks]);
-  const fieldResult = useMemo(
-    () =>
-      data && obs && styles && styles.smear.features.length
-        ? computeField(data.entries, obs, styles.smear, traps, blockTag, [obsColor, obsColor, obsColor], FIELD_ALPHAS)
-        : null,
-    [data, obs, styles, traps, obsColor],
-  );
+  const fieldResult = useMemo(() => {
+    if (!data || !styles || !styles.smear.features.length || !selected.length) return null;
+    if (selected.length === 1)
+      return computeField(data.entries, selected[0], styles.smear, traps, blockTag, [obsColor, obsColor, obsColor], FIELD_ALPHAS);
+    return computeMultiField(
+      data.entries, selected, styles.smear, traps, blockTag,
+      (o) => colorOfObs(o), NO_OBS, FIELD_ALPHAS,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, selected, styles, traps, obsColor, pestColor, diseaseColor]);
   const heat = fieldResult?.kind === "ok" ? fieldResult : null;
+  const multiHeat = heat && "share" in heat ? (heat as Extract<MultiField, { kind: "ok" }>) : null;
   const solidEntries = useMemo(
     () => (data && styles ? data.entries.filter((e) => e.block && styles.solid.has(e.block)) : []),
     [data, styles],
   );
-  const unitTones = useMemo(() => triadObsColors(solidEntries, obs, tones, unitKey), [solidEntries, obs, tones]);
+  const unitTones = useMemo(
+    () =>
+      multi
+        ? multiUnitColors(solidEntries, selected, colorOfObs, unitKey, NO_OBS)
+        : triadObsColors(solidEntries, obs, tones, unitKey),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [solidEntries, obs, tones, multi, selected, pestColor, diseaseColor],
+  );
   const solidBlockTones = useMemo(() => blockColors(solidEntries, unitTones), [solidEntries, unitTones]);
 
   // Why the map is blank, said plainly.
@@ -230,7 +253,9 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       ? null
       : blocks.features.length === 0
         ? "No blocks mapped for this crop yet"
-        : !obs
+        : !selected.length
+          ? "Pick at least one pest or disease"
+          : !obsOptions.length
           ? "No geo-tagged scouting for this crop in this window"
           : null;
 
@@ -269,12 +294,20 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
 
   // Each block's heat for the list: the smear's mean and band, or the solid wash.
   const blockHeat = useMemo(() => {
-    const m = new Map<string, { tone: string; label: string }>();
-    for (const b of heat?.blocks ?? [])
-      if (b.tag && b.coverage > 0) m.set(b.tag, { tone: toneOf(obsColor, classOf(b.mean, heat!.cuts)), label: fmt(b.mean) });
+    const m = new Map<string, { tone: string; label: string; name?: string }>();
+    for (const b of rankBlocks(heat?.blocks ?? [])) {
+      const domKey = multiHeat?.dominant.get(b.tag);
+      const dom = domKey ? selected.find((o) => obsKey(o) === domKey) : undefined;
+      m.set(b.tag, {
+        tone: toneOf(dom ? colorOfObs(dom) : obsColor, classOf(b.mean, heat!.cuts)),
+        label: fmt(b.mean),
+        name: dom?.name,
+      });
+    }
     for (const [b, tone] of solidBlockTones) if (!m.has(b)) m.set(b, { tone, label: "" });
     return m;
-  }, [heat, solidBlockTones, obsColor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heat, multiHeat, selected, solidBlockTones, obsColor, pestColor, diseaseColor]);
 
   // Traps: one pulsing marker per trap (size by catch, the pest's colour), on its unit.
   const trapMarkers = useMemo(() => deriveTrapMarkers(data, traps, pestColor), [data, traps, pestColor]);
@@ -475,7 +508,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const spheres = useMemo(() => {
     if (!view3d || !data) return [];
     const centres = new Map<string, [number, number]>();
-    return spherePoints(data.entries, obs, (k) => {
+    const centreOf = (k: string): [number, number] | null => {
       const hit = centres.get(k);
       if (hit) return hit;
       const id = hexSet.idByName.get(k);
@@ -486,8 +519,17 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       const c: [number, number] = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
       centres.set(k, c);
       return c;
-    });
-  }, [view3d, data, obs, hexSet]);
+    };
+    if (!multi) return spherePoints(data.entries, obs, centreOf);
+    // Several selected: one sphere per unit, sized by the worst of them (drawn in the neutral tone).
+    const by = new Map<string, ReturnType<typeof spherePoints>[number]>();
+    for (const o of selected)
+      for (const p of spherePoints(data.entries, o, centreOf)) {
+        const prev = by.get(p.key);
+        if (!prev || p.value > prev.value) by.set(p.key, p);
+      }
+    return [...by.values()];
+  }, [view3d, data, obs, multi, selected, hexSet]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -535,6 +577,22 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     () => (detail?.kind === "hex" && data ? data.entries.filter((e) => e.triad === detail.unit) : []),
     [detail, data],
   );
+  // The worst selected observation seen at the open hexagon (its biggest single visit).
+  const hexWorst = useMemo(() => {
+    let best: { name: string; value: number } | null = null;
+    for (const o of selected) {
+      const value = Math.max(
+        0,
+        ...hexVisits.map((e) =>
+          o.kind === "pest"
+            ? (e.pests_scouting_entry || []).filter((p) => p.pest === o.name).reduce((s, p) => s + (p.count || 1), 0)
+            : (e.diseases_scouting_entry || []).filter((d) => d.disease === o.name).length,
+        ),
+      );
+      if (!best || value > best.value) best = { name: o.name, value };
+    }
+    return best;
+  }, [selected, hexVisits]);
 
   const first = firstLoad(loading || (!data && !error), !!data);
   const detailTitle = detail?.kind === "block" ? detail.block : detail?.kind === "hex" ? detail.unit.split(" - ").slice(-2).join(" · ") : "";
@@ -542,8 +600,8 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   return (
     <div className="flex h-svh flex-col overflow-y-auto lg:overflow-hidden">
       <MapHeader
-        title="Application Plan"
-        subtitle={obs ? `${obs.name} · select blocks on the map or in the list, plan each` : "Pest & disease, then the plan"}
+        title="Application Floor Plan"
+        subtitle={obsLabel ? `${obsLabel} · select blocks on the map or in the list, plan each` : "Pest & disease, then the plan"}
         value={filters}
         onChange={setFilters}
         showGreenhouse={false}
@@ -595,12 +653,26 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
           <span role="alert" className="text-destructive">{error}</span>
         )}
         <LoadProgress active={loading || loadingGeo} progress={loading ? progress : 100} />
-        <ObservationPicker options={obsOptions} value={obs} onChange={(o) => setPickedObs(obsKey(o))} />
-        {(["Low", "Medium", "High"] as const).map((label, i) => (
-          <span key={label} className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full border border-black/10" data-tone={label} style={{ background: tones[i] }} /> {label}
-          </span>
-        ))}
+        <ObservationMultiPicker options={obsOptions} value={selectedKeys} onChange={onPick} />
+        {multi ? (
+          <>
+            {selected
+              .filter((o) => !multiHeat || multiHeat.share.has(obsKey(o)))
+              .slice(0, 6)
+              .map((o) => (
+                <span key={obsKey(o)} className="flex items-center gap-1.5" data-testid="legend-obs">
+                  <span className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ background: colorOfObs(o) }} /> {o.name}
+                </span>
+              ))}
+            <span>Each patch takes the colour of the worst selected observation there; stronger means higher.</span>
+          </>
+        ) : (
+          (["Low", "Medium", "High"] as const).map((label, i) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full border border-black/10" data-tone={label} style={{ background: tones[i] }} /> {label}
+            </span>
+          ))
+        )}
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-4 rounded-full" style={{ background: `linear-gradient(90deg, ${tones[1]}, transparent)` }} />
           Estimated (no scout within {FIELD_RADIUS_M} m)
@@ -628,7 +700,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
             {first ? (
               <TextSkeleton width="24ch" />
             ) : heat ? (
-              `${heat.samples} samples (${heat.hits} with ${obs?.name ?? "it"}${heat.traps ? `, ${heat.traps} traps` : ""})${view3d ? ` · ${spheres.length} spheres` : ""}`
+              `${heat.samples} samples (${heat.hits} with ${obsLabel || "it"}${heat.traps ? `, ${heat.traps} traps` : ""})${view3d ? ` · ${spheres.length} spheres` : ""}`
             ) : (
               `${unitTones.size} units scouted${view3d ? ` · ${spheres.length} spheres` : ""}`
             )}
@@ -658,13 +730,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
                 {detail.kind === "hex" ? (
                   <div className="text-muted-foreground">
                     {hexVisits.length} visit{hexVisits.length === 1 ? "" : "s"} in the window
-                    {obs ? (
+                    {hexWorst ? (
                       <>
                         {" · "}
-                        {obs.name}:{" "}
-                        <span className="font-medium text-foreground">
-                          {Math.max(0, ...hexVisits.map((e) => (e.pests_scouting_entry || []).filter((p) => p.pest === obs.name).reduce((s, p) => s + (p.count || 1), 0)))}
-                        </span>{" "}
+                        {hexWorst.name}:{" "}
+                        <span className="font-medium text-foreground">{hexWorst.value}</span>{" "}
                         at most
                       </>
                     ) : null}
@@ -736,8 +806,9 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
             rowExtra={(b) => {
               const h = blockHeat.get(b.name);
               return h ? (
-                <span className="flex items-center gap-1 text-[0.65rem] tabular-nums text-muted-foreground" title={`${obs?.name ?? ""} on this block`}>
+                <span className="flex items-center gap-1 text-[0.65rem] tabular-nums text-muted-foreground" title={`${h.name ? `${h.name} is the worst of ${obsLabel}` : obs?.name ?? ""} on this block`}>
                   <span className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ background: h.tone }} aria-hidden />
+                  {h.name && <span className="max-w-[5rem] truncate">{h.name}</span>}
                   {h.label}
                 </span>
               ) : null;

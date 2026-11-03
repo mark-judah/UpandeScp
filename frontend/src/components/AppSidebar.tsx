@@ -236,7 +236,7 @@ const ROSE_NAV: NavSection[] = [
       {
         kind: "view",
         view: "application-plan",
-        label: "Application Plan",
+        label: "Application Floor Plan",
         icon: ClipboardList,
       },
       {
@@ -368,7 +368,7 @@ const AVOCADO_NAV: NavSection[] = [
     items: [
       // One page to observe and plan: the pest map on the left, the blocks and a plan per
       // block on the right, sent to approval together (the old Spray Plan merged in).
-      { kind: "view", view: "application-plan", label: "Application Plan", icon: ClipboardList },
+      { kind: "view", view: "application-plan", label: "Application Floor Plan", icon: ClipboardList },
       REENTRY_ITEM,
     ],
   },

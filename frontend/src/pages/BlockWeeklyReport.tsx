@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
+import { PlacePicker } from "@/components/PlacePicker";
 import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
 import { previewCumulativeAlertEmail, sendTestCumulativeAlert } from "@/lib/cumulative-api";
@@ -165,18 +166,24 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
                 <Label>Farm</Label>
-                <Select value={farm} onValueChange={setFarm} disabled={loading}>
-                  <SelectTrigger className="w-56">
-                    <SelectValue placeholder={loading ? <TextSkeleton width="16ch" /> : "Pick a farm"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ready.map((f) => (
-                      <SelectItem key={f.farm} value={f.farm}>
-                        {f.farm} ({f.blocks} blocks)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <PlacePicker
+                  level="farm"
+                  variant="field"
+                  allLabel={false}
+                  className="w-56"
+                  farms={ready.map((f) => f.farm)}
+                  label="Block report farm"
+                  placeholder={loading ? "Loading farms…" : "Pick a farm"}
+                  value={{ farm, greenhouse: "" }}
+                  onChange={(p) => setFarm(p.farm)}
+                  disabled={loading}
+                />
+                {(() => {
+                  const n = ready.find((f) => f.farm === farm)?.blocks;
+                  return n !== undefined ? (
+                    <span className="block text-xs text-muted-foreground">{n} blocks</span>
+                  ) : null;
+                })()}
               </div>
 
               <div className="space-y-1">

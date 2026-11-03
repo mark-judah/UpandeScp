@@ -1,4 +1,27 @@
 import { BlockSelect } from "@/components/BlockSelect";
+import { FilterSelect } from "@/components/FilterSelect";
+import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { StationCardBody } from "@/components/scouting/StationCard";
+import { captureStamp } from "@/lib/capture-time";
+import { hexCentroids } from "@/lib/hex-centroids";
+import { unitKey, POINT_PREFIX } from "@/lib/unit-key";
+import {
+  deriveStations,
+  stationDays,
+  stationFeatures,
+  stationScouts,
+  stationsInScope,
+  type Station,
+} from "@/lib/scouting-stations";
+import {
+  STATION_CLICK_LAYER,
+  belowStations,
+  ensureStationLayers,
+  raiseStations,
+  setStationData,
+  setStationOpen,
+  setStationsVisible,
+} from "../maps/stations-layer";
 import { fetchBlockCrops, type BlockCrop } from "@/lib/open-field-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
@@ -24,6 +47,7 @@ import { decodeHexes, fetchFieldLayers, rowLines, type FieldLayersPayload } from
 import {
   fetchBlocksGeojson,
   fetchOrchardTreeRows,
+  fetchScoutLookup,
   fetchTanksValvesGeojson,
   type GeoJsonFC,
   type OrchardTreePoints,
@@ -31,7 +55,7 @@ import {
 import { useScoutingSummary } from "@/hooks/use-scouting-summary";
 import { BLOCK_MAP_MONTHS, lastMonthsRange } from "@/lib/utils";
 import type { AvocadoView, MarkerPoint } from "./tree-map-types";
-import { SCOUT_PALETTE } from "./derive-scouts";
+import { deriveScoutColorMap } from "./derive-scouts";
 import { savePin } from "@/lib/spread-api";
 import type { Pt } from "@/lib/hull";
 import { useDrawArea } from "../maps/use-draw-area";
@@ -150,6 +174,18 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   const [showTanks, setShowTanks] = useState(false);
   const [showHex, setShowHex] = useState(true);
   const [showRows, setShowRows] = useState(true);
+  // Stations (where a scout took a record): on by default on the scouting map.
+  // "Top view" levels the map to a plan (pitch 0) so the markers read as a plan.
+  const [showStations, setShowStations] = useState(true);
+  const [topView, setTopView] = useState(false);
+  const [stationScout, setStationScout] = useState("");
+  const [stationDay, setStationDay] = useState("");
+  const [openStationId, setOpenStationId] = useState<string | null>(null);
+  const [scoutNames, setScoutNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (view.showTracks) fetchScoutLookup().then(setScoutNames);
+  }, [view.showTracks]);
+  const nameOf = (k: string) => scoutNames[k] || k;
   const [field, setField] = useState<FieldLayersPayload | null>(null);
   const paintedRef = useRef<{ units: Map<string, string> | null; blocks: Map<string, string> | null }>({ units: null, blocks: null });
 
@@ -306,9 +342,49 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     [data, view],
   );
   // Flat views (open-field Observations) never tilt; the rest look at the trees at 60°.
-  const tilt = view.flat ? 0 : 60;
+  const tilt = view.flat || topView ? 0 : 60;
   const tiltRef = useRef(tilt);
   tiltRef.current = tilt;
+
+  // scout → colour: the same one the trees, tracks and stations use.
+  const scoutColors = useMemo(() => deriveScoutColorMap(data), [data]);
+
+  // Stations: one per tree / hexagon / visit point a scout recorded at, per scout-day-block
+  // walk. A tree sits at its own position, a hexagon at its centre, a visit point (or a unit
+  // with no position) at the entry's GPS.
+  const hexCentre = useMemo(() => hexCentroids(hexSet), [hexSet]);
+  const allStations = useMemo<Station[]>(() => {
+    if (!view.showTracks || !data?.entries?.length) return [];
+    return deriveStations(data.entries, {
+      keyOf: (e) => unitKey(e) || null,
+      positionOf: (k) => treeCoords.get(k) ?? hexCentre.get(k) ?? null,
+      placeSource: "tree",
+    });
+  }, [view.showTracks, data, treeCoords, hexCentre]);
+  const stationView = useMemo(
+    // The server summary has no capture times (one latest row per unit): no visit numbers.
+    () => stationsInScope(allStations, stationScout, stationDay, !aggregated),
+    [allStations, stationScout, stationDay, aggregated],
+  );
+  const stationScoutOptions = useMemo(() => stationScouts(allStations), [allStations]);
+  const stationDayOptions = useMemo(() => stationDays(allStations), [allStations]);
+  // A picked scout / day that the new range no longer has falls back to all.
+  useEffect(() => {
+    if (stationScout && !stationScoutOptions.includes(stationScout)) setStationScout("");
+    if (stationDay && !stationDayOptions.includes(stationDay)) setStationDay("");
+  }, [stationScout, stationDay, stationScoutOptions, stationDayOptions]);
+  const stationById = useMemo(() => {
+    const m = new Map<string, Station>();
+    for (const st of stationView.stations) m.set(st.id, st);
+    return m;
+  }, [stationView]);
+  const openStation = openStationId ? stationById.get(openStationId) ?? null : null;
+  const stationFC = useMemo(
+    () => stationFeatures(stationView, (sc) => scoutColors.get(sc) || "#2BA6E0"),
+    [stationView, scoutColors],
+  );
+  const stationFCRef = useRef(stationFC);
+  stationFCRef.current = stationFC;
 
   // Scout movement tracks — per scout, tree-to-tree in time order, cut when
   // the day or block changes (so a line never jumps across the orchard). Each
@@ -319,26 +395,19 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
       return { type: "FeatureCollection", features };
     }
     const ordered = [...data.entries].sort((a, b) => {
-      const ta = `${a.date_of_capture} ${a.time_of_capture || ""}`;
-      const tb = `${b.date_of_capture} ${b.time_of_capture || ""}`;
+      const ta = captureStamp(a);
+      const tb = captureStamp(b);
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
     const byScout = new Map<string, typeof ordered>();
-    const scoutColor = new Map<string, string>();
     for (const e of ordered) {
       if (!e.scouts_name || !e.tree || !treeCoords.has(e.tree)) continue;
       const arr = byScout.get(e.scouts_name) || [];
       arr.push(e);
       byScout.set(e.scouts_name, arr);
-      if (!scoutColor.has(e.scouts_name)) {
-        scoutColor.set(
-          e.scouts_name,
-          SCOUT_PALETTE[scoutColor.size % SCOUT_PALETTE.length],
-        );
-      }
     }
     byScout.forEach((entries, scout) => {
-      const color = scoutColor.get(scout) || SCOUT_PALETTE[0];
+      const color = scoutColors.get(scout) || "#2BA6E0";
       let seg: [number, number][] = [];
       let prevKey = "";
       const flush = () => {
@@ -450,7 +519,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
         setTreesPlacing(false),
       );
       treesLayerRef.current = layer;
-      map.addLayer(layer);
+      map.addLayer(layer, belowStations(map));
     } else {
       treesLayerRef.current = null;
       setTreesPlacing(false);
@@ -564,11 +633,43 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
           "line-width": 2,
           "line-opacity": 0.4,
         },
-      });
+      }, belowStations(map));
     } else {
       (map.getSource(src) as maplibregl.GeoJSONSource).setData(tracks as never);
     }
   }, [tracks, mapReady, view.showTracks]);
+
+  // Stations layers: created once the map is ready, kept above trees and tracks.
+  useEffect(() => {
+    if (!view.showTracks) return;
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    ensureStationLayers(map);
+    raiseStations(map);
+    setStationData(map, stationFCRef.current);
+  }, [view.showTracks, mapReady, treePoints, field, hexSet]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !view.showTracks) return;
+    setStationData(map, stationFC);
+  }, [stationFC, mapReady, view.showTracks]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !view.showTracks) return;
+    setStationsVisible(map, showStations);
+    setStationOpen(map, showStations ? openStationId : null);
+  }, [showStations, openStationId, mapReady, view.showTracks, stationFC]);
+  // The open card closes when its station leaves the picked scope.
+  useEffect(() => {
+    if (openStationId && !stationById.has(openStationId)) setOpenStationId(null);
+  }, [openStationId, stationById]);
+
+  // Top view: level the map to a plan (pitch 0) and back to the 3D tilt.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    map.easeTo({ pitch: topView || view.flat ? 0 : 60, bearing: 0, duration: 500 });
+  }, [topView, mapReady]);
 
   // Patch outlines (red), patch / area pins (purple, dashed) and the area being
   // drawn. MapLibre paint takes literal colours: these mirror --sd-data-red /
@@ -648,7 +749,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
             [minX, minY],
             [maxX, maxY],
           ],
-          { padding: 80, pitch: tilt, duration: 1000 },
+          { padding: 80, pitch: tiltRef.current, duration: 1000 },
         );
       }
       return;
@@ -656,7 +757,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     const farmBounds = farmBoundsFromBlocks(blocks);
     const b = farmBounds[filters.farm];
     if (b)
-      map.fitBounds(b, { padding: 80, pitch: tilt, duration: 1000, bearing: 0 });
+      map.fitBounds(b, { padding: 80, pitch: tiltRef.current, duration: 1000, bearing: 0 });
   }, [filters.farm, blocks, mapReady]);
 
   // Click a block → fly into it.
@@ -685,6 +786,17 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
         duration: 1000,
         bearing: 0,
       });
+    });
+    map.on("click", STATION_CLICK_LAYER, (e) => {
+      if (drawRef.current.active) return;
+      const sid = (e.features?.[0]?.properties as Record<string, unknown> | undefined)?.sid;
+      if (sid) setOpenStationId(String(sid));
+    });
+    map.on("mouseenter", STATION_CLICK_LAYER, () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", STATION_CLICK_LAYER, () => {
+      map.getCanvas().style.cursor = "";
     });
     map.on("click", (e) => {
       const d = drawRef.current;
@@ -732,7 +844,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
                   <ChevronDown className="h-3.5 w-3.5 opacity-60" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-44 p-2">
+              <PopoverContent align="end" className="w-48 p-2">
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
                   <Checkbox
                     checked={showBlocks}
@@ -761,6 +873,24 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
                   />
                   Tanks
                 </label>
+                {view.showTracks ? (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                    <Checkbox
+                      checked={showStations}
+                      onCheckedChange={(v) => setShowStations(!!v)}
+                    />
+                    Stations
+                  </label>
+                ) : null}
+                {view.flat ? null : (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                    <Checkbox
+                      checked={topView}
+                      onCheckedChange={(v) => setTopView(!!v)}
+                    />
+                    Top view (2D)
+                  </label>
+                )}
               </PopoverContent>
             </Popover>
           </>
@@ -787,6 +917,36 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-[#7c8b6a]" /> Unscouted
         </span>
+        {view.showTracks && showStations ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-3 w-3 rounded-full border-2 border-foreground bg-white"
+                aria-hidden
+              />
+              Station (a record was taken)
+            </span>
+            <FilterSelect
+              label="Station scout"
+              allLabel="All scouts"
+              value={stationScout}
+              onChange={setStationScout}
+              options={stationScoutOptions}
+              format={nameOf}
+            />
+            <FilterSelect
+              label="Station day"
+              allLabel="All days"
+              value={stationDay}
+              onChange={setStationDay}
+              options={stationDayOptions}
+            />
+            <span className="tabular-nums">
+              {stationView.stations.length} station{stationView.stations.length === 1 ? "" : "s"}
+              {stationView.numbered ? " · numbered in visit order" : ""}
+            </span>
+          </div>
+        ) : null}
         {obs ? (
           <div className="flex flex-wrap items-center gap-2">
             <BlockSelect
@@ -851,6 +1011,23 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
 
           {view.renderLegend && !selectedMarker ? view.renderLegend(data, first) : null}
 
+          {openStation && showStations ? (
+            <MapFloatingCard
+              key={openStation.id}
+              eyebrow={`Station${openStation.visits > 1 ? ` · ${openStation.visits} visits, latest shown` : ""}`}
+              title={stationTitle(openStation.key)}
+              onClose={() => setOpenStationId(null)}
+              label={`Station ${stationTitle(openStation.key)}`}
+              closeLabel="Close station card"
+              testId="station-card"
+            >
+              <StationCardBody station={openStation} scoutName={nameOf(openStation.scout)}
+                color={scoutColors.get(openStation.scout) || "#2BA6E0"}
+                summary={aggregated}
+              />
+            </MapFloatingCard>
+          ) : null}
+
           {selectedMarker && view.markerCard
             ? view.markerCard(selectedMarker, { from: filters.from, to: filters.to }, () =>
                 setSelectedMarker(null),
@@ -862,4 +1039,10 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
 
     </div>
   );
+}
+
+/** A station's heading: the tree, the hexagon, or a bare visit point. */
+function stationTitle(key: string): string {
+  if (key.startsWith(POINT_PREFIX)) return "Visit point";
+  return /Triad/i.test(key) ? key : `Tree ${key}`;
 }

@@ -6,6 +6,18 @@ export const SCOUT_PALETTE = [
   "#3D54B0", "#E63946", "#10b981", "#f97316", "#a855f7",
 ];
 
+/** scout → colour, palette in first-seen order (the same colour the units, tracks and
+ *  station markers use). */
+export function deriveScoutColorMap(data: ProcessedData | null): Map<string, string> {
+  const scoutColors = new Map<string, string>();
+  if (!data) return scoutColors;
+  for (const e of data.entries) {
+    if (!unitKey(e) || !e.scouts_name || scoutColors.has(e.scouts_name)) continue;
+    scoutColors.set(e.scouts_name, SCOUT_PALETTE[scoutColors.size % SCOUT_PALETTE.length]);
+  }
+  return scoutColors;
+}
+
 /** tree / hexagon / visit point → the colour of the scout who logged it (first-seen palette order). */
 export function deriveScoutColors(data: ProcessedData | null): Map<string, string> {
   const m = new Map<string, string>();

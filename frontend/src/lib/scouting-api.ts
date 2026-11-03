@@ -1,3 +1,4 @@
+import { padTime } from "./capture-time";
 import { isStaleSession, call } from "./frappe";
 import { getPayload, setPayload } from "./idb";
 import type {
@@ -182,7 +183,7 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
     .sort((a, b) => {
       if (a.date_of_capture !== b.date_of_capture)
         return b.date_of_capture.localeCompare(a.date_of_capture);
-      return (b.time_of_capture || "").localeCompare(a.time_of_capture || "");
+      return padTime(b.time_of_capture).localeCompare(padTime(a.time_of_capture));
     });
 }
 

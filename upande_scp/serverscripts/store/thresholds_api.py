@@ -88,11 +88,60 @@ def _weight_problem(value) -> str:
     return ""
 
 
-def _filter_rows(crop: str, doctype: str, child: str, obs_col: str, kind: str) -> list:
+PER_HA_FIELD = "cumulative_per_ha_threshold"
+PER_HA_MAX = 1_000_000
+
+
+def _per_ha_crop(crop: str) -> bool:
+    """Block-grown crop (scouted by tree on Block warehouses), read from its
+    houses the way the cumulative engine does, never from the crop's name."""
+    from upande_scp.serverscripts.scouting import cumulative_per_ha
+
+    return cumulative_per_ha.is_block_crop(crop)
+
+
+def _per_ha_problem(value) -> str:
+    """Why a per-ha line cannot be stored, or "" when it can (blank/0 = none)."""
+    if value is None or value == "":
+        return ""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "cumulative per ha must be a number."
+    if not math.isfinite(v) or v < 0:
+        return "cumulative per ha must be zero or more."
+    if v > PER_HA_MAX:
+        return f"cumulative per ha cannot exceed {PER_HA_MAX}."
+    return ""
+
+
+def _week_worst_per_ha(crop: str) -> dict:
+    """``{(kind, observation): worst block's per-ha figure}`` this ISO week, to
+    show beside the line. Best effort: the editor never fails on it."""
+    try:
+        from upande_scp.serverscripts.common import cumulative_rules as R
+        from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+        start, end = R.round_bounds(frappe.utils.nowdate(), C.round_days(crop))
+        blocks = crop_catalog.greenhouses_for_crop(crop)
+        worst: dict = {}
+        for figs in C.round_figures(crop, blocks, start, end).values():
+            for f in figs:
+                if f["per_ha"] is not None and f["per_ha"] > worst.get((f["kind"], f["observation"]), -1):
+                    worst[(f["kind"], f["observation"])] = f["per_ha"]
+        return worst
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "thresholds: this week's per-ha figures")
+        return {}
+
+
+def _filter_rows(crop: str, doctype: str, child: str, obs_col: str, kind: str, per_ha: dict | None = None) -> list:
+    """``per_ha`` is None for a crop with no per-ha line, else this week's worst figures."""
+    ha_col = PER_HA_FIELD if per_ha is not None and frappe.db.has_column(doctype, PER_HA_FIELD) else "0"
     measure_col = "measure" if frappe.db.has_column(doctype, "measure") else "'Percentage'"
     parents = frappe.db.sql(
         f"""
-        SELECT name, `{obs_col}` AS obs, {measure_col} AS measure,
+        SELECT name, `{obs_col}` AS obs, {measure_col} AS measure, {ha_col} AS per_ha_line,
                low_threshold, moderate_threshold, high_threshold
         FROM `tab{doctype}`
         WHERE crop_scouted = %(crop)s
@@ -152,6 +201,10 @@ def _filter_rows(crop: str, doctype: str, child: str, obs_col: str, kind: str) -
             "high": _f(r["high_threshold"]),
             "invalid": row_invalid or any(s["invalid"] for s in stage_rows),
             "stages": stage_rows,
+            **({
+                "cumulative_per_ha": _f(r["per_ha_line"]),
+                "week_per_ha": per_ha.get((kind, r["obs"])),
+            } if per_ha is not None else {}),
         })
     return out
 
@@ -169,11 +222,15 @@ def get_thresholds(crop: str) -> dict:
     crop = crop_catalog.resolve_crop(crop)
     if not crop:
         return {"crop": "", "station": "zone", "pests": [], "diseases": []}
+    per_ha_crop = _per_ha_crop(crop)
+    per_ha = _week_worst_per_ha(crop) if per_ha_crop else None
     return {
         "crop": crop,
         "station": _common.station_word(crop),
-        "pests": _filter_rows(crop, "Pest Filter", "Pests Stages", "pest", "pest"),
-        "diseases": _filter_rows(crop, "Disease Filter", "Disease Stages", "disease", "disease"),
+        # A block-grown crop also gets a "cumulative per ha this week" line per row.
+        "per_ha": per_ha_crop,
+        "pests": _filter_rows(crop, "Pest Filter", "Pests Stages", "pest", "pest", per_ha),
+        "diseases": _filter_rows(crop, "Disease Filter", "Disease Stages", "disease", "disease", per_ha),
     }
 
 
@@ -213,7 +270,7 @@ def _assert_rows_belong(crop: str, payload: dict) -> None:
                 frappe.throw(f"{child} rows {', '.join(stray)} do not belong to {r['row']}.", frappe.ValidationError)
 
 
-def _validate(payload: dict) -> None:
+def _validate(payload: dict, crop: str | None = None) -> None:
     """Refuse the whole save on any bad row, before the first write (D1, D3).
 
     Count is checked against the stages' reading types in the database, never
@@ -243,6 +300,9 @@ def _validate(payload: dict) -> None:
                 errors.append(f"{label}: Count needs a stage scouts record as a number.")
             if not B.bands_ascending(r.get("low"), r.get("moderate"), r.get("high")):
                 errors.append(f"{label}: bands must rise, Low < Moderate < High.")
+            problem = _per_ha_problem(r.get("cumulative_per_ha")) if "cumulative_per_ha" in r else ""
+            if problem:
+                errors.append(f"{label}: {problem}")
             for s in r.get("stages") or []:
                 if not B.bands_ascending(s.get("low"), s.get("moderate"), s.get("high")):
                     errors.append(
@@ -273,6 +333,7 @@ def save_thresholds(crop: str, payload: str | dict) -> dict:
         payload = json.loads(payload)
     _assert_rows_belong(crop, payload)
     _validate(payload)
+    per_ha_crop = _per_ha_crop(crop)
 
     updated = {"pests": 0, "pest_stages": 0, "diseases": 0, "disease_stages": 0}
     for key, doctype, child in _KINDS:
@@ -287,6 +348,9 @@ def save_thresholds(crop: str, payload: str | dict) -> dict:
             }
             if "measure" in r:
                 values["measure"] = r["measure"] or B.PERCENTAGE
+            # Only a block-grown crop has the line; a stray key on a rose row is ignored.
+            if per_ha_crop and "cumulative_per_ha" in r and frappe.db.has_column(doctype, PER_HA_FIELD):
+                values[PER_HA_FIELD] = _f(r.get("cumulative_per_ha"))
             frappe.db.set_value(doctype, r["row"], values, update_modified=True)
             updated[key] += 1
             for s in r.get("stages") or []:

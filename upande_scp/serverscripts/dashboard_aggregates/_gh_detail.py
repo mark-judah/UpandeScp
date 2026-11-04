@@ -125,6 +125,11 @@ def _build(filters: dict, job_id: str = "") -> dict:
     per_ha = _per_ha_rows(filters["crop"], gh)
     if per_ha is not None:
         alerts += sum(1 for r in per_ha if r["over"])
+        # Both levels of a block crop: the per-hectare line above, and the hot spots by tree inside it.
+        from upande_scp.serverscripts.scouting import tree_hot_spots as T
+
+        hot_spots = T.open_for_block(gh)
+        alerts += len(hot_spots)
     for kind in ("pest", "disease"):
         for stage in (sorted(stages[kind]) if per_ha is None else ()):
             for obs_name, fig in weeks.latest_by_house(kind, stage=stage).get(gh, {}).items():
@@ -178,7 +183,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
                        if (r.scouts_name or "").strip()}),
         "alerts": alerts,
         "prevalence": prevalence_rows,
-        **({"perHa": per_ha} if per_ha is not None else {}),
+        **({"perHa": per_ha, "hotSpots": hot_spots} if per_ha is not None else {}),
     }
     publish_progress(job_id, 100, "")
     return payload

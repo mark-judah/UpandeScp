@@ -40,11 +40,14 @@ import { EmptyHint } from "./EmptyHint";
 import { GreenhouseModal } from "./GreenhouseModal";
 import { ReliabilityPill } from "./PrevalenceFigure";
 import { Button } from "@/components/ui/button";
-import { AlertActionPill } from "@/components/AlertActionPill";
+import { AlertActionPill, AlertLevelPill } from "@/components/AlertActionPill";
+import { openHotSpotOnMap } from "@/lib/hot-spot-focus";
 import { cn } from "@/lib/utils";
 import {
   acknowledgeAlert,
   alertFigureLine,
+  alertLevel,
+  isTreeHotSpot,
   isPerHa,
   listOpenAlerts,
   type ScoutingAlert,
@@ -397,7 +400,8 @@ export function OverviewTab({
                       {a.stage ? ` · ${a.stage}` : ""}
                     </span>
                     <AlertActionPill action={a.action} />
-                    {isPerHa(a.unit) ? null : <ReliabilityPill value={a.reliability} />}
+                    {alertLevel(a) ? <AlertLevelPill level={alertLevel(a)!} /> : null}
+                    {isPerHa(a.unit) || isTreeHotSpot(a) ? null : <ReliabilityPill value={a.reliability} />}
                   </div>
                   <div className="text-[0.7rem] text-muted-foreground truncate">
                     {a.warehouse}
@@ -410,6 +414,20 @@ export function OverviewTab({
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[0.7rem] tabular-nums">{alertFigureLine(a)}</span>
+                    {isTreeHotSpot(a) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[0.65rem]"
+                        data-testid="alert-show-on-map"
+                        onClick={() =>
+                          openHotSpotOnMap(a.crop, { block: a.warehouse, kind: a.kind === "Disease" ? "disease" : "pest", observation: a.observation })
+                        }
+                      >
+                        Show on map
+                      </Button>
+                    ) : null}
                     {a.status === "Open" ? (
                       <Button
                         type="button"
@@ -433,7 +451,7 @@ export function OverviewTab({
                 </div>
               ))
             ) : (
-              <EmptyHint title="No active alerts" hint={data?.perHa ? "No pest or disease over its / ha line this week." : "No threshold crossed in the latest scouted week."} />
+              <EmptyHint title="No active alerts" hint={data?.perHa ? "No block over its / ha line and no hot spot by tree this week." : "No threshold crossed in the latest scouted week."} />
             )}
             {alerts.length > ALERTS_SHOWN ? (
               <Button

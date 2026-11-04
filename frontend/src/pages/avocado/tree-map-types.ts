@@ -47,6 +47,8 @@ export interface AvocadoView {
   showTracks?: boolean;
   /** The observation whose patches the map outlines on a picked block
    *  (spread spec C5); null/absent = no patches. */
+  /** Fly to this block once the map is ready, and pick it (a hot spot's "Show on map"). */
+  focusBlock?: string | null;
   patchObservation?: { kind: "pest" | "disease"; name: string } | null;
   /** Draw the map flat (2D: no tilt, pitch locked at 0) — the open-field Observations map. */
   flat?: boolean;

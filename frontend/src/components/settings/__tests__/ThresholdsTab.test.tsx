@@ -217,7 +217,7 @@ describe("ThresholdsTab cumulative per ha", () => {
     low: 0, moderate: 1, high: 2, stages: [], ...extra,
   });
   const avocado = {
-    crop: "Avocado", station: "tree", per_ha: true,
+    crop: "Avocado", station: "tree", per_ha: true, tree_hot_spots: true,
     pests: [row({ cumulative_per_ha: 4, week_per_ha: 4.4 })],
     diseases: [{ row: "d1", disease: "Anthracnose", measure: "Percentage", count_allowed: false, invalid: false,
       low: 0, moderate: 0, high: 0, cumulative_per_ha: 0, week_per_ha: null, stages: [] }],
@@ -233,8 +233,35 @@ describe("ThresholdsTab cumulative per ha", () => {
     expect(screen.getByTestId("per-ha-note")).toHaveTextContent(/first time a block/);
   });
 
+  it("titles the two levels side by side on a block crop, each with its explanation", async () => {
+    getThresholds.mockResolvedValue(avocado);
+    render(<ThresholdsTab crop="Avocado" />);
+    expect(await screen.findByTestId("per-tree-label-p1")).toHaveTextContent("Per tree (hot spots)");
+    expect(screen.getByTestId("per-ha-p1")).toHaveTextContent("Per hectare, this week (block alert)");
+    expect(screen.getByTestId("per-tree-note")).toHaveTextContent(/neighbouring trees at Moderate or above/);
+    expect(screen.getByTestId("per-ha-note")).toHaveTextContent(/Both levels run together/);
+  });
+
+  it("keeps only the per-ha level for a block crop with no mapped trees (a pivot)", async () => {
+    getThresholds.mockResolvedValue({ ...avocado, tree_hot_spots: false });
+    render(<ThresholdsTab crop="Avocado" />);
+    await screen.findByTestId("per-ha-p1");
+    expect(screen.queryByTestId("per-tree-label-p1")).toBeNull();
+    expect(screen.queryByTestId("per-tree-note")).toBeNull();
+    expect(screen.getByTestId("per-ha-note")).not.toHaveTextContent(/Both levels/);
+  });
+
+  it("leaves a greenhouse crop's bands unlabelled by level", async () => {
+    getThresholds.mockResolvedValue({ ...avocado, crop: "Rose", station: "zone", per_ha: false, tree_hot_spots: false,
+      pests: [row()], diseases: [] });
+    render(<ThresholdsTab crop="Rose" />);
+    await screen.findByTestId("threshold-row-p1");
+    expect(screen.queryByTestId("per-tree-label-p1")).toBeNull();
+    expect(screen.queryByTestId("per-tree-note")).toBeNull();
+  });
+
   it("hides it for a crop that is not block-grown", async () => {
-    getThresholds.mockResolvedValue({ ...avocado, crop: "Rose", station: "zone", per_ha: false,
+    getThresholds.mockResolvedValue({ ...avocado, crop: "Rose", station: "zone", per_ha: false, tree_hot_spots: false,
       pests: [row()], diseases: [] });
     render(<ThresholdsTab crop="Rose" />);
     await screen.findByTestId("threshold-row-p1");

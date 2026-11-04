@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { alertFigureLine, ghActionBadge, type CreatorAlert } from "./scouting-alerts-api";
+import { alertFigureLine, alertLevel, ghActionBadge, isTreeHotSpot, type CreatorAlert } from "./scouting-alerts-api";
 
 const a = (over: Partial<CreatorAlert> = {}): CreatorAlert => ({
   name: "SA-1", warehouse: "GH 01", observation: "Thrips", stage: "", action: "Spray advised",
@@ -53,5 +53,29 @@ describe("alertFigureLine for a block crop (per hectare)", () => {
     expect(
       alertFigureLine({ value: 0.46, unit: "/ ha this week", margin: null, sections_scouted: 0, sections_total: 0 }),
     ).toContain("0.46 / ha this week");
+  });
+});
+
+describe("both levels of a block crop", () => {
+  const block = {
+    value: 4.6, unit: "/ ha this week", margin: null, sections_scouted: 0, sections_total: 0, threshold: 4,
+  };
+  const spot = {
+    value: 9, unit: "per tree", margin: null, sections_scouted: 7, sections_total: 0, alert_type: "Tree hot spot" as const,
+    section_label: "7 trees · rows 12–14, trees 3–9 · High, peak 9 per tree", band: "High" as const,
+  };
+  it("labels the block line with its threshold", () => {
+    expect(alertFigureLine(block)).toBe("Block: 4.60 / ha this week (line 4.00)");
+  });
+  it("labels a hot spot with its trees, rows and band", () => {
+    expect(alertFigureLine(spot)).toBe(
+      "Hot spot: 7 trees in rows 12–14 over the per-tree High band · worst tree 9 per tree",
+    );
+  });
+  it("tells the two levels apart", () => {
+    expect(alertLevel(block)).toBe("Block");
+    expect(alertLevel(spot)).toBe("Hot spot");
+    expect(alertLevel({ unit: "%" })).toBeNull();
+    expect(isTreeHotSpot(spot)).toBe(true);
   });
 });

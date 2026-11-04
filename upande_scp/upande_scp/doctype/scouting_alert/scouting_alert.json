@@ -92,13 +92,13 @@
   },
   {
    "default": "House",
-   "description": "House = the whole greenhouse/block; Hot spot = one section of its 3 × 3 grid clearly worse than the house.",
+   "description": "House = the whole greenhouse/block; Hot spot = one section of its 3 × 3 grid clearly worse than the house; Tree hot spot = a patch of neighbouring trees over the per-tree band (block crops).",
    "fieldname": "alert_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Alert Type",
-   "options": "House\nHot spot"
+   "options": "House\nHot spot\nTree hot spot"
   },
   {
    "default": "-1",
@@ -137,7 +137,7 @@
    "precision": "2"
   },
   {
-   "depends_on": "eval:doc.alert_type=='Hot spot'",
+   "depends_on": "eval:doc.alert_type=='Hot spot' || doc.alert_type=='Tree hot spot'",
    "description": "A hot spot's house figure, in the same measure as Value.",
    "fieldname": "house_value",
    "fieldtype": "Float",

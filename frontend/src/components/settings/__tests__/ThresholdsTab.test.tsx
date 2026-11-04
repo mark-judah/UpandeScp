@@ -210,3 +210,48 @@ describe("ThresholdsTab", () => {
     expect(within(screen.getByTestId("threshold-row-p9")).queryByLabelText("Weight for Larvae")).toBeNull();  // Percentage row
   });
 });
+
+describe("ThresholdsTab cumulative per ha", () => {
+  const row = (extra = {}) => ({
+    row: "p1", pest: "Mosquito Bugs", measure: "Count", count_allowed: true, invalid: false,
+    low: 0, moderate: 1, high: 2, stages: [], ...extra,
+  });
+  const avocado = {
+    crop: "Avocado", station: "tree", per_ha: true,
+    pests: [row({ cumulative_per_ha: 4, week_per_ha: 4.4 })],
+    diseases: [{ row: "d1", disease: "Anthracnose", measure: "Percentage", count_allowed: false, invalid: false,
+      low: 0, moderate: 0, high: 0, cumulative_per_ha: 0, week_per_ha: null, stages: [] }],
+  };
+
+  it("shows the per-ha field on every pest and disease of a block crop, with the explanation", async () => {
+    getThresholds.mockResolvedValue(avocado);
+    render(<ThresholdsTab crop="Avocado" />);
+    expect(await screen.findByLabelText("Cumulative per ha for Mosquito Bugs")).toHaveValue(4);
+    expect(screen.getByLabelText("Cumulative per ha for Anthracnose")).toHaveValue(0);
+    expect(screen.getByTestId("per-ha-week-p1")).toHaveTextContent("4.40 / ha");
+    expect(screen.queryByTestId("per-ha-week-d1")).toBeNull();
+    expect(screen.getByTestId("per-ha-note")).toHaveTextContent(/first time a block/);
+  });
+
+  it("hides it for a crop that is not block-grown", async () => {
+    getThresholds.mockResolvedValue({ ...avocado, crop: "Rose", station: "zone", per_ha: false,
+      pests: [row()], diseases: [] });
+    render(<ThresholdsTab crop="Rose" />);
+    await screen.findByTestId("threshold-row-p1");
+    expect(screen.queryByLabelText(/Cumulative per ha for/)).toBeNull();
+    expect(screen.queryByTestId("per-ha-note")).toBeNull();
+  });
+
+  it("saves the edited line", async () => {
+    getThresholds.mockResolvedValue(avocado);
+    render(<ThresholdsTab crop="Avocado" />);
+    const input = await screen.findByLabelText("Cumulative per ha for Mosquito Bugs");
+    fireEvent.change(input, { target: { value: "6.5" } });
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    await userEvent.click(save);
+    const sent = saveThresholds.mock.calls[0][1];
+    expect(sent.pests[0].cumulative_per_ha).toBe(6.5);
+    expect(sent.diseases[0].cumulative_per_ha).toBe(0);
+  });
+});

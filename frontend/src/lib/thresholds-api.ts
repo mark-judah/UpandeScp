@@ -28,6 +28,10 @@ export interface ThresholdPestRow {
   low: number;
   moderate: number;
   high: number;
+  /** block-grown crops only: alert when a block's count per hectare this ISO week passes this; 0 = none */
+  cumulative_per_ha?: number;
+  /** block-grown crops only: the worst block's per-ha figure this week (null = not recorded) */
+  week_per_ha?: number | null;
   stages: ThresholdStageRow[];
 }
 
@@ -40,6 +44,10 @@ export interface ThresholdDiseaseRow {
   low: number;
   moderate: number;
   high: number;
+  /** block-grown crops only: alert when a block's count per hectare this ISO week passes this; 0 = none */
+  cumulative_per_ha?: number;
+  /** block-grown crops only: the worst block's per-ha figure this week (null = not recorded) */
+  week_per_ha?: number | null;
   stages: ThresholdStageRow[];
 }
 
@@ -47,6 +55,8 @@ export interface ThresholdsBundle {
   crop: string;
   /** what a Count is "per": "zone" or "tree" */
   station?: string;
+  /** block-grown crop: rows carry a cumulative-per-ha line */
+  per_ha?: boolean;
   pests: ThresholdPestRow[];
   diseases: ThresholdDiseaseRow[];
 }

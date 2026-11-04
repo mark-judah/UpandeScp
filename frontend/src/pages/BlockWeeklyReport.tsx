@@ -20,7 +20,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { PlacePicker } from "@/components/PlacePicker";
 import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
-import { previewCumulativeAlertEmail, sendTestCumulativeAlert } from "@/lib/cumulative-api";
+import {
+  previewCumulativeAlertEmail,
+  previewWeeklyBlockEmail,
+  sendTestCumulativeAlert,
+  sendTestWeeklyBlockEmail,
+} from "@/lib/cumulative-api";
 import { errorText } from "@/lib/errors";
 
 const NS = "upande_scp.serverscripts.reports.block_weekly_report";
@@ -69,6 +74,10 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
   const [alertBusy, setAlertBusy] = useState<"preview" | "test" | null>(null);
   const [alertNote, setAlertNote] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const [wkHtml, setWkHtml] = useState<string | null>(null);
+  const [wkBusy, setWkBusy] = useState<"preview" | "test" | null>(null);
+  const [wkNote, setWkNote] = useState<{ ok: boolean; text: string } | null>(null);
+
   useEffect(() => {
     setLoading(true);
     call<Availability>(`${NS}.availability`, { crop })
@@ -103,6 +112,34 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
       `/api/method/${NS}.download_block_weekly_xlsx` +
       `?crop=${encodeURIComponent(crop)}&farm=${encodeURIComponent(farm)}` +
       `&year=${encodeURIComponent(year)}&week=${encodeURIComponent(wk)}`;
+  };
+
+  const previewWeekly = async () => {
+    setWkBusy("preview");
+    setWkNote(null);
+    try {
+      setWkHtml(await previewWeeklyBlockEmail(crop, farm || undefined));
+    } catch (e) {
+      setWkNote({ ok: false, text: errorText(e, "Could not build the preview.") });
+    } finally {
+      setWkBusy(null);
+    }
+  };
+  const testWeekly = async () => {
+    setWkBusy("test");
+    setWkNote(null);
+    try {
+      const r = await sendTestWeeklyBlockEmail(crop, farm || undefined);
+      setWkNote(
+        r.sent
+          ? { ok: true, text: `Test email sent to ${r.to}.` }
+          : { ok: false, text: r.reason || "Test email was not sent." },
+      );
+    } catch (e) {
+      setWkNote({ ok: false, text: errorText(e, "Test email failed.") });
+    } finally {
+      setWkBusy(null);
+    }
   };
 
   const previewAlert = async () => {
@@ -233,6 +270,7 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
           )}
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -263,6 +301,42 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
             <iframe
               title="Cumulative threshold email preview"
               srcDoc={previewHtml}
+              sandbox=""
+              className="h-[760px] w-full rounded-md border"
+            />
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-4 w-4" /> End-of-week report email
+          </CardTitle>
+          <CardDescription>
+            Every Monday at 07:00 the previous ISO week goes to each farm&rsquo;s spray plan creators and managers:
+            every block&rsquo;s cumulative count per hectare for each pest and disease against its threshold, the
+            alerts already sent, blocks with no area and the totals, with the block workbook attached. Crops with
+            cumulative alerts paused send nothing. Preview it here, or send a test to yourself only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="outline" onClick={previewWeekly} disabled={wkBusy !== null || !farm}>
+              {wkBusy === "preview" ? "Building…" : "Preview"}
+            </Button>
+            <Button onClick={testWeekly} disabled={wkBusy !== null || !farm}>
+              {wkBusy === "test" ? "Sending…" : "Send test to me"}
+            </Button>
+            {wkNote && (
+              <span className={`text-sm ${wkNote.ok ? "text-muted-foreground" : "text-destructive"}`}>
+                {wkNote.text}
+              </span>
+            )}
+          </div>
+          {wkHtml && (
+            <iframe
+              title="End-of-week report email preview"
+              srcDoc={wkHtml}
               sandbox=""
               className="h-[760px] w-full rounded-md border"
             />

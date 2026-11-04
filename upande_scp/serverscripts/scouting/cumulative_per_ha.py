@@ -130,10 +130,15 @@ def recipients_for_block(block) -> list:
     """Emails of enabled users who are active Employees of the block's company
     (``Employee.company``, linked by ``user_id``) and hold a recipient role.
     Empty when the farm has no company or nobody qualifies."""
-    company = block_company(block)
-    if not company:
+    return recipients_for_farm(frappe.db.get_value("Warehouse", block, "custom_farm"), block_company(block))
+
+
+def recipients_for_farm(farm, company="") -> list:
+    """The same people for a whole farm (the weekly report goes one per farm)."""
+    if company == "":   # not given: read the farm's
+        company = frappe.db.get_value("Farm", farm, "company") if farm else None
+    if not farm or not company:
         return []
-    farm = frappe.db.get_value("Warehouse", block, "custom_farm")
     roles = list(RECIPIENT_ROLES)
     farm_role = FARM_MANAGER_ROLE.format(farm=farm)
     if frappe.db.exists("Role", farm_role):

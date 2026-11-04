@@ -97,3 +97,17 @@ export function sendTestCumulativeAlert(
 ): Promise<{ sent: boolean; to?: string; reason?: string }> {
   return call(`${NS}.send_test_cumulative_alert`, { crop, block });
 }
+
+const WEEKLY = "upande_scp.serverscripts.reports.block_weekly_email";
+
+/** The end-of-week report email's HTML for last ISO week, without sending. */
+export function previewWeeklyBlockEmail(crop: string, farm?: string): Promise<string> {
+  return call<string>(`${WEEKLY}.preview_weekly_block_email`, { crop, farm });
+}
+
+export function sendTestWeeklyBlockEmail(
+  crop: string,
+  farm?: string,
+): Promise<{ sent: boolean; to?: string; reason?: string; attachment?: boolean }> {
+  return call(`${WEEKLY}.send_test_weekly_block_email`, { crop, farm });
+}

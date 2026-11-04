@@ -38,6 +38,7 @@ import {
 import { bandsAscending, effectiveMeasure, unitFor, type Measure } from "@/lib/threshold-measure";
 import { cn } from "@/lib/utils";
 import { errorText } from "@/lib/errors";
+import { formatPerHa } from "@/lib/cumulative-api";
 
 type FilterRow = ThresholdPestRow | ThresholdDiseaseRow;
 
@@ -167,6 +168,12 @@ export function ThresholdsTab({ crop }: { crop: string }) {
             Count (average per scouted {station}). Moderate raises an Alarming notice, High a spray
             advisory. Stage values override the row. Bands must rise; zero = not set (no alerts).
           </CardDescription>
+          {bundle?.per_ha && (
+            <CardDescription data-testid="per-ha-note">
+              Cumulative per ha (this week): alerts by email the first time a block&rsquo;s count per hectare this
+              week passes this line, and the week&rsquo;s report goes out on Monday. Blank or 0 = no alert.
+            </CardDescription>
+          )}
         </div>
         <div className="flex items-end gap-2">
           {invalidRows > 0 && (
@@ -236,6 +243,7 @@ export function ThresholdsTab({ crop }: { crop: string }) {
                   key={p.row}
                   row={p}
                   station={station}
+                  perHa={!!bundle.per_ha}
                   onPatch={(patch) => patchRow("pests", i, patch)}
                   onStagePatch={(si, patch) => patchStage("pests", i, si, patch)}
                   onWeightValidity={markWeight}
@@ -249,6 +257,7 @@ export function ThresholdsTab({ crop }: { crop: string }) {
                   key={d.row}
                   row={d}
                   station={station}
+                  perHa={!!bundle.per_ha}
                   onPatch={(patch) => patchRow("diseases", i, patch)}
                   onStagePatch={(si, patch) => patchStage("diseases", i, si, patch)}
                 />
@@ -339,12 +348,14 @@ function BandError({ testId }: { testId: string }) {
 function FilterEditor({
   row,
   station,
+  perHa,
   onPatch,
   onStagePatch,
   onWeightValidity,
 }: {
   row: FilterRow;
   station: string;
+  perHa?: boolean;
   onPatch: (patch: Partial<FilterRow>) => void;
   onStagePatch: (i: number, patch: Partial<ThresholdStageRow>) => void;
   onWeightValidity?: (id: string, bad: boolean) => void;
@@ -373,6 +384,28 @@ function FilterEditor({
         />
       </div>
       {!bandsAscending(row.low, row.moderate, row.high) && <BandError testId={`band-error-${row.row}`} />}
+      {perHa && (
+        <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`per-ha-${row.row}`}>
+          <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+            Cumulative per ha (this week)
+          </span>
+          <Input
+            type="number"
+            step="0.1"
+            min="0"
+            aria-label={`Cumulative per ha for ${name}`}
+            value={Number.isFinite(row.cumulative_per_ha) ? (row.cumulative_per_ha ?? 0) : 0}
+            onChange={(e) => onPatch({ cumulative_per_ha: Math.max(parseFloat(e.target.value) || 0, 0) } as Partial<FilterRow>)}
+            className="h-7 w-20 text-xs tabular-nums"
+          />
+          <span className="text-[0.6rem] text-muted-foreground">/ ha</span>
+          {row.week_per_ha != null && (
+            <span className="text-[0.65rem] text-muted-foreground" data-testid={`per-ha-week-${row.row}`}>
+              Worst block this week: {formatPerHa(row.week_per_ha)} / ha
+            </span>
+          )}
+        </div>
+      )}
       {row.stages.length > 0 && (
         <div className="mt-2 pl-3 flex flex-col gap-1.5">
           <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">

@@ -422,6 +422,12 @@ scheduler_events = {
         "0 5 * * 1": [
             "upande_scp.serverscripts.reports.send_weekly_trap_report.send_weekly_trap_report"
         ],
+        # Weekly block report (cumulative per ha vs threshold, with the block
+        # workbook) for block-grown crops, last ISO week — Mondays 07:00 EAT
+        # (04:00 UTC), same clock convention as the entries above
+        "0 4 * * 1": [
+            "upande_scp.serverscripts.reports.block_weekly_email.send_weekly_block_report"
+        ],
         # KEPHIS FCM Weekly Excel — Tuesdays 08:00
         "0 8 * * 2": [
             "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"

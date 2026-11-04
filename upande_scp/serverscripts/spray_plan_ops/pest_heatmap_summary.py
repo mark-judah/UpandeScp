@@ -31,6 +31,7 @@ def _build_per_ha(block, obs_name, obs_kind, crop, from_date, to_date) -> dict:
     crop is judged on its whole round, not on a per-station average), against the
     observation's ``cumulative_per_ha_threshold``. No area: no figure, said so."""
     from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+    from upande_scp.serverscripts.scouting import tree_hot_spots as T
 
     limit = C.thresholds(crop).get((obs_kind, obs_name), 0.0)
     area = (C.block_info([block]).get(block) or {}).get("area_ha")
@@ -49,6 +50,9 @@ def _build_per_ha(block, obs_name, obs_kind, crop, from_date, to_date) -> dict:
         "measure": B.PER_HA,
         "threshold": {"low": 0, "moderate": 0, "high": limit, "measure": B.PER_HA} if limit else None,
         "area_ha": area, "no_area": area is None,
+        # The second level: this pest's live hot spots by tree in the block, and the per-tree bands they use.
+        "hotSpots": T.open_for_block(block, obs_name),
+        "treeBands": T.tree_bands(crop, obs_name),
         "latest": ({**P.public(None), "value": latest["value"], "band": latest["band"], "reliability": "Good"} if latest else None),
         "series": series,
     }

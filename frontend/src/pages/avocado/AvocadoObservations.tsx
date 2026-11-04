@@ -8,6 +8,7 @@ import {
 import { ObservationPicker } from "./ObservationPicker";
 import { useObservationColors, type ObsKind } from "@/lib/observation-colors";
 import { observationOptions } from "@/lib/pest-heat";
+import { takeHotSpotFocus } from "@/lib/hot-spot-focus";
 import { getThresholds } from "@/lib/thresholds-api";
 import { thresholdMapFromBundle, type MeasuredBand } from "@/lib/threshold-measure";
 import { HEADER_PILL } from "@/components/header-controls";
@@ -21,7 +22,9 @@ type KindFilter = "all" | ObsKind;
 export function AvocadoObservations() {
   const [kind, setKind] = useState<KindFilter>("all");
   /** Picked observation = single mode (green -> red). None = every pest in its own colour. */
-  const [picked, setPicked] = useState<Obs | null>(null);
+  // Arriving from a hot spot's "Show on map": its observation is picked and its block focused.
+  const [focus] = useState(() => takeHotSpotFocus());
+  const [picked, setPicked] = useState<Obs | null>(focus ? { kind: focus.kind, name: focus.observation } : null);
   const { pest: pestColor, disease: diseaseColor } = useObservationColors();
   // Cumulative per hectare over the current scouting round: the figure an
   // orchard block is judged on (the tree counts below are only the sample).
@@ -66,6 +69,7 @@ export function AvocadoObservations() {
           ? deriveSingleColors(data, picked, bandOf(picked))
           : deriveMultiColors(data, (o) => (kind === "all" || kind === o.kind ? colorOf(o) : "#7c8b6a")),
       patchObservation: picked,
+      focusBlock: focus?.block ?? null,
       headerControls: (
         <>
           <div className={`${HEADER_PILL} gap-0 overflow-hidden !p-0`}>
@@ -152,7 +156,7 @@ export function AvocadoObservations() {
         );
       },
     };
-  }, [kind, picked, bands, pestColor, diseaseColor]);
+  }, [kind, picked, bands, pestColor, diseaseColor, focus]);
 
   return <AvocadoTreeMap view={view} />;
 }

@@ -100,6 +100,12 @@ def _per_ha_crop(crop: str) -> bool:
     return cumulative_per_ha.is_block_crop(crop)
 
 
+def _has_trees(crop: str) -> bool:
+    from upande_scp.serverscripts.scouting import tree_hot_spots
+
+    return tree_hot_spots.has_trees(crop)
+
+
 def _per_ha_problem(value) -> str:
     """Why a per-ha line cannot be stored, or "" when it can (blank/0 = none)."""
     if value is None or value == "":
@@ -229,6 +235,8 @@ def get_thresholds(crop: str) -> dict:
         "station": _common.station_word(crop),
         # A block-grown crop also gets a "cumulative per ha this week" line per row.
         "per_ha": per_ha_crop,
+        # ... and, where its blocks have mapped trees, per-tree bands that find hot spots inside a block.
+        "tree_hot_spots": bool(per_ha_crop) and _has_trees(crop),
         "pests": _filter_rows(crop, "Pest Filter", "Pests Stages", "pest", "pest", per_ha),
         "diseases": _filter_rows(crop, "Disease Filter", "Disease Stages", "disease", "disease", per_ha),
     }

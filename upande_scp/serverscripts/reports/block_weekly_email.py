@@ -17,6 +17,7 @@ from datetime import timedelta
 
 import frappe
 
+from upande_scp.serverscripts.common import clusters as CL
 from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common import cumulative_rules as R
 from upande_scp.serverscripts.reports import block_weekly_report as W
@@ -25,6 +26,7 @@ from upande_scp.serverscripts.reports.progress_email_v2 import (
 )
 from upande_scp.serverscripts.reports.report_sender import report_sender
 from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+from upande_scp.serverscripts.scouting import tree_hot_spots as T
 
 APP_PATH = "/scp_app"
 KIND_WORD = {R.PEST: "Pest", R.DISEASE: "Disease"}
@@ -74,7 +76,13 @@ def collect(crop, farm, monday) -> dict:
         limit_page_length=0,
     )
     scouted_area = sum(area_of.get(b) or 0 for b in scouted)
+    try:
+        spots = T.spots_for_week(crop, monday, blocks)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"block weekly email hot spots: {farm}")
+        spots = []
     return {
+        "hot_spots": spots,
         "crop": crop, "farm": farm, "monday": monday, "sunday": sunday,
         "blocks_total": len(blocks), "blocks_scouted": len(scouted),
         "area_scouted": round(scouted_area, 2),
@@ -138,6 +146,50 @@ def _block_card(row) -> str:
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;table-layout:fixed;">'
         f'<colgroup><col><col width="52"><col width="58"><col width="72"><col width="60"></colgroup>'
         f"<tr>{head}</tr>{''.join(lines)}</table></td></tr></table></td></tr>"
+    )
+
+
+MAX_SPOT_LINES = 40
+
+
+def _spots_card(spots) -> str:
+    """Per-tree hot spots of the week: a line per block (how many, worst band)
+    and, under it, where each one is. Capped, so the email stays small."""
+    esc = frappe.utils.escape_html
+    by_block: dict = {}
+    for s in spots:
+        by_block.setdefault(s["warehouse"], []).append(s)
+    lines, shown = [], 0
+    for block, items in sorted(by_block.items(), key=lambda kv: (-sum(i["band"] == "high" for i in kv[1]), kv[0])):
+        high = sum(i["band"] == "high" for i in items)
+        tag = pill(f"{high} High", RED, "#ffffff", size="10px", pad="2px 8px") if high else ""
+        lines.append(
+            f'<tr><td style="padding:9px 0 2px;border-top:1px solid {LINE};color:{INK};font-size:12px;font-weight:600;">'
+            f'{esc(block)} <span style="color:{FAINT};font-weight:400;font-size:11px;">'
+            f'{len(items)} hot spot{"s" if len(items) != 1 else ""}</span></td>'
+            f'<td align="right" style="padding:9px 0 2px;border-top:1px solid {LINE};">{tag}</td></tr>'
+        )
+        for i in items:
+            if shown >= MAX_SPOT_LINES:
+                break
+            shown += 1
+            lines.append(
+                f'<tr><td colspan="2" style="padding:0 0 3px;color:{MUTED};font-size:11.5px;">'
+                f'{esc(i["observation"])}: {i["size"]} trees, {esc(CL.label(i, "row"))}, '
+                f'{i["band"]} band, worst tree {T.fmt(i["peak"])}</td></tr>'
+            )
+    more = (f'<tr><td colspan="2" style="padding:6px 0 0;color:{FAINT};font-size:11px;">'
+            f'and {len(spots) - shown} more, in the app</td></tr>') if shown < len(spots) else ""
+    return (
+        f'<tr><td style="padding:12px 26px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="background:{CARD};border-radius:14px;"><tr><td style="padding:14px 18px 12px;">'
+        f'<div style="color:{INK};font-size:13px;font-weight:600;">Hot spots by tree ({len(spots)})</div>'
+        f'<div style="color:{MUTED};font-size:11px;padding:2px 0 4px;">Three or more neighbouring trees over the pest\'s per-tree '
+        f'Moderate band this week: where inside each block the pest sits.</div>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{"".join(lines)}{more}</table>'
+        f'</td></tr></table></td></tr>'
+        if spots else
+        f'<tr><td style="padding:12px 26px 0;color:{MUTED};font-size:12px;">No hot spot by tree this week (none with a per-tree band set, or no three neighbouring trees over it).</td></tr>'
     )
 
 
@@ -241,6 +293,7 @@ def render(data, test=False) -> str:
     {_stat(len(d['alerts']), "alerts sent")}
   </tr></table></td></tr>
   {summary_card}
+  {_spots_card(d.get("hot_spots") or [])}
   <tr><td style="padding:16px 26px 0;"><div style="color:{INK};font-size:14px;font-weight:600;">By block</div>
     <div style="color:{MUTED};font-size:11.5px;padding-top:2px;">Blocks with a pest or disease over its threshold first; the week's cumulative count over the block's hectares.</div></td></tr>
   {blocks}

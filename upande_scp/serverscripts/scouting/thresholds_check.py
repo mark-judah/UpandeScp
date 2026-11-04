@@ -88,8 +88,8 @@ def alert_name(warehouse, kind, observation, stage, iso_week,
     hashes exactly as before hot spots (no existing alert is renamed); a hot
     spot's key adds its type and section."""
     parts = [warehouse or "", kind or "", observation or "", stage or "", iso_week or ""]
-    if alert_type == B.HOT_SPOT:
-        parts += [B.HOT_SPOT, str(int(section_row)), str(int(section_col))]
+    if alert_type in B.SPOT_TYPES:
+        parts += [alert_type, str(int(section_row)), str(int(section_col))]
     key = "|".join(parts)
     return f"SA-{iso_week}-{hashlib.sha1(key.encode()).hexdigest()[:10]}"
 
@@ -123,11 +123,17 @@ def banded_crops() -> list:
     out = []
     for c in crop_catalog.catalog().get("crops", []):
         if per_ha_crop(c):
-            if C.thresholds(c):
+            if C.thresholds(c) or _tree_keys(c):
                 out.append(c)
         elif _common.load_thresholds(c):
             out.append(c)
     return out
+
+
+def _tree_keys(crop) -> list:
+    from upande_scp.serverscripts.scouting import tree_hot_spots as T
+
+    return T.tree_keys(crop)
 
 
 def _figure(weeks, wh, week, kind, obs, stage, spec):
@@ -150,7 +156,11 @@ def evaluate(crop, today=None) -> list:
     if crop and per_ha_crop(crop):
         from upande_scp.serverscripts.scouting import cumulative_per_ha as C
 
-        return C.alert_findings(crop, today or now_eat().date())
+        from upande_scp.serverscripts.scouting import tree_hot_spots as T
+
+        today = today or now_eat().date()
+        # Both levels: the block's per-hectare line, and the over-band tree patches in it.
+        return C.alert_findings(crop, today) + T.findings(crop, today)
     keys = sorted(_common.load_thresholds(crop)) if crop else []
     if not keys:
         return []
@@ -214,12 +224,12 @@ def _section_findings(house, fig, spec, unit_word) -> list:
 
 
 def _key_params(finding) -> dict:
-    hot = finding.get("alert_type") == B.HOT_SPOT
+    hot = finding.get("alert_type") in B.SPOT_TYPES
     return {
         "wh": finding["warehouse"], "kind": KIND_LABEL[finding["kind"]],
         "obs": finding["observation"], "stage": finding["stage"] or "",
         "week": finding["iso_week"],
-        "type": B.HOT_SPOT if hot else B.HOUSE,
+        "type": finding["alert_type"] if hot else B.HOUSE,
         "row": int(finding["section_row"]) if hot else -1,
         "col": int(finding["section_col"]) if hot else -1,
     }
@@ -239,10 +249,11 @@ def finding_key(finding) -> tuple:
 
 def _row_key(row) -> tuple:
     """``finding_key`` for a stored Scouting Alert row."""
-    hot = (row.get("alert_type") or B.HOUSE) == B.HOT_SPOT
+    kind = row.get("alert_type") or B.HOUSE
+    hot = kind in B.SPOT_TYPES
     return (
         row.get("warehouse"), row.get("kind"), row.get("observation"), row.get("stage") or "",
-        B.HOT_SPOT if hot else B.HOUSE,
+        kind if hot else B.HOUSE,
         int(row.get("section_row")) if hot else -1, int(row.get("section_col")) if hot else -1,
     )
 
@@ -333,7 +344,7 @@ def upsert(finding, now=None, _retry=True):
     (hot-spots H5). The two never share a key (``_key_params``)."""
     now = now or now_eat()
     params = _key_params(finding)
-    hot = params["type"] == B.HOT_SPOT
+    hot = params["type"] in B.SPOT_TYPES
     action = finding["action"]
     if not action:
         _resolve(params, include_week=True, older=_clean_may_supersede(finding, now))
@@ -404,7 +415,8 @@ def upsert(finding, now=None, _retry=True):
     # A Moderate hot spot is recorded (notified_band, raised_at → the digest,
     # open_alerts, the grid) but pings nobody; only a High one, on raise or on
     # escalating Moderate → High, sends the in-app notification (final review).
-    pings = not hot or level == B.BAND_LABEL["high"]
+    # A tree hot spot, like a house alert, pings at both of its levels.
+    pings = not hot or level == B.BAND_LABEL["high"] or params["type"] == B.TREE_HOT_SPOT
     if escalated:
         updates.update({level_field: level, "raised_on": now.date(), "raised_at": eat_stamp(now)})
         if status == "Acknowledged":
@@ -437,7 +449,9 @@ def _notify(name, finding, action, note="") -> list:
     except Exception:
         frappe.log_error(frappe.get_traceback(), "threshold check: recipients")
         return []
-    if finding.get("alert_type") == B.HOT_SPOT:
+    if finding.get("alert_type") == B.TREE_HOT_SPOT:
+        subject, body = _tree_hot_spot_text(finding, action)
+    elif finding.get("alert_type") == B.HOT_SPOT:
         subject, body = _hot_spot_text(finding)
     else:
         stage = f" · {finding['stage']}" if finding["stage"] else ""
@@ -480,6 +494,22 @@ def _hot_spot_text(finding) -> tuple:
         f"{B.stations_word(finding.get('station_word'))} "
         f"scouted in this section · band {B.BAND_LABEL.get(finding['band'], '')} · "
         "spraying follows the house's own alert."
+    )
+    return subject, body
+
+
+def _tree_hot_spot_text(finding, action) -> tuple:
+    """A patch of neighbouring trees over the per-tree band, inside a block."""
+    stage = f" · {finding['stage']}" if finding["stage"] else ""
+    subject = (
+        f"{action}: hot spot of {finding['sections_scouted']} trees in {finding['warehouse']}: "
+        f"{finding['observation']}{stage}, worst tree {B.format_value(finding['value'], finding['unit'])} "
+        f"({finding['iso_week']})"
+    )
+    body = (
+        f"{subject}. {finding['crop']} · {finding['section_label']} · over the per-tree "
+        f"{finding['band']} band. This is the per-tree hot spot; the block's per-hectare "
+        "alert is judged separately."
     )
     return subject, body
 
@@ -543,11 +573,13 @@ def sweep(crop, today=None, latest=None, actionable=None) -> int:
         from upande_scp.serverscripts.scouting import cumulative_per_ha as C
 
         banded = {(KIND_LABEL[k], obs, "") for k, obs in C.thresholds(crop)}
+        banded |= {(KIND_LABEL["pest"], obs, "") for obs, _spec in _tree_keys(crop)}
     else:
         banded = {(KIND_LABEL[k], obs, stage or "") for k, obs, stage in _common.load_thresholds(crop)}
     rows = frappe.get_all(
         DOCTYPE, filters={"crop": crop, "status": ["in", list(OPEN_STATES)]},
-        fields=["name", "kind", "observation", "stage", "iso_week", "measure", "alert_type"],
+        fields=["name", "kind", "observation", "stage", "iso_week", "measure", "alert_type",
+                "warehouse", "section_row", "section_col"],
         limit_page_length=0,
     )
     # A per-hectare crop has one house-level figure per observation: an alert in
@@ -555,16 +587,23 @@ def sweep(crop, today=None, latest=None, actionable=None) -> int:
     stale = [
         r.name for r in rows
         if (r.kind, r.observation, r.stage or "") not in banded or _week_ended(r.iso_week, window_start)
-        or (per_ha and (r.measure != B.PER_HA or r.alert_type == B.HOT_SPOT))
+        or (per_ha and r.alert_type != B.TREE_HOT_SPOT and (r.measure != B.PER_HA or r.alert_type == B.HOT_SPOT))
     ]
-    for name in stale:
-        frappe.db.set_value(DOCTYPE, name, "status", "Resolved")
+    stale_set = set(stale)
     if latest is None or actionable is None:
         findings = evaluate(crop, today)
         if latest is None:
             latest = {f["warehouse"]: f["iso_week"] for f in findings}
         if actionable is None:
             actionable = {finding_key(f) for f in findings if f["action"]}
+    if per_ha:
+        # A tree hot spot that is no longer found (its trees fell under Moderate, or its
+        # patch moved) resolves; one still found is kept by its key.
+        for r in rows:
+            if r.alert_type == B.TREE_HOT_SPOT and r.name not in stale_set and _row_key(r) not in actionable:
+                stale.append(r.name)
+    for name in stale:
+        frappe.db.set_value(DOCTYPE, name, "status", "Resolved")
     now = now_eat()
     orphans = frappe.get_all(
         DOCTYPE, filters={"crop": crop, "status": "Converted to plan"},
@@ -745,7 +784,7 @@ def _margin(row):
     """The stored margin, or None when it has none: fewer than two sections
     counted ("too clustered to judge"; see ``upsert``), or a hot spot (one
     section, judged by its station count instead)."""
-    if row.get("alert_type") == B.HOT_SPOT:
+    if row.get("alert_type") in B.SPOT_TYPES:
         return None
     return None if (row.get("sections_scouted") or 0) < 2 else row.get("margin")
 
@@ -773,12 +812,20 @@ def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = Non
     rows = frappe.get_all(DOCTYPE, filters=filters, fields=ALERT_FIELDS, 
                           limit_page_length=0)   # no cap: it would cut before the severity sort
     station = _common.station_word(crop)
+    limits = {}
+    if per_ha_crop(crop):
+        from upande_scp.serverscripts.scouting import cumulative_per_ha as C
+
+        limits = C.thresholds(crop)
     for r in rows:
         r["unit"] = B.unit_label(r.measure, station)
         r["station_word"] = station
         r["margin"] = _margin(r)
+        if r.measure == B.PER_HA:
+            # The block line this figure is judged on, so the card can say "(line 4)".
+            r["threshold"] = limits.get(((r.kind or "").lower(), r.observation)) or None
     rows.sort(key=lambda r: (
-        -B.ALERT_RANK.get(r.action, 0), r.alert_type == B.HOT_SPOT, r.status != "Open", -(r.value or 0),
+        -B.ALERT_RANK.get(r.action, 0), r.alert_type in B.SPOT_TYPES, r.status != "Open", -(r.value or 0),
         r.warehouse or "", r.observation or "", r.stage or "", r.section_row or 0, r.section_col or 0,
     ))
     return rows

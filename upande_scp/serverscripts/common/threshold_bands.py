@@ -127,7 +127,12 @@ def format_value(value, unit) -> str:
 
 HOUSE = "House"
 HOT_SPOT = "Hot spot"
-ALERT_TYPES = (HOUSE, HOT_SPOT)
+#: Block crops (avocado): a patch of neighbouring trees over the per-tree band
+#: (scouting.tree_hot_spots), judged alongside the per-hectare block alert.
+TREE_HOT_SPOT = "Tree hot spot"
+ALERT_TYPES = (HOUSE, HOT_SPOT, TREE_HOT_SPOT)
+#: Both kinds of hot spot are keyed by a position and escalate by band.
+SPOT_TYPES = (HOT_SPOT, TREE_HOT_SPOT)
 #: H2: a section needs at least this many scouted stations to be a hot spot.
 HOTSPOT_MIN_N = 5
 #: A section's reliability is Fair from HOTSPOT_MIN_N stations, Good from this.
@@ -136,7 +141,7 @@ HOTSPOT_GOOD_N = 10
 BAND_RANK = {"": 0, "low": 1, "moderate": 2, "high": 3}
 #: Sort order across both alert types: a hot spot sits with Alarming. Not an
 #: escalation ladder — a hot spot escalates by band (``band_escalates``).
-ALERT_RANK = {**ACTION_RANK, HOT_SPOT: ACTION_RANK[ALARMING]}
+ALERT_RANK = {**ACTION_RANK, HOT_SPOT: ACTION_RANK[ALARMING]}  # a tree hot spot sorts by its own action
 _STORED_BAND_RANK = {"Moderate": 1, "High": 2}
 _ROW_WORDS = ("first", "middle", "last")
 _COL_WORDS = ("front", "middle", "back")

@@ -116,3 +116,27 @@ describe("Overview active alerts", () => {
     for (const row of rows) expect(row.className).not.toMatch(/border-l/);
   });
 });
+
+describe("Overview active alerts of a block crop", () => {
+  const block = {
+    ...thrips, crop: "Avocado", measure: "Per ha", unit: "/ ha this week", value: 4.6, margin: null,
+    sections_scouted: 0, sections_total: 0, threshold: 4, observation: "Mosquito Bugs",
+  };
+  const spot = {
+    ...block, name: "SA-tree", alert_type: "Tree hot spot", measure: "Count", unit: "per tree", value: 9,
+    sections_scouted: 7, action: "Spray advised", band: "High", threshold: undefined,
+    section_label: "7 trees · rows 12–14, trees 3–9 · High, peak 9 per tree",
+  };
+  it("lists the block's per-hectare line and its hot spots, each labelled", async () => {
+    listOpenAlerts.mockResolvedValue([block, spot]);
+    render(<OverviewTab data={null} scoutLookup={{}} fromDate="2026-10-12" toDate="2026-10-18" crop="Avocado" />);
+    const rows = await screen.findAllByTestId("active-alert");
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByTestId("alert-level")).toHaveTextContent("Block, per ha");
+    expect(within(rows[0]).getByText("Block: 4.60 / ha this week (line 4.00)")).toBeInTheDocument();
+    expect(within(rows[1]).getByTestId("alert-level")).toHaveTextContent("Hot spot, per tree");
+    expect(within(rows[1]).getByText(/Hot spot: 7 trees in rows 12–14 over the per-tree High band/)).toBeInTheDocument();
+    expect(within(rows[1]).getByTestId("alert-show-on-map")).toBeInTheDocument();
+    expect(within(rows[0]).queryByTestId("alert-show-on-map")).toBeNull();
+  });
+});

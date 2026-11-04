@@ -25,6 +25,7 @@ import { projectGeometry, type ProjectedGeometry, type ZoneGeoLike } from "@/pag
 import { flattenZones } from "@/pages/maps/zone-utils";
 import type { TerrainWeekData } from "@/pages/maps/Terrain3D";
 import { METHOD } from "@/hooks/use-dashboard-aggregate";
+import { TreeHotSpotList, type TreeHotSpotRow } from "@/components/TreeHotSpotList";
 import { call } from "@/lib/frappe";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import { figureLine, type PrevalenceFigures } from "@/lib/prevalence";
@@ -68,6 +69,10 @@ interface Summary {
   /** block crops: the block has no area, so no per-ha figure */
   no_area?: boolean;
   threshold: { low: number; moderate: number; high: number; measure: string } | null;
+  /** block crops: this pest's live hot spots by tree, and the per-tree bands they use */
+  hotSpots?: TreeHotSpotRow[];
+  treeBands?: { moderate: number | null; high: number | null } | null;
+  greenhouse?: string;
   latest: (PrevalenceFigures & { value: number | null; band: string | null }) | null;
   series: SeriesPoint[];
 }
@@ -238,7 +243,7 @@ export function PestHeatmapModal({
               ) : null}
               {error ? <span role="alert" className="text-xs text-[var(--sd-data-red)]">{error}</span> : null}
             </div>
-            <SummaryBlock summary={summary} loading={loading && !summary} />
+            <SummaryBlock summary={summary} loading={loading && !summary} crop={crop} block={greenhouse ?? ""} />
           </aside>
         </div>
       </DialogContent>
@@ -262,7 +267,9 @@ function WeekPill({ active, onClick, children }: { active: boolean; onClick: () 
   );
 }
 
-function SummaryBlock({ summary, loading }: { summary: Summary | null; loading: boolean }) {
+function SummaryBlock({
+  summary, loading, crop, block,
+}: { summary: Summary | null; loading: boolean; crop: string; block: string }) {
   if (loading) {
     return <div className="h-14 animate-pulse rounded-md bg-[var(--sd-bg-soft)]" aria-hidden data-skeleton="summary" />;
   }
@@ -317,6 +324,16 @@ function SummaryBlock({ summary, loading }: { summary: Summary | null; loading: 
         </div>
       </div>
       <TrendBars series={series} threshold={threshold} unit={unit} />
+      {perHa ? (
+        <div className="flex flex-col gap-1.5 rounded-md border bg-card p-3 text-xs" data-testid="heatmap-hot-spots">
+          <TreeHotSpotList crop={crop} block={block} spots={summary.hotSpots ?? []} showObservation={false} />
+          <div className="text-muted-foreground">
+            {summary.treeBands
+              ? `Per tree: Moderate ${summary.treeBands.moderate ?? "not set"} · High ${summary.treeBands.high ?? "not set"} per tree`
+              : "No per-tree band set for this pest, so no hot spots by tree."}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

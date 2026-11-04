@@ -234,6 +234,18 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     kind: obs?.kind ?? "pest",
     week: null,
   });
+  // A hot spot's "Show on map": pick its block and fly to it, once, when the map and blocks are ready.
+  const focusedRef = useRef<string | null>(null);
+  const focusBlock = view.focusBlock ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!focusBlock || !blocks || !mapReady || !map || focusedRef.current === focusBlock) return;
+    const f = blocks.features.find((x) => String(x.properties?.block ?? "") === focusBlock);
+    const b = f ? geometryBounds(f.geometry) : null;
+    focusedRef.current = focusBlock;
+    setBlock(focusBlock);
+    if (b) map.fitBounds(b, { padding: 60, pitch: topViewRef.current ? 0 : 60, duration: 1000, bearing: 0 });
+  }, [focusBlock, blocks, mapReady]);
   const [pendingArea, setPendingArea] = useState<Pt[] | null>(null);
   const [areaBusy, setAreaBusy] = useState(false);
   const [areaError, setAreaError] = useState<string | null>(null);

@@ -169,10 +169,20 @@ export function ThresholdsTab({ crop }: { crop: string }) {
             advisory. Stage values override the row. Bands must rise; zero = not set (no alerts).
           </CardDescription>
           {bundle?.per_ha && (
-            <CardDescription data-testid="per-ha-note">
-              Cumulative per ha (this week): alerts by email the first time a block&rsquo;s count per hectare this
-              week passes this line, and the week&rsquo;s report goes out on Monday. Blank or 0 = no alert.
-            </CardDescription>
+            <>
+              {bundle.tree_hot_spots && (
+              <CardDescription data-testid="per-tree-note">
+                Per tree (hot spots): a pest&rsquo;s count on a tree against the Low / Moderate / High bands. Two or
+                more neighbouring trees at Moderate or above make a hot spot inside the block: Moderate raises an
+                Alarming notice, High a spray advisory. Only a Count can be judged per tree.
+              </CardDescription>
+              )}
+              <CardDescription data-testid="per-ha-note">
+                Per hectare, this week (block alert): the first time a block&rsquo;s count per hectare this week
+                passes this line, an email goes out, and the week&rsquo;s report goes out on Monday. Blank or 0 = no
+                alert.{bundle.tree_hot_spots ? " Both levels run together." : ""}
+              </CardDescription>
+            </>
           )}
         </div>
         <div className="flex items-end gap-2">
@@ -244,6 +254,7 @@ export function ThresholdsTab({ crop }: { crop: string }) {
                   row={p}
                   station={station}
                   perHa={!!bundle.per_ha}
+                  treeSpots={!!bundle.tree_hot_spots}
                   onPatch={(patch) => patchRow("pests", i, patch)}
                   onStagePatch={(si, patch) => patchStage("pests", i, si, patch)}
                   onWeightValidity={markWeight}
@@ -258,6 +269,7 @@ export function ThresholdsTab({ crop }: { crop: string }) {
                   row={d}
                   station={station}
                   perHa={!!bundle.per_ha}
+                  treeSpots={!!bundle.tree_hot_spots}
                   onPatch={(patch) => patchRow("diseases", i, patch)}
                   onStagePatch={(si, patch) => patchStage("diseases", i, si, patch)}
                 />
@@ -349,6 +361,7 @@ function FilterEditor({
   row,
   station,
   perHa,
+  treeSpots,
   onPatch,
   onStagePatch,
   onWeightValidity,
@@ -356,6 +369,7 @@ function FilterEditor({
   row: FilterRow;
   station: string;
   perHa?: boolean;
+  treeSpots?: boolean;
   onPatch: (patch: Partial<FilterRow>) => void;
   onStagePatch: (i: number, patch: Partial<ThresholdStageRow>) => void;
   onWeightValidity?: (id: string, bad: boolean) => void;
@@ -377,6 +391,11 @@ function FilterEditor({
             {isPest(row) ? "Count needs a stage scouts record as a number" : "Diseases are measured as a share"}
           </span>
         )}
+        {treeSpots && (
+          <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground" data-testid={`per-tree-label-${row.row}`}>
+            Per tree (hot spots)
+          </span>
+        )}
         <ThresholdInputs
           unit={unitFor(measure, station)}
           values={{ low: row.low, moderate: row.moderate, high: row.high }}
@@ -387,7 +406,7 @@ function FilterEditor({
       {perHa && (
         <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`per-ha-${row.row}`}>
           <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-            Cumulative per ha (this week)
+            Per hectare, this week (block alert)
           </span>
           <Input
             type="number"

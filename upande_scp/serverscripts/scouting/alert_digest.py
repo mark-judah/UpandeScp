@@ -59,7 +59,7 @@ def _candidates(now) -> dict:
     for alerts in out.values():
         alerts.sort(key=lambda r: (
             -B.ALERT_RANK.get(r.action, 0), r.farm or "", r.warehouse or "",
-            r.alert_type == B.HOT_SPOT, r.observation or "",
+            r.alert_type in B.SPOT_TYPES, r.observation or "",
         ))
     return out
 
@@ -98,6 +98,10 @@ def _figure(a) -> str:
     "trees") instead of a margin."""
     esc = frappe.utils.escape_html
     text = esc(B.format_value(a.value, a.unit))
+    if a.get("alert_type") == B.TREE_HOT_SPOT:
+        return (
+            f"worst tree {text} <span style='color:#777'>· {esc(a.get('section_label') or '')}</span>"
+        )
     if a.get("alert_type") == B.HOT_SPOT:
         house = f"(house {esc(B.format_value(a.house_value, a.unit))}) · " if a.get("house_value") is not None else ""
         return (

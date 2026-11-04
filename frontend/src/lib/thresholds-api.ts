@@ -57,6 +57,8 @@ export interface ThresholdsBundle {
   station?: string;
   /** block-grown crop: rows carry a cumulative-per-ha line */
   per_ha?: boolean;
+  /** block crop whose blocks have mapped trees: the bands find hot spots by tree */
+  tree_hot_spots?: boolean;
   pests: ThresholdPestRow[];
   diseases: ThresholdDiseaseRow[];
 }

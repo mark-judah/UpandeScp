@@ -22,6 +22,7 @@ import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
 import type { PrevalenceFigures, SectionCell, VarietyRow } from "@/lib/prevalence";
 import { formatPerHa, perHaLabel } from "@/lib/cumulative-api";
+import { TreeHotSpotList, type TreeHotSpotRow } from "@/components/TreeHotSpotList";
 import { PrevalenceFigure } from "./PrevalenceFigure";
 import { HouseSpread } from "./HouseSpread";
 import { VarietyTable } from "./VarietyTable";
@@ -56,6 +57,8 @@ export interface GhDetailPayload {
     kind: "pest" | "disease"; name: string; perHa: number | null; cumulative: number;
     areaHa: number | null; threshold: number | null; over: boolean;
   }>;
+  /** block-grown crops: live hot spots by tree, beside the per-hectare figures */
+  hotSpots?: TreeHotSpotRow[];
 }
 
 export interface GreenhouseModalProps {
@@ -254,8 +257,11 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
         {detail.perHa && (
           <Card className="p-4">
             <CardHeader className="p-0 pb-2">
-              <CardTitle>This week, per hectare</CardTitle>
-              <CardDescription>Cumulative over the ISO week ÷ the block's area</CardDescription>
+              <CardTitle>This week: block per hectare, and hot spots by tree</CardTitle>
+              <CardDescription>
+                Block: cumulative over the ISO week ÷ the block's area, against its line. Hot spots: neighbouring trees
+                over the pest's per-tree band.
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-1" data-testid="gh-per-ha">
               {loading ? (
@@ -273,6 +279,11 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
               ) : (
                 <div className="text-xs text-muted-foreground">Nothing recorded on this block this week.</div>
               )}
+              {!loading && greenhouse ? (
+                <div className="mt-2">
+                  <TreeHotSpotList crop={crop} block={greenhouse} spots={detail.hotSpots ?? []} />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         )}

@@ -7,7 +7,7 @@ import { call } from "./frappe";
 import { formatPerHa } from "./cumulative-api";
 
 export type AlertAction = "Alarming" | "Spray advised" | "Scout first" | "Hot spot";
-export type AlertType = "House" | "Hot spot";
+export type AlertType = "House" | "Hot spot" | "Tree hot spot";
 export type AlertStatus = "Open" | "Acknowledged" | "Resolved" | "Converted to plan";
 
 export interface ScoutingAlert {
@@ -24,7 +24,8 @@ export interface ScoutingAlert {
   /** 0–2, or -1 for a House alert */
   section_row?: number;
   section_col?: number;
-  /** "first beds · front" / "last rows · back"; empty for a House alert */
+  /** "first beds · front" / "last rows · back"; empty for a House alert. A tree hot spot:
+   *  "7 trees · rows 12–14, trees 3–9 · High, peak 9 per tree". */
   section_label?: string | null;
   measure: "Percentage" | "Count" | "Per ha";
   /** "%", "per zone", "per tree", or "/ ha this week" (block-grown crops) */
@@ -39,6 +40,8 @@ export interface ScoutingAlert {
   sections_scouted: number;
   sections_total: number;
   band: "Moderate" | "High";
+  /** A block crop's per-hectare line this figure is judged on (per-ha alerts only). */
+  threshold?: number | null;
   action: AlertAction;
   status: AlertStatus;
   acknowledged_by?: string | null;
@@ -80,14 +83,34 @@ function inUnit(value: number | null | undefined, unit: string): string {
   return isPerHa(unit) ? `${formatPerHa(value)} ${unit}` : `${value} ${unit}`;
 }
 
+export const isTreeHotSpot = (a: { alert_type?: AlertType | null }): boolean => a.alert_type === "Tree hot spot";
+
+/** Which of the two levels of a block crop an alert is: "Block" (the per-hectare
+ *  line) or "Hot spot" (neighbouring trees over the per-tree band); null for a
+ *  greenhouse crop's alert. */
+export function alertLevel(a: Pick<ScoutingAlert, "unit"> & { alert_type?: AlertType | null }): "Block" | "Hot spot" | null {
+  if (isTreeHotSpot(a)) return "Hot spot";
+  return isPerHa(a.unit) ? "Block" : null;
+}
+
+/** "Hot spot: 7 trees in rows 12–14 over the per-tree High band". */
+export function treeHotSpotLine(a: Pick<ScoutingAlert, "sections_scouted" | "section_label" | "band">): string {
+  const where = (a.section_label || "").split(" · ")[1]?.split(", ")[0] ?? "";
+  const n = a.sections_scouted;
+  return `Hot spot: ${n} tree${n === 1 ? "" : "s"}${where ? ` in ${where}` : ""} over the per-tree ${a.band} band`;
+}
+
 /** "33.3% · ±18 · 9/9" — the figure in its unit, the margin, sections scouted.
  *  A hot spot has no margin: "80% (house 8.9%) · 5 zones in this section"
  *  ("trees" on an avocado block). */
 export function alertFigureLine(
   a: Pick<ScoutingAlert, "value" | "unit" | "margin" | "sections_scouted" | "sections_total"> &
-    Partial<Pick<ScoutingAlert, "alert_type" | "house_value" | "station_word">>,
+    Partial<Pick<ScoutingAlert, "alert_type" | "house_value" | "station_word" | "threshold" | "section_label" | "band">>,
 ): string {
   const value = inUnit(a.value, a.unit);
+  if (a.alert_type === "Tree hot spot")
+    return `${treeHotSpotLine({ sections_scouted: a.sections_scouted, section_label: a.section_label, band: a.band ?? "Moderate" })} · worst tree ${value}`;
+  if (isPerHa(a.unit) && a.threshold) return `Block: ${value} (line ${formatPerHa(a.threshold)})`;
   // No sample margin or section count on a cumulative per-hectare figure.
   if (isPerHa(a.unit)) return `${value} · over its threshold`;
   if (a.alert_type === "Hot spot") {
@@ -106,6 +129,9 @@ export const ACTION_TONE: Record<AlertAction, string> = {
   Alarming: "var(--sd-target)",
   "Hot spot": "var(--sd-data-purple)",
 };
+
+/** The two levels' pill colours on a block crop's alert card. */
+export const LEVEL_TONE = { Block: "var(--sd-data-cyan)", "Hot spot": "var(--sd-data-purple)" } as const;
 
 /** The creator's badge for a greenhouse: its worst open spray action (D7). */
 export function ghActionBadge(alerts?: CreatorAlert[] | null): "Spray advised" | "Scout first" | null {

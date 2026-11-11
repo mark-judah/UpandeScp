@@ -50,7 +50,7 @@ from datetime import datetime, timezone as _tz
 import frappe
 from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
-from upande_scp.serverscripts.common.timezone import to_site_naive
+from upande_scp.serverscripts.common.timezone import erp_timezone, offset_minutes, to_site_naive
 from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
 from upande_scp.serverscripts.spray_plan_creator.refusals import log_refusals, record_refusal
 
@@ -89,11 +89,16 @@ def server_clock() -> dict:
 	corrected rather than merely flagged. Returns UTC as well, because the wire format is
 	UTC and the client should not have to reason about zones.
 	"""
-	from upande_scp.serverscripts.common.timezone import erp_timezone
-
+	# `server_now` is UTC. Every handset already in the field reads it as UTC
+	# (`measureSkew` -> `asUtc`), so sending site-local time here made each phone
+	# believe it ran a whole UTC offset slow and pushed every offline stamp that far
+	# into the future (+3 h in Nairobi: 621 of 727 sessions on kaitet by Nov 2026).
+	# `site_now` is the local reading, for display only.
+	utc = datetime.now(_tz.utc).strftime("%Y-%m-%d %H:%M:%S")
 	return {
-		"server_now": str(now_datetime()),
-		"utc_now": datetime.now(_tz.utc).strftime("%Y-%m-%d %H:%M:%S"),
+		"server_now": utc,
+		"utc_now": utc,
+		"site_now": str(now_datetime()),
 		"timezone": erp_timezone(),
 	}
 
@@ -151,15 +156,51 @@ def transfer_anchor(work_order: str):
 	return row.name, get_datetime(f"{row.posting_date} {row.posting_time}")
 
 
+#: How close a token's recorded skew must be to minus the site's UTC offset to be
+#: recognised as the old `server_clock` zone error rather than a genuinely wrong phone.
+ZONE_SKEW_TOLERANCE_SECONDS = 300
+
+
+def zone_skew_correction(payload: dict) -> int:
+	"""Seconds to take off a token's moments that carry the old zone error.
+
+	Until `server_clock` sent UTC, a phone with a correct clock measured its skew as
+	minus the site's UTC offset (-10,800 s in Nairobi) and added that offset to every
+	stamp. Tokens recorded that way are still on phones, so they are recognised by their
+	stored skew and put back. 0 when the token does not carry the error.
+	"""
+	try:
+		skew = int(flt(payload.get("device_skew_seconds") or 0))
+	except Exception:
+		return 0
+	minutes = offset_minutes(erp_timezone())
+	if not minutes:
+		return 0
+	offset = minutes * 60
+	return offset if abs(skew + offset) <= ZONE_SKEW_TOLERANCE_SECONDS else 0
+
+
 def resolve_moments(payload: dict, anchor) -> dict:
 	"""Clamp the token's moments so they cannot precede their own inputs.
 
 	`max()` in both places: a wrong device clock can only ever push a posting later. This
-	is what makes the design safe without the app having to be trusted.
+	is what makes the design safe without the app having to be trusted. Nothing can have
+	happened after the moment it reaches the server, so no moment is later than now.
 	"""
-	mix = _moment(payload.get("mix_at")) or anchor or now_datetime()
-	started = _moment(payload.get("started_at")) or mix
-	ended = _moment(payload.get("ended_at")) or started
+	shift = zone_skew_correction(payload)
+	now = now_datetime()
+
+	def read(key):
+		value = _moment(payload.get(key))
+		if value is not None and shift:
+			value = add_to_date(value, seconds=-shift)
+		if value is not None and value > now:
+			value = now
+		return value
+
+	mix = read("mix_at") or anchor or now
+	started = read("started_at") or mix
+	ended = read("ended_at") or started
 
 	if anchor and mix < anchor:
 		mix = anchor
@@ -181,9 +222,15 @@ def assess_session(payload: dict) -> dict:
 	Returns `{"steps": [...], "hold": None | (status, reason), "skew_warning": str | None}`
 	where `steps` is the longest honest prefix of mix, start, end.
 	"""
-	mix = _moment(payload.get("mix_at"))
-	started = _moment(payload.get("started_at"))
-	ended = _moment(payload.get("ended_at"))
+	shift = zone_skew_correction(payload)
+
+	def raw(key):
+		value = _moment(payload.get(key))
+		return add_to_date(value, seconds=-shift) if value is not None and shift else value
+
+	mix = raw("mix_at")
+	started = raw("started_at")
+	ended = raw("ended_at")
 
 	out = {"steps": [], "hold": None, "skew_warning": None}
 	skew = int(flt(payload.get("device_skew_seconds")))

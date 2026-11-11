@@ -41,12 +41,15 @@ class TestServerClock(unittest.TestCase):
             self.assertTrue(out.get(key), f"{key} missing")
 
     def test_the_two_clocks_differ_by_the_site_offset(self):
-        """The skew calculation is only meaningful if the server reports honestly."""
+        """The skew calculation is only meaningful if the server reports honestly.
+
+        `server_now` is UTC (the handsets read it as UTC); `site_now` is local."""
         from upande_scp.serverscripts.common.timezone import offset_minutes
 
         out = OS.server_clock()
+        self.assertEqual(out["server_now"], out["utc_now"])
         delta = (
-            get_datetime(out["server_now"]) - get_datetime(out["utc_now"])
+            get_datetime(out["site_now"]) - get_datetime(out["utc_now"])
         ).total_seconds() / 60
         expected = offset_minutes(out["timezone"]) or 0
         self.assertAlmostEqual(delta, expected, delta=2)

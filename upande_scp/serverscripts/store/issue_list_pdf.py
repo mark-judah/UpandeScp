@@ -65,6 +65,9 @@ def _spray_day(date) -> str:
 # ----------------------------------------------------------------------
 # Data
 # ----------------------------------------------------------------------
+#: Drafts appear on the list only once their plan is approved, as for early labels.
+from upande_scp.serverscripts.qr.chemical_labels import EARLY_STATE as APPROVED_STATE  # noqa: E402
+
 def _transfer_rows(day: str) -> list[dict]:
     return frappe.db.sql(
         """
@@ -80,9 +83,12 @@ def _transfer_rows(day: str) -> list[dict]:
           AND  wo.custom_type = %(afp)s
           AND  wo.docstatus < 2
           AND  DATE(wo.custom_scheduled_application_time) = %(day)s
+          -- To issue: only plans the GM has approved (the same rule as early labels).
+          -- Already issued: listed whatever the plan's state, for reconciling.
+          AND  (se.docstatus = 1 OR wo.workflow_state = %(approved)s)
         ORDER  BY wo.custom_scheduled_application_time, wo.name, se.creation
         """,
-        {"purpose": TRANSFER_PURPOSE, "afp": AFP_TYPE, "day": day},
+        {"purpose": TRANSFER_PURPOSE, "afp": AFP_TYPE, "day": day, "approved": APPROVED_STATE},
         as_dict=True,
     )
 

@@ -173,14 +173,6 @@ const REENTRY_ITEM: NavItem = {
   ],
 };
 
-const ROSE_NAV: NavSection[] = [
-  // Store-Keeper exclusive section — only role that sees it, and the
-  // ONLY section visible when the user holds the Store Keeper role
-  // (every other section sets hideForRoles=[STORE_KEEPER_ROLE]).
-  {
-    label: "Stores",
-    items: [
-      {
 // Predator releases and their expected mortality (roses only for now). The roles the
 // server's biologicals.release admits to read.
 const BIOLOGICALS_ITEM: NavItem = {
@@ -197,6 +189,14 @@ const BIOLOGICALS_ITEM: NavItem = {
   ],
 };
 
+const ROSE_NAV: NavSection[] = [
+  // Store-Keeper exclusive section — only role that sees it, and the
+  // ONLY section visible when the user holds the Store Keeper role
+  // (every other section sets hideForRoles=[STORE_KEEPER_ROLE]).
+  {
+    label: "Stores",
+    items: [
+      {
         kind: "view",
         view: "spray-plan-transfers",
         label: "Spray Plan Transfers",
@@ -282,6 +282,7 @@ const BIOLOGICALS_ITEM: NavItem = {
         ],
       },
       REENTRY_ITEM,
+      BIOLOGICALS_ITEM,
       {
         kind: "view",
         view: "creator-stock",
@@ -290,7 +291,6 @@ const BIOLOGICALS_ITEM: NavItem = {
         requireRoles: ["SCP Spray Plan Creator"],
       },
       {
-      BIOLOGICALS_ITEM,
         kind: "view",
         view: "chemical-loaning",
         label: "Chemical Loaning",

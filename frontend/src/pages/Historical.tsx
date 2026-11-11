@@ -25,7 +25,8 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, placeSetParams, type PlaceSet } from "@/lib/places";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { Button } from "@/components/ui/button";
 import { LoadingStrip } from "@/components/LoadingStrip";
@@ -45,8 +46,8 @@ import {
   fetchLifecycle,
   fetchLifecycleSummary,
   type Lifecycle,
-} from "@/lib/lifecycle-api";
   type LifecycleSummaryRow,
+} from "@/lib/lifecycle-api";
 import { LatenessBadge } from "@/components/spray-plan/LatenessBadge";
 
 const ALL = "__all__";
@@ -84,8 +85,7 @@ function defaultRange(): { from: string; to: string } {
 export function Historical() {
   const [from, setFrom] = useState(defaultRange().from);
   const [to, setTo] = useState(defaultRange().to);
-  const [farm, setFarm] = useState(ALL);
-  const [greenhouse, setGreenhouse] = useState(ALL);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [status, setStatus] = useState("");
   const [data, setData] = useState<{
     work_orders: WorkOrderRow[];
@@ -93,6 +93,11 @@ export function Historical() {
     farms: string[];
     greenhouses_by_farm?: Record<string, string[]>;
   }>({ work_orders: [], greenhouses: [], farms: [] });
+  // The place set as request params; ALL where nothing is picked.
+  const { farm, greenhouse } = useMemo(() => {
+    const p = placeSetParams(places, data.greenhouses_by_farm || Object.fromEntries(data.farms.map((f) => [f, []])));
+    return { farm: p.farm || ALL, greenhouse: p.greenhouse || ALL };
+  }, [places, data.greenhouses_by_farm, data.farms]);
   const [loading, setLoading] = useState(true);
   // Whether any list has landed yet: the first load draws skeleton rows, a
   // filter change keeps the old rows under the loading strip.
@@ -100,12 +105,12 @@ export function Historical() {
   const [openName, setOpenName] = useState<string | null>(null);
   // Names whose scheduled spray window passed without spraying starting.
   const [missed, setMissed] = useState<Set<string>>(new Set());
+  const [marks, setMarks] = useState<Record<string, LifecycleSummaryRow>>({});
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     call<typeof data>(
-  const [marks, setMarks] = useState<Record<string, LifecycleSummaryRow>>({});
       "upande_scp.serverscripts.scouting.scouting_metrics_api.list_application_work_orders",
       {
         from_date: from,
@@ -173,13 +178,10 @@ export function Historical() {
           />
           {/* One place pill (place picker spec G1). The server returns the
               farms this user may see; a single-farm user sees that farm. */}
-          <PlacePicker
+          <PlaceMultiPicker
             farms={placeFarms}
-            value={{ farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse }}
-            onChange={(p) => {
-              setFarm(p.farm || ALL);
-              setGreenhouse(p.greenhouse || ALL);
-            }}
+            value={places}
+            onChange={setPlaces}
             disabled={first}
           />
           <Select

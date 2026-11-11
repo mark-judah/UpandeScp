@@ -153,11 +153,11 @@ const Supervisors = lazy(() =>
 const Scouts = lazy(() =>
   import("@/pages/Scouts").then((m) => ({ default: m.Scouts })),
 );
-const Coverage = lazy(() =>
-  import("@/pages/Coverage").then((m) => ({ default: m.Coverage })),
-);
 const Biologicals = lazy(() =>
   import("@/pages/Biologicals").then((m) => ({ default: m.Biologicals })),
+);
+const Coverage = lazy(() =>
+  import("@/pages/Coverage").then((m) => ({ default: m.Coverage })),
 );
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
@@ -207,11 +207,11 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/Scouts"),
   () => import("@/pages/Supervisors"),
   () => import("@/pages/Coverage"),
+  () => import("@/pages/Biologicals"),
 ];
 
 /**
  * Keep-alive wrapper: a visited section mounts once and stays mounted, hidden
-  () => import("@/pages/Biologicals"),
  * with ``display:none`` when inactive instead of being unmounted. Revisiting is
  * instant and only the page's data refetches — the maps' ResizeObservers
  * (Map3D / MapBase) refire when the container is re-shown, so they repaint at
@@ -331,12 +331,12 @@ function renderView(crop: string, view: View): ReactNode {
       return <Procurement initialCrop={cropName} />;
     case "postponements":
       return <Postponements />;
+    case "biologicals":
+      return <Biologicals initialCrop={cropName} />;
     case "reentry":
       return <Reentry initialCrop={cropName} />;
     case "schedule":
       return <Schedule initialCrop={cropName} />;
-    case "biologicals":
-      return <Biologicals initialCrop={cropName} />;
     case "finances":
       // Crop-scoped: the route crop limits the farms the report reads.
       return <Finance initialCrop={cropName} />;

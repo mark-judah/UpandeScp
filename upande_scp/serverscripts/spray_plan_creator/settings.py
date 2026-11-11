@@ -511,6 +511,14 @@ def list_chemicals(
         r["active_ingredients"] = [
             x.ingredient for x in (sidecar.active_ingredients or []) if x.ingredient
         ] if sidecar else []
+        r["custom_fairtrade_hml"] = sidecar.get("fairtrade_hml") if sidecar else None
+        r["custom_phi_days"] = sidecar.get("phi_days") if sidecar else None
+        r["active_ingredient_rows"] = [
+            {"ingredient": x.ingredient or x.active_ingredient,
+             "concentration": x.concentration or 0,
+             "unit": x.concentration_unit or ""}
+            for x in (sidecar.active_ingredients or []) if (x.ingredient or x.active_ingredient)
+        ] if sidecar else []
 
     return {
         "items": rows,
@@ -580,9 +588,11 @@ def _save_product_fields(doc, payload):
     for src, dst in rate_map.items():
         if src in payload:
             doc.set(dst, payload[src] or 0)
-    for fld in ("frac_moa", "irac_moa", "ghs_description", "type", "toxicity"):
+    for fld in ("frac_moa", "irac_moa", "ghs_description", "type", "toxicity", "fairtrade_hml"):
         if fld in payload:
             doc.set(fld, payload[fld] or "")
+    if "phi_days" in payload:
+        doc.set("phi_days", payload["phi_days"] or 0)
     for payload_key in ("irac", "frac", "ghs"):
         if payload_key in payload:
             doc.set(payload_key, [])
@@ -614,12 +624,31 @@ def _save_product_fields(doc, payload):
             if pest or disease:
                 doc.append("default_targets", {"pest": pest, "disease": disease})
     if "active_ingredients" in payload:
+        # Keep each existing row's concentration/link (a names-only save used to wipe
+        # them); a row object from the editor may also carry concentration + unit.
+        keep = {}
+        for old in doc.active_ingredients or []:
+            keep[(old.ingredient or old.active_ingredient or "").strip().lower()] = old.as_dict()
         doc.set("active_ingredients", [])
         for row in payload.get("active_ingredients") or []:
+            if not row:
+                continue
             ing = (row.strip() if isinstance(row, str)
-                   else (row.get("ingredient") or "").strip()) if row else ""
-            if ing:
-                doc.append("active_ingredients", {"ingredient": ing})
+                   else (row.get("ingredient") or "").strip())
+            if not ing:
+                continue
+            new = {"ingredient": ing}
+            old = keep.get(ing.lower())
+            if old:
+                for k in ("active_ingredient", "concentration", "concentration_unit"):
+                    if old.get(k):
+                        new[k] = old[k]
+            if isinstance(row, dict):
+                if row.get("concentration") not in (None, ""):
+                    new["concentration"] = frappe.utils.flt(row.get("concentration"))
+                if "unit" in row:
+                    new["concentration_unit"] = row.get("unit") or None
+            doc.append("active_ingredients", new)
     doc.save(ignore_permissions=True)
 
 

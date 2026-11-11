@@ -84,6 +84,11 @@ export function ChemicalEditDrawer({
   const [frac, setFrac] = useState<string[]>([]);
   const [ghs, setGhs] = useState<string[]>([]);
   const [actives, setActives] = useState<string[]>([]);
+  // Concentration + unit per active ingredient, keyed by name (the logsheet's % a.i and
+  // total a.i come from these).
+  const [aiConc, setAiConc] = useState<Record<string, { concentration: string; unit: string }>>({});
+  const [hml, setHml] = useState("");
+  const [phi, setPhi] = useState("");
   const [newActive, setNewActive] = useState("");
   const [drafts, setDrafts] = useState<DraftTarget[]>([]);
   const [targetQuery, setTargetQuery] = useState("");
@@ -130,6 +135,16 @@ export function ChemicalEditDrawer({
     setFrac(chemical.frac);
     setGhs(chemical.ghs);
     setActives(chemical.active_ingredients);
+    setAiConc(
+      Object.fromEntries(
+        (chemical.active_ingredient_rows || []).map((r) => [
+          r.ingredient,
+          { concentration: r.concentration ? String(r.concentration) : "", unit: r.unit || "" },
+        ]),
+      ),
+    );
+    setHml(chemical.custom_fairtrade_hml || "");
+    setPhi(chemical.custom_phi_days ? String(chemical.custom_phi_days) : "");
     setDrafts(buildDraftTargets(chemical.targets));
     setNewActive("");
     setTargetQuery("");
@@ -215,6 +230,8 @@ export function ChemicalEditDrawer({
       await saveChemical(chemical.item_code, {
         enabled,
         toxicity,
+        fairtrade_hml: hml,
+        phi_days: Number(phi) || 0,
         reentry_interval_hrs: reentryNum,
         lower_rate_limit: lowerNum,
         upper_rate_limit: upperNum,
@@ -222,7 +239,11 @@ export function ChemicalEditDrawer({
         low_stock_threshold: lowStockNum,
         ghs_description: ghsDescription,
         ghs,
-        active_ingredients: actives,
+        active_ingredients: actives.map((a) => ({
+          ingredient: a,
+          concentration: aiConc[a]?.concentration ?? "",
+          unit: aiConc[a]?.unit ?? "",
+        })),
         ...chemicalsOnlyPayload,
       });
       onSaved({
@@ -230,6 +251,13 @@ export function ChemicalEditDrawer({
         enabled,
         disabled: enabled ? 0 : 1,
         custom_toxicity: toxicity || null,
+        custom_fairtrade_hml: hml || null,
+        custom_phi_days: Number(phi) || null,
+        active_ingredient_rows: actives.map((a) => ({
+          ingredient: a,
+          concentration: Number(aiConc[a]?.concentration) || 0,
+          unit: aiConc[a]?.unit || "",
+        })),
         custom_reentry_interval_hrs: reentryNum,
         custom_lower_rate_limit: lowerNum,
         custom_upper_rate_limit: upperNum,
@@ -354,6 +382,32 @@ export function ChemicalEditDrawer({
                 placeholder="0"
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-[0.7rem]">FLO HML category</Label>
+              <Select value={hml || "__none"} onValueChange={(v) => setHml(v === "__none" ? "" : v)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Not set" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">Not set</SelectItem>
+                  <SelectItem value="Yellow">Yellow</SelectItem>
+                  <SelectItem value="Orange">Orange</SelectItem>
+                  <SelectItem value="Red">Red</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-[0.7rem]">Pre-harvest interval (days)</Label>
+              <Input
+                type="number"
+                step="any"
+                min={0}
+                value={phi}
+                onChange={(e) => setPhi(e.target.value)}
+                className="h-9 text-xs tabular-nums"
+                placeholder="0"
+              />
+            </div>
           </section>
 
           {/* Rate range */}
@@ -473,13 +527,37 @@ export function ChemicalEditDrawer({
                 No active ingredients listed.
               </p>
             ) : (
-              <ul className="flex flex-wrap gap-1.5">
+              <ul className="space-y-1.5">
                 {actives.map((a) => (
-                  <li
-                    key={a}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-900 px-2.5 py-1 text-xs font-medium dark:bg-emerald-950 dark:text-emerald-200"
-                  >
-                    {a}
+                  <li key={a} className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-xs">
+                    <span className="flex-1 font-medium truncate">{a}</span>
+                    <Input
+                      type="number"
+                      step="any"
+                      min={0}
+                      value={aiConc[a]?.concentration ?? ""}
+                      onChange={(e) =>
+                        setAiConc({ ...aiConc, [a]: { unit: aiConc[a]?.unit ?? "", concentration: e.target.value } })
+                      }
+                      placeholder="conc."
+                      className="h-8 w-24 text-xs tabular-nums"
+                    />
+                    <Select
+                      value={aiConc[a]?.unit || "__none"}
+                      onValueChange={(v) =>
+                        setAiConc({ ...aiConc, [a]: { concentration: aiConc[a]?.concentration ?? "", unit: v === "__none" ? "" : v } })
+                      }
+                    >
+                      <SelectTrigger className="h-8 w-24 text-xs" aria-label={`${a} concentration unit`}>
+                        <SelectValue placeholder="unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">unit</SelectItem>
+                        {["g/L", "g/kg", "%", "CFU/g", "CFU/mL", "OB/mL"].map((u) => (
+                          <SelectItem key={u} value={u}>{u}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <button
                       type="button"
                       onClick={() => removeActive(a)}

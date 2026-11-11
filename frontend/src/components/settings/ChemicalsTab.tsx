@@ -50,6 +50,7 @@ import {
 } from "@/lib/settings-api";
 import { errorText } from "@/lib/errors";
 import { ChemicalEditDrawer } from "./ChemicalEditDrawer";
+import { ChemicalSetupCard } from "./ChemicalSetupCard";
 
 const PAGE_SIZE = 30;
 
@@ -156,7 +157,18 @@ export function ChemicalsTab() {
     }
   };
 
+  const [setupKey, setSetupKey] = useState(0);
+  const editByCode = (code: string) => {
+    fetchChemicals({ query: code, page: 1, page_size: 10 })
+      .then((r) => {
+        const row = r.items.find((x) => x.item_code === code);
+        if (row) setEditing(row);
+      })
+      .catch((e) => setError(errorText(e)));
+  };
+
   const onDrawerSaved = (updated: ChemicalRow) => {
+    setSetupKey((k) => k + 1);
     setData((d) =>
       d
         ? {
@@ -171,6 +183,7 @@ export function ChemicalsTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      <ChemicalSetupCard onEdit={editByCode} refreshKey={setupKey} />
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Chemicals & fertilizers</CardTitle>

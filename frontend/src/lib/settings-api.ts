@@ -267,6 +267,11 @@ export interface ChemicalRow {
   ghs: string[];
   targets: ChemicalTarget[];
   active_ingredients: string[];
+  /** Per-ingredient concentration (drives the logsheet's % a.i and total a.i). */
+  active_ingredient_rows?: { ingredient: string; concentration: number; unit: string }[];
+  /** Fairtrade Hazardous Materials List category. */
+  custom_fairtrade_hml?: string | null;
+  custom_phi_days?: number | null;
 }
 
 export interface ChemicalsResponse {
@@ -308,7 +313,9 @@ export interface SaveChemicalPayload {
   irac_moa?: string;
   ghs_description?: string;
   targets?: ChemicalTarget[];
-  active_ingredients?: string[];
+  active_ingredients?: (string | { ingredient: string; concentration?: number | string; unit?: string })[];
+  fairtrade_hml?: string;
+  phi_days?: number;
 }
 
 export async function saveChemical(
@@ -402,4 +409,33 @@ export async function saveCropSettings(
     crop,
     payload: JSON.stringify(values),
   });
+}
+
+// ── Chemical setup worklist ───────────────────────────────────────────────
+// Chemicals actually sprayed lately whose master data is incomplete.
+
+export interface ChemicalSetupRow {
+  item_code: string;
+  item_name: string;
+  product: string | null;
+  type?: string | null;
+  times_sprayed: number;
+  gaps: string[];
+  no_product: number;
+}
+
+export interface ChemicalSetupResponse {
+  days: number;
+  chemicals_used: number;
+  with_gaps: number;
+  counts: Record<string, number>;
+  labels: Record<string, string>;
+  rows: ChemicalSetupRow[];
+}
+
+export async function fetchChemicalSetup(days = 90): Promise<ChemicalSetupResponse> {
+  return call<ChemicalSetupResponse>(
+    "upande_scp.serverscripts.spray_plan_creator.chemical_setup.get_chemical_setup",
+    { days },
+  );
 }

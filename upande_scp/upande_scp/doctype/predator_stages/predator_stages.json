@@ -14,8 +14,10 @@
  "fields": [
   {
    "fieldname": "stage",
-   "fieldtype": "Data",
-   "label": "Stage"
+   "fieldtype": "Link",
+   "label": "Stage",
+   "options": "Stage",
+   "in_list_view": 1
   },
   {
    "fieldname": "immage",
@@ -26,7 +28,9 @@
    "fieldname": "reading_type",
    "fieldtype": "Select",
    "label": "Reading Type",
-   "options": "Count\nCheckbox\nRange"
+   "options": "Count\nCheckbox\nRange",
+   "in_list_view": 1,
+   "default": "Count"
   },
   {
    "fieldname": "plant_sections",

@@ -153,6 +153,9 @@ const Scouts = lazy(() =>
 const Coverage = lazy(() =>
   import("@/pages/Coverage").then((m) => ({ default: m.Coverage })),
 );
+const Biologicals = lazy(() =>
+  import("@/pages/Biologicals").then((m) => ({ default: m.Biologicals })),
+);
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
 // ``#/poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease``.
@@ -204,6 +207,7 @@ const PREFETCH: Array<() => Promise<unknown>> = [
 
 /**
  * Keep-alive wrapper: a visited section mounts once and stays mounted, hidden
+  () => import("@/pages/Biologicals"),
  * with ``display:none`` when inactive instead of being unmounted. Revisiting is
  * instant and only the page's data refetches — the maps' ResizeObservers
  * (Map3D / MapBase) refire when the container is re-shown, so they repaint at
@@ -327,6 +331,8 @@ function renderView(crop: string, view: View): ReactNode {
       return <Reentry initialCrop={cropName} />;
     case "schedule":
       return <Schedule initialCrop={cropName} />;
+    case "biologicals":
+      return <Biologicals initialCrop={cropName} />;
     case "finances":
       // Crop-scoped: the route crop limits the farms the report reads.
       return <Finance initialCrop={cropName} />;

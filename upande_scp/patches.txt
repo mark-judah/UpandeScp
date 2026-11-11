@@ -75,3 +75,7 @@ upande_scp.patches.v1_0.link_tank_mix_issues_to_plan
 # The shipped default of 5 minutes held real (seconds-long) offline sprays; reset to 0 = off
 # where it is still 5.
 upande_scp.patches.v1_0.min_spray_minutes_default_off
+# Predator master: Neoseiulus californicus rename, stages as a table, prey mapping, Biologicals items.
+upande_scp.patches.v1_0.seed_predators_and_biologicals
+# Predator side-effect (IOBC) classes per active ingredient for roses; unverified, fills blanks only.
+upande_scp.patches.v1_0.seed_predator_impacts

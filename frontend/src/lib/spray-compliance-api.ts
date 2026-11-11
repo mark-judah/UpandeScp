@@ -41,12 +41,13 @@ export interface RecordedOverride {
 export interface ReviewCompliance extends CheckResult { overrides: RecordedOverride[] }
 
 const RULE_ORDER = ["target_match", "target_coverage", "same_moa_in_mix", "moa_rotation",
-  "max_sprays", "known_resistance", "tank_mix_incompatible"];
+  "max_sprays", "known_resistance", "tank_mix_incompatible", "predator_harm"];
 const LABELS: Record<string, string> = {
   target_match: "Product targets", target_coverage: "Target coverage",
   same_moa_in_mix: "Same group in one tank", moa_rotation: "Group rotation",
   max_sprays: "Spray limits", known_resistance: "Known resistance",
   tank_mix_incompatible: "Tank-mix incompatibility",
+  predator_harm: "Harm to predators",
 };
 
 export const ruleLabel = (rule: string) => LABELS[rule] ?? rule;

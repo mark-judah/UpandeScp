@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "predator",
+  "stage",
+  "impact_class",
+  "mortality_pct",
+  "persistence_days",
+  "exposure",
+  "verified",
+  "source"
+ ],
+ "fields": [
+  {
+   "fieldname": "predator",
+   "fieldtype": "Link",
+   "label": "Predator",
+   "options": "Predator",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "stage",
+   "fieldtype": "Link",
+   "label": "Stage",
+   "options": "Stage",
+   "in_list_view": 1,
+   "description": "Blank = every stage."
+  },
+  {
+   "fieldname": "impact_class",
+   "fieldtype": "Select",
+   "label": "IOBC Class",
+   "options": "1 - Harmless\n2 - Slightly harmful\n3 - Moderately harmful\n4 - Harmful",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "mortality_pct",
+   "fieldtype": "Percent",
+   "label": "Mortality %",
+   "in_list_view": 1,
+   "description": "Expected kill of the predators in the spray's reach. IOBC class midpoint unless a measured value is cited."
+  },
+  {
+   "fieldname": "persistence_days",
+   "fieldtype": "Int",
+   "label": "Residue Persistence (days)",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "exposure",
+   "fieldtype": "Select",
+   "label": "Exposure",
+   "options": "Direct spray and residue\nDirect spray\nDry residue\nIngestion of treated prey"
+  },
+  {
+   "fieldname": "verified",
+   "fieldtype": "Check",
+   "label": "Verified by IPM lead",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Small Text",
+   "label": "Source"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-11 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Active Ingredient Predator Impact",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

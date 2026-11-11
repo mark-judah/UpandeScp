@@ -56,6 +56,8 @@ const LABELS: Record<string, string> = {
   auto_cancel_dormant_days: "Dormant window (days)",
   csu_scan_verification: "CSU scan verification",
   cumulative_alert_paused: "Pause cumulative per-ha alert emails (1 or 0)",
+  rule_predator_harm: "Harm to predators (Off, Warn, Block (GM override) or Block)",
+  predator_presence_days: "Predator presence window (days)",
 };
 
 /** The order they read in — weather together, then rotation, then the day's
@@ -91,6 +93,7 @@ const GROUPS: Array<{ title: string; keys: string[] }> = [
     keys: ["auto_cancel_enabled", "auto_cancel_dormant_days"],
   },
   { title: "Store handover", keys: ["csu_scan_verification"] },
+  { title: "Predators", keys: ["rule_predator_harm", "predator_presence_days"] },
   {
     title: "Cumulative alerts (block crops)",
     keys: ["cumulative_alert_paused"],

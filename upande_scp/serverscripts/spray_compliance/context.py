@@ -64,10 +64,73 @@ def load_products(items) -> dict:
 	                          and parent in %(p)s order by idx""", {"p": tuple(names or [""])}, as_dict=True):
 		if r.t:
 			targets.setdefault(r.parent, []).append(r.t)
+	impacts = load_impacts(names)
 	return {r.name: {"name": r.product_name or r.name, "category": r.category, "type": r.type,
 	                 "targets": targets.get(r.name, []), "irac": irac.get(r.name, []),
-	                 "frac": frac.get(r.name, []), "ingredients": ingr.get(r.name, [])}
+	                 "frac": frac.get(r.name, []), "ingredients": ingr.get(r.name, []),
+	                 "impacts": impacts.get(r.name, [])}
 	        for r in rows}
+
+
+def impact_class(value) -> int:
+	"""'3 - Moderately harmful' -> 3; anything unreadable -> 0 (no claim)."""
+	try:
+		return int(str(value or "0").strip()[0])
+	except (ValueError, IndexError):
+		return 0
+
+
+def load_impacts(products) -> dict:
+	"""{spray product: [{ingredient, predator, stage, cls, mortality, persistence, verified}]} from
+	the predator-impact rows of each product's active ingredients."""
+	if not products:
+		return {}
+	out = {}
+	for r in frappe.db.sql("""select ai.parent product, ai.active_ingredient ing, i.predator, i.stage, i.impact_class,
+	                                 i.mortality_pct, i.persistence_days, i.verified
+	                          from `tabActive Ingredient` ai
+	                          join `tabActive Ingredient Predator Impact` i
+	                            on i.parent = ai.active_ingredient and i.parenttype = 'Active Ingredient MoA'
+	                           and i.parentfield = 'predator_impacts'
+	                          where ai.parenttype='Spray Product' and ai.parentfield='active_ingredients'
+	                            and ai.parent in %(p)s order by ai.idx, i.idx""",
+	                       {"p": tuple(products)}, as_dict=True):
+		out.setdefault(r.product, []).append({
+			"ingredient": r.ing, "predator": r.predator, "stage": r.stage or "", "cls": impact_class(r.impact_class),
+			"mortality": float(r.mortality_pct or 0), "persistence": int(r.persistence_days or 0),
+			"verified": bool(r.verified)})
+	return out
+
+
+def presence_days(crop) -> int:
+	try:
+		return int(crop_settings.value_for("predator_presence_days", crop) or 14)
+	except (TypeError, ValueError):
+		return 14
+
+
+def load_predators(greenhouse, now, days) -> list[dict]:
+	"""Predators present in `greenhouse` in the `days` before `now`: submitted Biological Releases
+	and predators counted in scouting. [{predator, stage, qty, when, source}]."""
+	if not greenhouse or days <= 0:
+		return []
+	cut = add_days(now, -days)
+	out = []
+	for r in frappe.db.sql("""select predator, stage, quantity qty, released_at `when` from `tabBiological Release`
+	                          where docstatus=1 and greenhouse=%(gh)s and released_at between %(cut)s and %(now)s""",
+	                       {"gh": greenhouse, "cut": cut, "now": now}, as_dict=True):
+		out.append({"predator": r.predator, "stage": r.stage or "", "qty": float(r.qty or 0),
+		            "when": str(r.when)[:19], "source": "released"})
+	for r in frappe.db.sql("""select p.predator, p.stage, p.count qty,
+	                                 timestamp(s.date_of_capture, ifnull(s.time_of_capture, '00:00:00')) `when`
+	                          from `tabPredators Scouting Entry` p join `tabScouting Entry` s on s.name = p.parent
+	                          where s.greenhouse=%(gh)s and ifnull(p.count,0) > 0
+	                            and s.date_of_capture between date(%(cut)s) and date(%(now)s)
+	                          having `when` between %(cut)s and %(now)s""",
+	                       {"gh": greenhouse, "cut": cut, "now": now}, as_dict=True):
+		out.append({"predator": r.predator, "stage": r.stage or "", "qty": float(r.qty or 0),
+		            "when": str(r.when)[:19], "source": "seen in scouting"})
+	return out
 
 
 def untargeted_items() -> list[str]:
@@ -170,6 +233,7 @@ def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None, when=
 		"products": load_products(items), "history": history, "guidelines": load_guidelines(),
 		"incompatibilities": load_incompatibilities(), "modes": load_modes(crop),
 		"now": now.strftime("%Y-%m-%d %H:%M:%S"),
+		"predators": load_predators(greenhouse, now, presence_days(crop)),
 	}
 
 

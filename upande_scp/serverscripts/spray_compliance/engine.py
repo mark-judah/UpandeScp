@@ -8,7 +8,7 @@ non-blank reason; whether the caller may override at all is `api.py`'s concern.
 from . import rules as R
 
 RULES = ("target_match", "target_coverage", "same_moa_in_mix", "moa_rotation",
-	"max_sprays", "known_resistance", "tank_mix_incompatible")
+	"max_sprays", "known_resistance", "tank_mix_incompatible", "predator_harm")
 OFF, WARN, GM, BLOCK = "Off", "Warn", "Block (GM override)", "Block"
 MODES = (OFF, WARN, GM, BLOCK)
 _SEVERITY = {OFF: 0, WARN: 1, GM: 2, BLOCK: 3}

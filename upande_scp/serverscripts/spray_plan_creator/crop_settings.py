@@ -69,6 +69,8 @@ OVERRIDABLE = {
 	"rule_max_sprays": "As above.",
 	"rule_known_resistance": "As above.",
 	"rule_tank_mix_incompatible": "As above.",
+	"rule_predator_harm": "Which predators a crop releases, and how much protecting them matters, differs by crop.",
+	"predator_presence_days": "As above.",
 	"cumulative_alert_paused": "Per-hectare cumulative alerts only make sense for crops scouted by block.",
 }
 

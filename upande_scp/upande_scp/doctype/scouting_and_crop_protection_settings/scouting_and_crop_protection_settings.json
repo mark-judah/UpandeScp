@@ -23,6 +23,8 @@
   "rule_max_sprays",
   "rule_known_resistance",
   "rule_tank_mix_incompatible",
+  "rule_predator_harm",
+  "predator_presence_days",
   "tank_mix_incompatibilities",
   "weather_section",
   "weather_wind_green_max_kmh",
@@ -241,6 +243,22 @@
    "fieldname": "tank_mix_incompatibilities",
    "fieldtype": "Table",
    "label": "Tank Mix Incompatibilities",
+  {
+   "fieldname": "rule_predator_harm",
+   "fieldtype": "Select",
+   "label": "No product harmful to predators present in the greenhouse",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn",
+   "description": "A spray whose active ingredient is moderately or fully harmful (IOBC 3-4) to a predator released or scouted in that greenhouse recently."
+  },
+  {
+   "fieldname": "predator_presence_days",
+   "fieldtype": "Int",
+   "label": "Predator Presence Window (days)",
+   "default": "14",
+   "non_negative": 1,
+   "description": "A predator counts as present in a greenhouse if it was released or seen in scouting within this many days."
+  },
    "options": "Tank Mix Incompatibility"
   },
   {

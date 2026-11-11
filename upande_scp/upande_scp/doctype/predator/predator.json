@@ -9,11 +9,17 @@
  "field_order": [
   "common_name",
   "scientific_name",
+  "kind",
+  "column_break_ident",
+  "item",
+  "individuals_per_unit",
   "identification_guideline",
   "photo",
   "predator_legend_color",
-  "target_pest",
-  "predator_stages"
+  "stages_section",
+  "predator_stages",
+  "prey_section",
+  "target_pest"
  ],
  "fields": [
   {
@@ -30,7 +36,7 @@
   {
    "fieldname": "target_pest",
    "fieldtype": "Table",
-   "label": "Target Pest",
+   "label": "Prey",
    "options": "Predator Targets"
   },
   {
@@ -51,8 +57,43 @@
   {
    "fieldname": "predator_stages",
    "fieldtype": "Table",
-   "label": "Predator Stages",
+   "label": "Stages",
    "options": "Predator Stages"
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "Predatory Mite\nPredatory Insect\nParasitoid Wasp\nEntomopathogen\nOther",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "column_break_ident",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Stock Item",
+   "options": "Item",
+   "description": "The Biologicals-group item the store issues for releases of this predator."
+  },
+  {
+   "fieldname": "individuals_per_unit",
+   "fieldtype": "Int",
+   "label": "Individuals per Stock Unit",
+   "description": "Optional. Lets the mortality report convert released units into an expected number of animals."
+  },
+  {
+   "fieldname": "stages_section",
+   "fieldtype": "Section Break",
+   "label": "Life Stages (scouting and release)"
+  },
+  {
+   "fieldname": "prey_section",
+   "fieldtype": "Section Break",
+   "label": "Prey (what it controls)"
   }
  ],
  "grid_page_length": 50,

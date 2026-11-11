@@ -13,7 +13,9 @@
   "irac_code",
   "section_aliases",
   "aliases",
-  "notes"
+  "notes",
+  "section_predators",
+  "predator_impacts"
  ],
  "fields": [
   {
@@ -64,6 +66,17 @@
    "fieldname": "notes",
    "fieldtype": "Small Text",
    "label": "Notes"
+  },
+  {
+   "fieldname": "section_predators",
+   "fieldtype": "Section Break",
+   "label": "Impact on Predators (IOBC side effects)"
+  },
+  {
+   "fieldname": "predator_impacts",
+   "fieldtype": "Table",
+   "label": "Predator Impacts",
+   "options": "Active Ingredient Predator Impact"
   }
  ],
  "index_web_pages_for_search": 0,

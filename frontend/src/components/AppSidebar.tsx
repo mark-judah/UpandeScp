@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   Beaker,
   Bell,
+  Bug,
   CalendarClock,
   CalendarDays,
   CheckSquare,
@@ -172,6 +173,22 @@ const ROSE_NAV: NavSection[] = [
     label: "Stores",
     items: [
       {
+// Predator releases and their expected mortality (roses only for now). The roles the
+// server's biologicals.release admits to read.
+const BIOLOGICALS_ITEM: NavItem = {
+  kind: "view",
+  view: "biologicals",
+  label: "Biologicals",
+  icon: Bug,
+  requireRoles: [
+    "SCP Spray Supervisor",
+    "SCP Spray Plan Creator",
+    "SCP General Manager",
+    "System Manager",
+    "Administrator",
+  ],
+};
+
         kind: "view",
         view: "spray-plan-transfers",
         label: "Spray Plan Transfers",
@@ -265,6 +282,7 @@ const ROSE_NAV: NavSection[] = [
         requireRoles: ["SCP Spray Plan Creator"],
       },
       {
+      BIOLOGICALS_ITEM,
         kind: "view",
         view: "chemical-loaning",
         label: "Chemical Loaning",

@@ -6,14 +6,39 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "pest"
+  "pest",
+  "efficacy",
+  "prey_stage",
+  "source"
  ],
  "fields": [
   {
    "fieldname": "pest",
    "fieldtype": "Link",
    "label": "Pest",
-   "options": "Pest"
+   "options": "Pest",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "efficacy",
+   "fieldtype": "Select",
+   "label": "Efficacy",
+   "options": "\n1 - Supplementary\n2 - Good\n3 - Primary prey",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "prey_stage",
+   "fieldtype": "Link",
+   "label": "Stage Preyed On",
+   "options": "Stage",
+   "in_list_view": 1,
+   "description": "Blank = every stage."
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Small Text",
+   "label": "Source",
+   "in_list_view": 1
   }
  ],
  "grid_page_length": 50,

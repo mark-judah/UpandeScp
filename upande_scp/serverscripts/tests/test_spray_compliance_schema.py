@@ -12,7 +12,7 @@ import unittest
 import frappe
 
 RULES = ["target_match", "target_coverage", "same_moa_in_mix", "moa_rotation",
-         "max_sprays", "known_resistance", "tank_mix_incompatible"]
+         "max_sprays", "known_resistance", "tank_mix_incompatible", "predator_harm"]
 MODES = ["Off", "Warn", "Block (GM override)", "Block"]
 
 

@@ -255,6 +255,48 @@ def known_resistance(ctx) -> list[dict]:
 	return out
 
 
+#: IOBC class from which an ingredient counts as harmful to a predator
+#: (3 = moderately harmful, 4 = harmful).
+HARMFUL_CLASS = 3
+CLASS_NAMES = {1: "harmless", 2: "slightly harmful", 3: "moderately harmful", 4: "harmful"}
+
+
+def predator_harm(ctx) -> list[dict]:
+	"""An ingredient in the mix that is moderately/fully harmful (IOBC 3-4) to a
+	predator released or scouted in this greenhouse inside the presence window.
+	`ctx["predators"]` = [{predator, stage, qty, when, source}], already limited to
+	the window by `context.py`; a stage-specific impact only matches that stage
+	(or an event with no stage recorded)."""
+	out = []
+	present = ctx.get("predators") or []
+	if not present:
+		return out
+	for item in _unique_mix(ctx):
+		product = ctx["products"].get(item) or {}
+		worst = {}
+		for imp in product.get("impacts") or []:
+			if imp["cls"] < HARMFUL_CLASS:
+				continue
+			hits = [e for e in present if e["predator"] == imp["predator"]
+			        and (not imp.get("stage") or not e.get("stage") or e["stage"] == imp["stage"])]
+			if hits and imp["cls"] > (worst.get(imp["predator"], ({"cls": 0}, []))[0]["cls"]):
+				worst[imp["predator"]] = (imp, hits)
+		for predator, (imp, hits) in sorted(worst.items()):
+			last = max(hits, key=lambda e: e["when"])
+			seen = f"{last['source']} {str(last['when'])[:10]}"
+			extra = []
+			if imp.get("mortality"):
+				extra.append(f"about {imp['mortality']:g}% mortality")
+			if imp.get("persistence"):
+				extra.append(f"residue harmful for about {imp['persistence']} days")
+			detail = f" ({', '.join(extra)})" if extra else ""
+			out.append(violation("predator_harm",
+			                     f"{_name(ctx, item)} ({imp['ingredient']}) is {CLASS_NAMES[imp['cls']]} to {predator}{detail}, "
+			                     f"which is in this greenhouse ({seen}).",
+			                     products=[item], targets=[predator]))
+	return out
+
+
 def display_codes(product: dict | None) -> list[str]:
 	p = product or {}
 	return [f"IRAC {c}" for c in p.get("irac") or []] + [f"FRAC {c}" for c in p.get("frac") or []]

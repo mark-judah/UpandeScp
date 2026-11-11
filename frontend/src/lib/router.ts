@@ -46,6 +46,7 @@ export type View =
   | "sprayers"
   | "teams"
   | "reentry";
+  | "biologicals"
 
 const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "notifications",
@@ -81,6 +82,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "teams",
   "reentry",
 ]);
+  "biologicals",
 
 export const DEFAULT_CROP_SLUG = "rose";
 const DEFAULT_VIEW: View = "dashboard";

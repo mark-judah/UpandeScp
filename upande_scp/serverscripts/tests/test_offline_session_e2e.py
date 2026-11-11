@@ -326,7 +326,8 @@ class TestSessionClaimingAMomentBeforeItsTransfer(_E2EBase, unittest.TestCase):
         self.assertEqual(got["mix_at"], anchor)
         self.assertEqual(got["started_at"], anchor)
         self.assertGreater(got["ended_at"], got["mix_at"])
-        # a claimed moment AFTER the anchor is kept as claimed
+        # a claimed moment AFTER the anchor (but not in the future) is kept as claimed
+        anchor = add_to_date(anchor, hours=-6)
         later = add_to_date(anchor, hours=3)
         p = dict(self._payload(), mix_at=str(later), started_at=str(later),
                  ended_at=str(add_to_date(later, hours=1)))

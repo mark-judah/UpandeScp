@@ -774,7 +774,45 @@ def _result(token: str, already: bool = False) -> dict:
 	for key in ("mix_at", "started_at", "ended_at"):
 		if row.get(key):
 			row[key] = str(row[key])
+	_decorate_for_confirmation(row, token)
 	return row
+
+
+def _full_name(user):
+	if not user:
+		return None
+	return frappe.db.get_value("User", user, "full_name") or user
+
+
+def _decorate_for_confirmation(row: dict, token: str) -> None:
+	"""What the handset's "your sync landed" modal shows, for one session.
+
+	Adds the greenhouse, the plan's supervisor and whoever actually scanned, and
+	withholds the Stock Entry ids from a caller who may not read them (said so in
+	`ids_hidden`, so the phone can tell "no access" from "none created").
+	"""
+	wo = row.get("work_order")
+	if wo:
+		row["greenhouse"] = frappe.db.get_value("Work Order", wo, "custom_greenhouse")
+		sup = _supervisor_of(wo)
+		row["supervisor"] = (
+			frappe.db.get_value("Employee", sup, "employee_name") if sup else None
+		) or sup
+	owner = frappe.db.get_value(TOKEN, token, "owner")
+	row["scanner"] = _full_name(owner)
+	hidden = False
+	for key in ("manufacture_stock_entry", "issue_stock_entry"):
+		name = row.get(key)
+		if not name:
+			continue
+		try:
+			ok = frappe.has_permission("Stock Entry", "read", doc=name)
+		except Exception:
+			ok = False
+		if not ok:
+			row[key] = None
+			hidden = True
+	row["ids_hidden"] = hidden
 
 
 @frappe.whitelist()

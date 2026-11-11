@@ -103,6 +103,8 @@ def createApplicationWorkOrder():
         )
         wip_warehouse = kit_warehouse if kit_warehouse else "Work In Progress - KR"
         scheduled_application_time = raw_data.get("custom_scheduled_application_time") or None
+        from upande_scp.serverscripts.spray_plan_creator import lateness
+        lateness.assert_not_in_past(scheduled_application_time)
 
         if not bom_name:
             frappe.throw(_("BOM is required. 'production_item' not found."))

@@ -46,7 +46,8 @@ import {
   fetchLifecycleSummary,
   type Lifecycle,
 } from "@/lib/lifecycle-api";
-import { AlertTriangle } from "lucide-react";
+  type LifecycleSummaryRow,
+import { LatenessBadge } from "@/components/spray-plan/LatenessBadge";
 
 const ALL = "__all__";
 
@@ -104,6 +105,7 @@ export function Historical() {
     let cancelled = false;
     setLoading(true);
     call<typeof data>(
+  const [marks, setMarks] = useState<Record<string, LifecycleSummaryRow>>({});
       "upande_scp.serverscripts.scouting.scouting_metrics_api.list_application_work_orders",
       {
         from_date: from,
@@ -131,7 +133,10 @@ export function Historical() {
     })
       .then((rows) => {
         if (!cancelled)
-          setMissed(new Set(rows.filter((r) => r.missed).map((r) => r.name)));
+          {
+            setMissed(new Set(rows.filter((r) => r.missed).map((r) => r.name)));
+            setMarks(Object.fromEntries(rows.map((r) => [r.name, r])));
+          }
       })
       .catch(() => {});
     return () => {
@@ -254,11 +259,13 @@ export function Historical() {
                       >
                         {w.status_label}
                       </Badge>
-                      {missed.has(w.name) && (
-                        <span className="inline-flex items-center gap-1 text-[0.6rem] font-medium text-[var(--sd-data-red)]">
-                          <AlertTriangle className="h-3 w-3" />
-                          Missed window
-                        </span>
+                      {(missed.has(w.name) || marks[w.name]) && (
+                        <LatenessBadge
+                          level={marks[w.name]?.lateness}
+                          missed={missed.has(w.name)}
+                          postponed={marks[w.name]?.postponed}
+                          postponedFrom={marks[w.name]?.postponed_from}
+                        />
                       )}
                     </div>
                   </TableCell>

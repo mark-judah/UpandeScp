@@ -30,6 +30,8 @@ from typing import Any
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
+from upande_scp.serverscripts.common.place_filter import parse_names
+from upande_scp.serverscripts.spray_plan_creator import lateness
 from upande_scp.serverscripts.sprayers import supervisors as sup_acc
 
 AFP_TYPE = "Application Floor Plan"
@@ -279,12 +281,13 @@ def get_lifecycle(work_order: str) -> dict:
     scan = _scan_progress(wo)
 
     scheduled = _iso(wo.custom_scheduled_application_time)
-    missed = bool(
-        wo.custom_scheduled_application_time
-        and get_datetime(wo.custom_scheduled_application_time) < now_datetime()
-        and cur < STATE_RANK["Spraying In Progress"]
-        and not stopped
+    late = lateness.make_grader()(
+        wo.custom_scheduled_application_time,
+        wo.custom_greenhouse,
+        cur < STATE_RANK["Spraying In Progress"] and not stopped,
     )
+    missed = late["missed"]
+    postponed_from = lateness.postponed_map([work_order]).get(work_order)
 
     printed = bool(se and se.get("custom_labels_printed"))
     print_count = int((se or {}).get("custom_labels_print_count") or 0)
@@ -414,6 +417,9 @@ def get_lifecycle(work_order: str) -> dict:
         "current_step": STEP_FOR_STATE.get(state, "created"),
         "scheduled": scheduled,
         "missed": missed,
+        "lateness": late["level"],
+        "postponed": postponed_from is not None,
+        "postponed_from": postponed_from,
         "stopped": stopped,
         "greenhouse": wo.custom_greenhouse,
         "spray_type": wo.custom_spray_type,
@@ -438,8 +444,10 @@ def get_lifecycle_summary(
     _ensure_access()
 
     filters: dict[str, Any] = {"custom_type": AFP_TYPE, "docstatus": ("<", 2)}
-    if greenhouse:
-        filters["custom_greenhouse"] = greenhouse
+    house_names = parse_names(greenhouse)
+    farm_names = parse_names(farm)
+    if house_names:
+        filters["custom_greenhouse"] = ("in", house_names)
     if from_date:
         filters["creation"] = (">=", from_date)
     if states:
@@ -469,7 +477,8 @@ def get_lifecycle_summary(
     if houses is not None:
         rows = [r for r in rows if r.custom_greenhouse in houses]
 
-    now = now_datetime()
+    grader = lateness.make_grader()
+    postponed = lateness.postponed_map([r.name for r in rows])
     acc = sup_acc.accountability([r.name for r in rows])
     out = []
     for r in rows:
@@ -477,22 +486,25 @@ def get_lifecycle_summary(
         # set the lower bound to keep the dict-filter simple).
         if to_date and r.creation and get_datetime(r.creation) > get_datetime(f"{to_date} 23:59:59"):
             continue
-        if farm and not (r.custom_greenhouse or "").startswith(farm):
+        if farm_names and not any((r.custom_greenhouse or "").startswith(f) for f in farm_names):
             continue
         state = r.workflow_state or "Pending Submission"
         stopped = (r.status or "") == "Stopped"
-        missed = bool(
-            r.custom_scheduled_application_time
-            and get_datetime(r.custom_scheduled_application_time) < now
-            and _rank(state) < STATE_RANK["Spraying In Progress"]
-            and not stopped
+        late = grader(
+            r.custom_scheduled_application_time,
+            r.custom_greenhouse,
+            _rank(state) < STATE_RANK["Spraying In Progress"] and not stopped,
         )
+        missed = late["missed"]
         out.append({
             "name": r.name,
             "current_state": state,
             "current_step": STEP_FOR_STATE.get(state, "created"),
             "stopped": stopped,
             "missed": missed,
+            "lateness": late["level"],
+            "postponed": r.name in postponed,
+            "postponed_from": postponed.get(r.name),
             "greenhouse": r.custom_greenhouse,
             "spray_type": r.custom_spray_type,
             "scheduled": _iso(r.custom_scheduled_application_time),

@@ -21,6 +21,7 @@ export interface DatePickerProps {
    * dropdowns on form pages (see the Application Plan scheduling row).
    */
   variant?: "pill" | "field";
+  minDate?: string;
 }
 
 /** Borderless soft-shadow chip — the app-wide default look. */
@@ -45,6 +46,7 @@ export function DatePicker({
   disabled,
   variant = "pill",
 }: DatePickerProps) {
+  minDate,
   const [open, setOpen] = useState(false);
   const date = useMemo(() => (value ? parseYmd(value) : undefined), [value]);
   const display = useMemo(() => {
@@ -81,6 +83,7 @@ export function DatePicker({
               setOpen(false);
             }
           }}
+          disabled={minDate ? { before: parseYmd(minDate) } : undefined}
         />
       </PopoverContent>
     </Popover>

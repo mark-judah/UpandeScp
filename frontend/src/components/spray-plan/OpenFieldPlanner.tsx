@@ -8,6 +8,8 @@
  * list pick the same blocks. `focus` scrolls a block's row into view (a block picked on the map);
  * `rowExtra` adds a cell to each row (the block's heat for the observation on the map).
  */
+import { SprayWhenPicker } from "@/components/spray-plan/SprayWhenPicker";
+import { clampNotPast } from "@/lib/schedule";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,7 +51,7 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
   const [bootByCrop, setBootByCrop] = useState<Record<string, CreatorBootstrap | null>>({});
   const [plans, setPlans] = useState<Record<string, BlockPlan>>({});
   const [findings, setFindings] = useState<Record<string, BlockFindings>>({});
-  const [sprayDate, setSprayDate] = useState(todayAt("06:00"));
+  const [sprayDate, setSprayDate] = useState(() => clampNotPast(todayAt("06:00")));
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -161,15 +163,7 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
       {blocks.length > 0 && (
         <section className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3">
           <Label className="text-xs">Scheduled application</Label>
-          <DatePicker
-            variant="field"
-            value={splitDateTime(sprayDate).date}
-            onChange={(d) => setSprayDate(mergeDateTime(d, splitDateTime(sprayDate).time))}
-          />
-          <TimePicker
-            value={splitDateTime(sprayDate).time}
-            onChange={(t) => setSprayDate(mergeDateTime(splitDateTime(sprayDate).date, t))}
-          />
+          <SprayWhenPicker value={sprayDate} onChange={setSprayDate} />
         </section>
       )}
 

@@ -210,6 +210,9 @@ def _plan(wo: dict, target) -> dict:
         "reach": reach,
         "state": state,
         "missed": bool(lc.get("missed")),
+        "lateness": lc.get("lateness") or "none",
+        "postponed": bool(lc.get("postponed")),
+        "postponed_from": lc.get("postponed_from"),
         "acc": lc.get("accountability"),
         "target": target,
     }
@@ -283,6 +286,11 @@ def _one_line(p, first) -> str:
                if a.get("actor") else "Not started")
         label = STATE_PILL[p["state"]][0]
         sub += f" &nbsp;·&nbsp; {label.lower()}" if label else ""
+        if p.get("lateness") in ("amber", "orange", "red") and p["state"] != "stopped":
+            sub += f" &nbsp;·&nbsp; running late ({p['lateness']})"
+        if p.get("postponed"):
+            was = str(p.get("postponed_from") or "")[:10]
+            sub += f" &nbsp;·&nbsp; postponed{(' from ' + was) if was else ''}"
         sub += _acc_line(p)
     return f"""
   <tr><td style="padding:{'10px' if first else '6px'} 26px 0;">
@@ -298,6 +306,17 @@ def _one_line(p, first) -> str:
     </table>
   </td></tr>
 """
+
+
+def _marks(p) -> str:
+    """Late-grade and postponement notes for an open plan."""
+    out = ""
+    if p.get("lateness") in ("amber", "orange", "red") and p["state"] != "stopped":
+        out += f" &nbsp;·&nbsp; running late ({p['lateness']})"
+    if p.get("postponed"):
+        was = str(p.get("postponed_from") or "")[:10]
+        out += f" &nbsp;·&nbsp; postponed{(' from ' + was) if was else ''}"
+    return out
 
 
 def _open_card(p, first) -> str:
@@ -335,7 +354,7 @@ def _open_card(p, first) -> str:
           <tr style="font-size:9.5px;font-weight:600;">{''.join(cells)}</tr>
           <tr style="color:{MUTED};font-size:8.5px;font-weight:500;white-space:nowrap;padding-top:5px;">{''.join(times)}</tr>
         </table>
-        <div style="color:{MUTED};font-size:10.5px;padding-top:9px;">{_tail(p)}</div>
+        <div style="color:{MUTED};font-size:10.5px;padding-top:9px;">{_tail(p)}{_marks(p)}</div>
       </td></tr>
     </table>
   </td></tr>

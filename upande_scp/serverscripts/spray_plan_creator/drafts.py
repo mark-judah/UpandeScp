@@ -8,7 +8,7 @@ from frappe.utils import flt, getdate
 
 from ..common import crop_catalog, crop_protection
 from ..spray_compliance import api as compliance
-from . import block_groups
+from . import block_groups, lateness
 from .scope import _resolve_user_scope
 from .validation import (
     derive_cost_center, validate_preventive_reason, validate_rate_in_limits,
@@ -479,6 +479,7 @@ def create_draft_spray_plan(payload):
     payload["_blocks"] = block_groups.normalise_payload_blocks(payload)
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
+    lateness.assert_not_in_past(payload.get("custom_scheduled_application_time"))
 
     # R15: a bad alert must refuse BEFORE the plan is inserted.
     alert = (payload.get("alert") or "").strip()
@@ -645,6 +646,12 @@ def update_draft_plan(name: str, payload):
     payload["_blocks"] = block_groups.normalise_payload_blocks(payload) if sends_blocks else []
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
+    # Re-checked only when the date moved: a draft whose day has since passed can
+    # still have its chemicals edited.
+    lateness.assert_not_in_past(
+        payload.get("custom_scheduled_application_time"),
+        previous=wo.custom_scheduled_application_time,
+    )
 
     company = _derive_plan_company(payload) if payload.get("custom_greenhouse") else wo.company
     if payload.get("custom_greenhouse"):

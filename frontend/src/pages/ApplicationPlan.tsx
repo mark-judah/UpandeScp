@@ -1,3 +1,5 @@
+import { SprayWhenPicker } from "@/components/spray-plan/SprayWhenPicker";
+import { clampNotPast } from "@/lib/schedule";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchInput } from "@/components/SearchInput";
 import { AlertTriangle, Loader2, Plus, Trash2, Maximize2, FilePlus2, ShieldAlert } from "lucide-react";
@@ -305,7 +307,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
 
   // Spray + BOM state
   // Holds a full datetime string ("YYYY-MM-DD HH:mm:ss"); defaults to today 06:00.
-  const [sprayDate, setSprayDate] = useState<string>(todayAt("06:00"));
+  const [sprayDate, setSprayDate] = useState<string>(() => clampNotPast(todayAt("06:00")));
   const [sprayType, setSprayType] = useState<string>("");
   const [scope, setScope] = useState<string>("");
   const [bom, setBom] = useState<string>("");
@@ -1708,7 +1710,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       // farm/greenhouse). Anything tied to the previous greenhouse would
       // mislead the operator if it lingered.
       setGreenhouse("");
-      setSprayDate(todayAt("06:00"));
+      setSprayDate(clampNotPast(todayAt("06:00")));
       setSprayType("");
       setScope("");
       setBom("");
@@ -2235,19 +2237,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
               <div className="flex flex-col gap-1 col-span-2">
                 <Label>Scheduled Application</Label>
                 <div className="flex flex-wrap items-center gap-2">
-                  <DatePicker
-                    variant="field"
-                    value={splitDateTime(sprayDate).date}
-                    onChange={(d) =>
-                      setSprayDate(mergeDateTime(d, splitDateTime(sprayDate).time))
-                    }
-                  />
-                  <TimePicker
-                    value={splitDateTime(sprayDate).time}
-                    onChange={(t) =>
-                      setSprayDate(mergeDateTime(splitDateTime(sprayDate).date, t))
-                    }
-                  />
+                  <SprayWhenPicker value={sprayDate} onChange={setSprayDate} />
                 </div>
               </div>
               <div className="flex flex-col gap-1">

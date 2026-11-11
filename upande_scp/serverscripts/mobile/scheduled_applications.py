@@ -154,6 +154,23 @@ def fetchScheduledApplications(start_date=None, end_date=None, on_date=None):
 		for wo in work_orders:
 			wo["required_items"] = by_wo.get(wo["name"], [])
 
+		# Plans moved by an approved postponement carry the mark, so the handset can
+		# show them on their new date ("Postponed from ...") and let them be scanned.
+		from upande_scp.serverscripts.spray_plan_creator import lateness
+
+		moved = lateness.postponed_map([wo["name"] for wo in work_orders])
+		for wo in work_orders:
+			wo["postponed"] = wo["name"] in moved
+			wo["postponed_from"] = moved.get(wo["name"])
+		# The plan's own cutoff (per crop), so the handset can grade lateness and
+		# call a plan missed with no signal, by the same rule the site uses.
+		cutoffs: dict = {}
+		for wo in work_orders:
+			crop = lateness.crop_of_greenhouse(wo.get("custom_greenhouse"))
+			if crop not in cutoffs:
+				cutoffs[crop] = lateness.cutoff_for(crop)
+			wo["late_cutoff"] = cutoffs[crop]
+
 	# `frappe.response.data`, not the `message` envelope: the app reads `response.data`
 	# and this is the contract it was built against.
 	frappe.response["data"] = work_orders

@@ -46,6 +46,10 @@ export interface Lifecycle {
   current_step: LifecycleStepKey;
   scheduled: string | null;
   missed: boolean;
+  /** none | amber | orange | red | missed - see spray_plan_creator/lateness.py. */
+  lateness?: "none" | "amber" | "orange" | "red" | "missed";
+  postponed?: boolean;
+  postponed_from?: string | null;
   stopped: boolean;
   greenhouse: string | null;
   spray_type: string | null;
@@ -59,6 +63,9 @@ export interface LifecycleSummaryRow {
   current_step: LifecycleStepKey;
   stopped: boolean;
   missed: boolean;
+  lateness?: "none" | "amber" | "orange" | "red" | "missed";
+  postponed?: boolean;
+  postponed_from?: string | null;
   greenhouse: string | null;
   spray_type: string | null;
   scheduled: string | null;

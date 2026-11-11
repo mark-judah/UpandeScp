@@ -172,6 +172,17 @@ def _wo_block(wo: dict) -> str:
         f' <span style="border:1px solid {INK};padding:1px 4px;font-weight:700;">MISSED WINDOW</span>'
         if missed else ""
     )
+    late_level = lc.get("lateness")
+    if late_level in ("amber", "orange", "red") and not stopped:
+        state_extra += (
+            f' <span style="border:1px solid {INK};padding:1px 4px;">LATE ({late_level})</span>'
+        )
+    if lc.get("postponed"):
+        was = str(lc.get("postponed_from") or "")[:10]
+        state_extra += (
+            f' <span style="border:1px solid {INK};padding:1px 4px;">POSTPONED'
+            f'{(" FROM " + was) if was else ""}</span>'
+        )
 
     return f"""
     <div style="border:1px solid {LINE};border-radius:5px;padding:10px 12px;margin:0 0 8px;background:{PAPER};">

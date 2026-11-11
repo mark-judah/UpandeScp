@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Bar, TextSkeleton } from "@/components/Loading";
 import { Accountability } from "@/components/spray-plan/Accountability";
+import { LatenessBadge } from "@/components/spray-plan/LatenessBadge";
 import {
   fetchLifecycle,
   type Lifecycle,
@@ -185,6 +186,14 @@ export function LifecycleTimeline({
             <Ban className="h-3 w-3" />
             Cancelled
           </Badge>
+        )}
+        {!lifecycle.stopped && (
+          <LatenessBadge
+            level={lifecycle.lateness}
+            missed={lifecycle.missed}
+            postponed={lifecycle.postponed}
+            postponedFrom={lifecycle.postponed_from}
+          />
         )}
       </div>
       {lifecycle.stopped && (

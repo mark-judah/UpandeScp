@@ -123,6 +123,26 @@ def deadline_for(scheduled) -> "frappe.utils.datetime.datetime | None":
 	return get_datetime(f"{day} {cutoff_time()}")
 
 
+DEFAULT_TIME_OF_DAY = "06:00:00"
+
+
+def with_time_of_day(to_date, scheduled=None):
+	"""The target moment, keeping the plan's own time of day.
+
+	A date alone (or a bare midnight, which is what a date-only picker produces) must
+	not move a 06:00 spray to 00:00 - it would read as already late for the whole day.
+	"""
+	text = str(to_date or "").strip()
+	target = get_datetime(text)
+	date_only = len(text) <= 10
+	if date_only or (target.hour, target.minute, target.second) == (0, 0, 0):
+		tod = get_datetime(scheduled).strftime("%H:%M:%S") if scheduled else DEFAULT_TIME_OF_DAY
+		if tod == "00:00:00":
+			tod = DEFAULT_TIME_OF_DAY
+		target = get_datetime(f"{getdate(target)} {tod}")
+	return target
+
+
 def scheduled_of(wo) -> "frappe.utils.datetime.datetime | None":
 	"""The plan's scheduled moment, from whichever field carries it."""
 	value = (
@@ -287,7 +307,7 @@ def declare(work_order: str, to_date: str, reason: str) -> dict:
 			frappe.ValidationError,
 		)
 
-	target = get_datetime(to_date)
+	target = with_time_of_day(to_date, scheduled)
 	if scheduled and target <= scheduled:
 		frappe.throw("A postponement has to move the spray later, not earlier.")
 	limit = add_days(getdate(scheduled or now_datetime()), max_days())

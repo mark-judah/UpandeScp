@@ -5,6 +5,29 @@ from datetime import datetime, timedelta
 from .geo_utils import get_zone_from_coordinates, get_tree_from_coordinates
 
 
+FUTURE_TOLERANCE_MINUTES = 5
+
+
+def clamp_future_capture(date_of_capture, time_of_capture, now=None, tolerance_minutes=FUTURE_TOLERANCE_MINUTES):
+    """``(date, time, clamped)``: a capture stamped beyond now + tolerance is pulled back to now.
+
+    ``now`` is the site's wall clock (naive), the same frame the handset now sends.
+    Unparseable or missing stamps pass through untouched.
+    """
+    from frappe.utils import get_datetime, now_datetime
+
+    try:
+        stamped = get_datetime(f"{date_of_capture} {time_of_capture}")
+    except Exception:
+        return date_of_capture, time_of_capture, False
+    if not date_of_capture or not time_of_capture:
+        return date_of_capture, time_of_capture, False
+    current = now or now_datetime()
+    if stamped <= current + timedelta(minutes=tolerance_minutes):
+        return date_of_capture, time_of_capture, False
+    return current.strftime("%Y-%m-%d"), current.strftime("%H:%M:%S"), True
+
+
 @frappe.whitelist()
 def fetchTraps(greenhouse=None):
     try:
@@ -361,8 +384,21 @@ def createScoutingEntry():
                     scout_doc.greenhouse = greenhouse
                     scout_doc.bed        = bed
                     scout_doc.zone       = determined_zone
-                scout_doc.time_of_capture = entry_data.get('time_of_capture')
-                scout_doc.date_of_capture = entry_data.get('date_of_capture')
+                # A capture stamped in the future (a phone clock running fast) is
+                # clamped to now and flagged for review, never refused: the
+                # observation is real, only its stamp is wrong.
+                cap_date, cap_time, clamped = clamp_future_capture(
+                    entry_data.get('date_of_capture'), entry_data.get('time_of_capture')
+                )
+                if clamped:
+                    requires_review = True
+                    frappe.logger("scouting").warning(
+                        "Scouting capture stamped %s %s clamped to %s %s (%s)",
+                        entry_data.get('date_of_capture'), entry_data.get('time_of_capture'),
+                        cap_date, cap_time, entry_data.get('scouts_name'),
+                    )
+                scout_doc.time_of_capture = cap_time
+                scout_doc.date_of_capture = cap_date
                 scout_doc.latitude        = latitude
                 scout_doc.longitude       = longitude
                 scout_doc.crop_scouted    = entry_data.get('crop_scouted')

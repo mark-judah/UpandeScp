@@ -6,12 +6,13 @@
  * acts on.
  */
 import { Accountability } from "@/components/spray-plan/Accountability";
+import { LatenessBadge } from "@/components/spray-plan/LatenessBadge";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { HeaderIconButton } from "@/components/header-controls";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Table,
@@ -32,9 +33,8 @@ import {
   type LifecycleSummaryRow,
 } from "@/lib/lifecycle-api";
 import { ymd, cn } from "@/lib/utils";
-import { farmPrefix } from "@/lib/places";
+import { EMPTY_PLACE_SET, farmPrefix, type PlaceSet } from "@/lib/places";
 
-const ALL = "__all__";
 
 // Stage → badge tone. The store cares most about the middle of the flow.
 const STATE_TONE: Record<string, string> = {
@@ -57,7 +57,7 @@ function defaultRange(): { from: string; to: string } {
 export function ChemicalProgress() {
   const [from, setFrom] = useState(defaultRange().from);
   const [to, setTo] = useState(defaultRange().to);
-  const [farm, setFarm] = useState(ALL);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [rows, setRows] = useState<LifecycleSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
   // An empty list is a valid answer, so "has data" is "a response landed".
@@ -95,8 +95,8 @@ export function ChemicalProgress() {
   );
 
   const visible = useMemo(
-    () => (farm === ALL ? rows : rows.filter((r) => farmPrefix(r.greenhouse) === farm)),
-    [rows, farm],
+    () => (places.farms.length ? rows.filter((r) => places.farms.includes(farmPrefix(r.greenhouse))) : rows),
+    [rows, places],
   );
 
   const skeleton = firstLoad(loading, loaded);
@@ -144,13 +144,7 @@ export function ChemicalProgress() {
             setTo(r.to);
           }}
         />
-        <PlacePicker
-          level="farm"
-          farms={farms}
-          value={{ farm: farm === ALL ? "" : farm, greenhouse: "" }}
-          onChange={(p) => setFarm(p.farm || ALL)}
-          disabled={skeleton}
-        />
+        <PlaceMultiPicker farms={farms} value={places} onChange={setPlaces} disabled={skeleton} />
       </div>
 
       <div className="px-4 md:px-6 py-4 flex-1" aria-busy={loading || undefined}>
@@ -205,11 +199,13 @@ export function ChemicalProgress() {
                               >
                                 {r.stopped ? "Cancelled" : r.current_state}
                               </Badge>
-                              {r.missed && (
-                                <span className="inline-flex items-center gap-1 text-[0.6rem] font-medium text-[var(--sd-data-red)]">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  Missed
-                                </span>
+                              {!r.stopped && (
+                                <LatenessBadge
+                                  level={r.lateness}
+                                  missed={r.missed}
+                                  postponed={r.postponed}
+                                  postponedFrom={r.postponed_from}
+                                />
                               )}
                             </div>
                             {(r.missed || r.current_state !== "Completed") && !r.stopped && (

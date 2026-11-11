@@ -21,6 +21,7 @@ export interface DatePickerProps {
    * dropdowns on form pages (see the Application Plan scheduling row).
    */
   variant?: "pill" | "field";
+  /** YYYY-MM-DD; days before it are disabled (e.g. no planning in the past). */
   minDate?: string;
 }
 
@@ -45,8 +46,8 @@ export function DatePicker({
   className,
   disabled,
   variant = "pill",
-}: DatePickerProps) {
   minDate,
+}: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const date = useMemo(() => (value ? parseYmd(value) : undefined), [value]);
   const display = useMemo(() => {
@@ -73,17 +74,22 @@ export function DatePicker({
           {display}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent
+        role="dialog"
+        aria-label={`${label || "Date"} picker`}
+        className="w-auto max-w-[calc(100vw-1rem)] p-0"
+        align="start"
+      >
         <Calendar
           mode="single"
           selected={date}
+          disabled={minDate ? { before: parseYmd(minDate) } : undefined}
           onSelect={(d) => {
             if (d) {
               onChange(ymd(d));
               setOpen(false);
             }
           }}
-          disabled={minDate ? { before: parseYmd(minDate) } : undefined}
         />
       </PopoverContent>
     </Popover>

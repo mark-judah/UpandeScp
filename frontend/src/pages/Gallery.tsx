@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { HEADER_PILL } from "@/components/header-controls";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { FindingPanel, KindPill } from "@/components/gallery/FindingPanel";
@@ -31,7 +31,7 @@ import {
 import { errorText } from "@/lib/errors";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
 import { ymd } from "@/lib/utils";
-import { shortHouse } from "@/lib/places";
+import { EMPTY_PLACE_SET, placeSetParams, shortHouse, type PlaceSet } from "@/lib/places";
 import { formatCapture } from "@/lib/capture-time";
 
 const ALL = "__all__";
@@ -58,8 +58,8 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
   const { farms, loading: farmsLoading } = useCropFarms(crop);
   // "" is "all" at each level (the place picker's value).
-  const [farm, setFarm] = useState("");
-  const [greenhouse, setGreenhouse] = useState("");
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const { farm, greenhouse } = useMemo(() => placeSetParams(places, farms), [places, farms]);
   const [kind, setKind] = useState<string>(ALL);
   const [subject, setSubject] = useState<string>(ALL);
   const [scout, setScout] = useState<string>(ALL);
@@ -179,15 +179,12 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
       <PageHeader eyebrow="Scouting · Photos from the field" title="Visual findings">
-          <PlacePicker
+          <PlaceMultiPicker
             farms={farms}
             crop={crop}
             label="Visual findings place"
-            value={{ farm, greenhouse }}
-            onChange={(p) => {
-              setFarm(p.farm);
-              setGreenhouse(p.greenhouse);
-            }}
+            value={places}
+            onChange={setPlaces}
             disabled={farmsLoading}
           />
           <Select

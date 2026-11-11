@@ -37,8 +37,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DateRangePicker } from "@/components/DateRangePicker";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
 import { IssueListPdfButton } from "@/components/store/IssueListPdfButton";
+import { EMPTY_PLACE_SET, type PlaceSet } from "@/lib/places";
 import {
   Select,
   SelectContent,
@@ -80,7 +81,6 @@ import { cn } from "@/lib/utils";
 import { Bar, TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 
 import { errorText } from "@/lib/errors";
-const ALL_FARMS = "__all__";
 const CUSTOM = "__custom__";
 
 // Preset sizes — width × height in mm. Ordered roughly by use frequency.
@@ -345,7 +345,7 @@ function PreviewLabel({
 export function Labels() {
   const [rows, setRows] = useState<SubmittedTransferRow[]>([]);
   const [farms, setFarms] = useState<string[]>([]);
-  const [farm, setFarm] = useState<string>(ALL_FARMS);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -479,9 +479,9 @@ export function Labels() {
   const skeleton = firstLoad(loading || (!loaded && !error), loaded);
 
   const visibleRows = useMemo(() => {
-    if (farm === ALL_FARMS) return rows;
-    return rows.filter((r) => (r.farm || "") === farm);
-  }, [rows, farm]);
+    if (!places.farms.length) return rows;
+    return rows.filter((r) => places.farms.includes(r.farm || ""));
+  }, [rows, places]);
 
   // Group visible rows by greenhouse for the selection tree.
   const byGreenhouse = useMemo(() => {
@@ -651,11 +651,10 @@ export function Labels() {
           </>
         }
       >
-        <PlacePicker
-          level="farm"
+        <PlaceMultiPicker
           farms={farms}
-          value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
-          onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+          value={places}
+          onChange={setPlaces}
           disabled={skeleton}
         />
         <DateRangePicker

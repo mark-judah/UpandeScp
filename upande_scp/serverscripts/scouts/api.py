@@ -16,8 +16,12 @@ from __future__ import annotations
 from datetime import timedelta
 from importlib import import_module
 
+import json
+
 import frappe
 from frappe.utils import getdate, nowdate
+
+from upande_scp.serverscripts.common.place_filter import parse_names
 
 from upande_scp.serverscripts.common import crew_availability as CA
 from upande_scp.serverscripts.common import crop_catalog, crop_scope
@@ -57,14 +61,20 @@ def farm_scope(crop, farm, farms_map, user=None) -> dict:
 	known = [f for f in farms_map if crop_farms is None or f in crop_farms]
 	options = sorted(f for f in known if visible is None or f in visible)
 	all_ok = visible is None or set(known) <= visible
-	farm = (farm or "").strip()
-	if farm:
-		if farm not in options:
-			frappe.throw(f"You cannot see the scouts of farm {farm}.", frappe.PermissionError)
-	elif not all_ok:
+	# ``farm`` may name several (JSON list); "__all__" is an explicit "every farm
+	# I may see", as opposed to blank = the server's choice.
+	explicit_all = str(farm or "").strip() == "__all__"
+	names = parse_names(farm)
+	for n in names:
+		if n not in options:
+			frappe.throw(f"You cannot see the scouts of farm {n}.", frappe.PermissionError)
+	if explicit_all:
+		names = [] if all_ok else list(options)
+	elif not names and not all_ok:
 		if not options:
 			frappe.throw("You have no farm whose scouts you can see.", frappe.PermissionError)
-		farm = options[0]
+		names = [options[0]]
+	farm = names[0] if len(names) == 1 else (json.dumps(names) if names else "")
 	return {"farm": farm, "farms": options, "allFarms": all_ok}
 
 

@@ -38,7 +38,7 @@ Object.defineProperty(window, "matchMedia", {
 afterEach(() => {
   try {
     for (const k of Object.keys(window.localStorage)) {
-      if (k.startsWith("scp.place.")) window.localStorage.removeItem(k);
+      if (k.startsWith("scp.place.") || k.startsWith("scp.placeset.")) window.localStorage.removeItem(k);
     }
   } catch {
     /* no storage */

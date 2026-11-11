@@ -31,7 +31,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CsuStockMap } from "@/components/stock/CsuStockMap";
 import { HeaderIconButton } from "@/components/header-controls";
 import { Badge } from "@/components/ui/badge";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, type PlaceSet } from "@/lib/places";
 import {
   Card,
   CardContent,
@@ -154,8 +155,8 @@ export function CreatorStock() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"available" | "csu">("csu");
   const [onlyAlerts, setOnlyAlerts] = useState(false);
-  const ALL_FARMS = "__all_farms";
-  const [selectedFarm, setSelectedFarm] = useState<string>(ALL_FARMS);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const selectedFarms = places.farms;
 
   const load = () => {
     setLoading(true);
@@ -182,10 +183,10 @@ export function CreatorStock() {
   // farms list to a stable dependency key.
   useEffect(() => {
     if (!data) return;
-    if (selectedFarm !== ALL_FARMS && !data.farms.includes(selectedFarm)) {
-      setSelectedFarm(ALL_FARMS);
+    if (selectedFarms.some((f) => !data.farms.includes(f))) {
+      setPlaces((p) => ({ ...p, farms: p.farms.filter((f) => data.farms.includes(f)) }));
     }
-  }, [data, selectedFarm]);
+  }, [data, selectedFarms]);
 
   /** Narrow the dataset to the selected farm before any other filtering
    *  happens. Everything downstream (alerts, bullets, KPIs, warehouse
@@ -193,10 +194,10 @@ export function CreatorStock() {
    *  source of truth. */
   const scopedData = useMemo<CreatorStockOverview | null>(() => {
     if (!data) return null;
-    if (selectedFarm === ALL_FARMS) return data;
-    const csus = data.csus.filter((w) => w.farm === selectedFarm);
+    if (!selectedFarms.length) return data;
+    const csus = data.csus.filter((w) => selectedFarms.includes(w.farm));
     const stores = data.chemical_stores.filter(
-      (w) => w.farm === selectedFarm,
+      (w) => selectedFarms.includes(w.farm),
     );
     return {
       ...data,
@@ -209,7 +210,7 @@ export function CreatorStock() {
       ),
       aged_csu_count: csus.reduce((s, w) => s + w.aged_count, 0),
     };
-  }, [data, selectedFarm]);
+  }, [data, selectedFarms]);
 
   const filteredCsus = useMemo<CreatorStockWarehouseCsu[]>(() => {
     if (!scopedData) return [];
@@ -297,11 +298,10 @@ export function CreatorStock() {
           >
             {/* One place pill (place picker G2), shown for every user so the
                 layout is the same; a single farm reads as itself. */}
-            <PlacePicker
-              level="farm"
+            <PlaceMultiPicker
               farms={data?.farms || []}
-              value={{ farm: selectedFarm === ALL_FARMS ? "" : selectedFarm, greenhouse: "" }}
-              onChange={(p) => setSelectedFarm(p.farm || ALL_FARMS)}
+              value={places}
+              onChange={setPlaces}
               disabled={!data}
             />
             {tab === "available" && (

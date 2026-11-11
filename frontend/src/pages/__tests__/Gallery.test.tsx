@@ -89,12 +89,13 @@ describe("Scouting ▸ Gallery", () => {
     fetchPhotoFeed.mockResolvedValue(page([photo(1)], false));
     render(<Gallery initialCrop="Rose" />);
     await screen.findByTestId("gallery-masonry");
-    // The place picker: one pill, a farm row then a house row.
+    // The place picker (multi-select): everything starts ticked; unticking a
+    // farm leaves the other, then unticking a house leaves just the other house.
     fireEvent.click(screen.getByRole("button", { name: "Visual findings place" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Chepsito" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Kaptumbo" }));
     await waitFor(() => expect(fetchPhotoFeed).toHaveBeenLastCalledWith(expect.objectContaining({ farm: "Chepsito" }), 0));
-    fireEvent.click(screen.getByRole("button", { name: "Visual findings place" }));
-    fireEvent.click(await screen.findByRole("option", { name: "GH2" }));
+    // (the list stays open while ticking)
+    fireEvent.click(await screen.findByRole("option", { name: "GH1" }));
     fireEvent.change(screen.getByLabelText("Gallery kind"), { target: { value: "pest" } });
     fireEvent.change(screen.getByLabelText("Gallery observation"), { target: { value: "Thrips" } });
     fireEvent.change(screen.getByLabelText("Gallery scout"), { target: { value: "EMP-1" } });
@@ -107,7 +108,7 @@ describe("Scouting ▸ Gallery", () => {
     await waitFor(() =>
       expect(fetchPhotoFeed).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          farm: "Chepsito", greenhouse: "GH2 - KR", kind: "pest", name: "Thrips", scout: "EMP-1", from_date: wantFrom,
+          farm: "", greenhouse: "GH2 - KR", kind: "pest", name: "Thrips", scout: "EMP-1", from_date: wantFrom,
         }),
         0,
       ),

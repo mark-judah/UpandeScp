@@ -344,8 +344,12 @@ def list_application_work_orders(
         ["Work Order", "custom_scheduled_application_time", ">=", df],
         ["Work Order", "custom_scheduled_application_time", "<=", add_days(dt, 1)],
     ]
-    if greenhouse:
-        filters.append(["Work Order", "custom_greenhouse", "=", greenhouse])
+    from upande_scp.serverscripts.common.place_filter import parse_names
+
+    house_names = parse_names(greenhouse)
+    farm_names = parse_names(farm)
+    if house_names:
+        filters.append(["Work Order", "custom_greenhouse", "in", house_names])
     s = (status or "").lower()
     if s == "pending":
         filters.append(["Work Order", "docstatus", "=", 0])
@@ -381,8 +385,8 @@ def list_application_work_orders(
     # greenhouse name on " - " and fall back to a case-insensitive substring
     # test, which both hardcoded one site's naming convention and matched the
     # wrong farm whenever one farm's name is a substring of another's.
-    if farm:
-        farm_ghs = set(farm_map.greenhouses_for_farm(farm))
+    if farm_names:
+        farm_ghs = {g for f in farm_names for g in farm_map.greenhouses_for_farm(f)}
         rows = [w for w in rows if w.get("custom_greenhouse") in farm_ghs]
     for w in rows:
         ds = w.get("docstatus")

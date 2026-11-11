@@ -1,0 +1,166 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "window_section",
+  "spray_window_hours",
+  "warn_section",
+  "rain_prob_warn",
+  "rain_mm_warn",
+  "wind_warn_kmh",
+  "gust_warn_kmh",
+  "humidity_warn_pct",
+  "dew_spread_warn_c",
+  "condensation_section",
+  "condensation_alerts_enabled",
+  "condensation_spread_c",
+  "condensation_hours",
+  "condensation_lookback_hours",
+  "sensor_section",
+  "sensor_nearest_m",
+  "sensor_pair_minutes"
+ ],
+ "fields": [
+  {
+   "fieldname": "window_section",
+   "fieldtype": "Section Break",
+   "label": "Spray window forecast"
+  },
+  {
+   "fieldname": "spray_window_hours",
+   "fieldtype": "Int",
+   "label": "Spray window (hours from planned time)",
+   "default": "4"
+  },
+  {
+   "fieldname": "warn_section",
+   "fieldtype": "Section Break",
+   "label": "Warn thresholds (warnings only, never block)"
+  },
+  {
+   "fieldname": "rain_prob_warn",
+   "fieldtype": "Int",
+   "label": "Rain probability at or above (%)",
+   "default": "40"
+  },
+  {
+   "fieldname": "rain_mm_warn",
+   "fieldtype": "Float",
+   "label": "Rain at or above (mm in window)",
+   "default": "0.5"
+  },
+  {
+   "fieldname": "wind_warn_kmh",
+   "fieldtype": "Float",
+   "label": "Wind at or above (km/h)",
+   "default": "15"
+  },
+  {
+   "fieldname": "gust_warn_kmh",
+   "fieldtype": "Float",
+   "label": "Gusts at or above (km/h)",
+   "default": "25"
+  },
+  {
+   "fieldname": "humidity_warn_pct",
+   "fieldtype": "Int",
+   "label": "Relative humidity at or above (%)",
+   "default": "85"
+  },
+  {
+   "fieldname": "dew_spread_warn_c",
+   "fieldtype": "Float",
+   "label": "Temperature minus dew point at or below (C)",
+   "default": "2"
+  },
+  {
+   "fieldname": "condensation_section",
+   "fieldtype": "Section Break",
+   "label": "Condensation risk (downy mildew) from sensors"
+  },
+  {
+   "fieldname": "condensation_alerts_enabled",
+   "fieldtype": "Check",
+   "label": "Raise condensation alerts",
+   "default": "1"
+  },
+  {
+   "fieldname": "condensation_spread_c",
+   "fieldtype": "Float",
+   "label": "Temperature minus dew point at or below (C)",
+   "default": "2"
+  },
+  {
+   "fieldname": "condensation_hours",
+   "fieldtype": "Float",
+   "label": "For at least (hours)",
+   "default": "2"
+  },
+  {
+   "fieldname": "condensation_lookback_hours",
+   "fieldtype": "Int",
+   "label": "Look back (hours)",
+   "default": "12"
+  },
+  {
+   "fieldname": "sensor_section",
+   "fieldtype": "Section Break",
+   "label": "Sensor mapping"
+  },
+  {
+   "fieldname": "sensor_nearest_m",
+   "fieldtype": "Int",
+   "label": "Nearest greenhouse within (m) when outside every outline",
+   "default": "40"
+  },
+  {
+   "fieldname": "sensor_pair_minutes",
+   "fieldtype": "Int",
+   "label": "Pair temperature and humidity readings within (minutes)",
+   "default": "15"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-11 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "SCP Weather Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "SCP General Manager",
+   "write": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Scout"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "issingle": 1
+}

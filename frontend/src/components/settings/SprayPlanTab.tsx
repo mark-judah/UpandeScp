@@ -3,6 +3,7 @@
  * thresholds, gating flags, allowed farms, exclude keywords.
  */
 
+import { TimePicker } from "@/components/TimePicker";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -549,13 +550,10 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <Label className="text-[0.7rem]">Daily cutoff time</Label>
-            <Input
-              type="time"
+            <TimePicker
+              label="Daily cutoff time"
               value={(draft.spray_cutoff_time || "10:00:00").slice(0, 5)}
-              onChange={(e) =>
-                set("spray_cutoff_time", `${e.target.value}:00`)
-              }
-              className="h-9 w-32"
+              onChange={(t) => set("spray_cutoff_time", `${t}:00`)}
             />
             <p className="mt-1 text-[0.65rem] leading-snug text-muted-foreground">
               Measured on the plan&apos;s <strong>own</strong> spray date. After it,

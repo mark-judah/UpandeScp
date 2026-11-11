@@ -18,6 +18,7 @@ vi.mock("@/lib/frappe", async (importOriginal) => ({
   call: (...a: unknown[]) => (call as (...x: unknown[]) => unknown)(...a),
 }));
 vi.mock("@/hooks/use-realtime", () => ({ useRealtime: () => {} }));
+vi.mock("@/components/coverage/ZoneCoverage", () => ({ ZoneCoverage: () => null }));
 vi.mock("@/hooks/use-job-progress", () => ({ useJobProgress: () => null }));
 vi.mock("@/hooks/use-crop-farms", () => ({
   useCropFarms: () => ({ farms: { Chepsito: ["GH1 - KR"] }, loading: false }),

@@ -45,7 +45,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/PageHeader";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, farmOf, isEmptyPlaceSet, placeSetParams, type FarmHouses, type PlaceSet } from "@/lib/places";
+import { CondensationAlerts, WindowWeatherChip, useWindowWeather, type WindowItem } from "@/components/WeatherWindow";
 import { TogglePill } from "@/components/TogglePill";
 import { ClearFiltersPill } from "@/components/ClearFiltersPill";
 import { StalePlansTab } from "@/components/spray-plan/StalePlansTab";
@@ -106,12 +108,20 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   const toast = useToast();
   const [from, setFrom] = useState(defaultRange().from);
   const [to, setTo] = useState(defaultRange().to);
-  const [farm, setFarm] = useState<string>(ALL);
-  const [greenhouse, setGreenhouse] = useState<string>(ALL);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [farmsData, setFarmsData] = useState<FarmsAndGreenhouses>({
     farms: [],
     greenhouses_by_farm: {},
   });
+  // The place set as request params; ALL where nothing is picked (the page's
+  // own "no filter" marker). Several names travel as a JSON list.
+  const { farm, greenhouse } = useMemo(() => {
+    const p = placeSetParams(
+      places,
+      Object.fromEntries(farmsData.farms.map((f) => [f, farmsData.greenhouses_by_farm[f] || []])),
+    );
+    return { farm: p.farm || ALL, greenhouse: p.greenhouse || ALL };
+  }, [places, farmsData]);
   const [feed, setFeed] = useState<FeedState>(EMPTY_FEED);
   const allWos = feed.wos;
   // Plans that arrived while the page was open: they carry a "New" pill until
@@ -263,6 +273,23 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
     [groupFarms, visibleWos],
   );
 
+  // Spray-window weather (planned time + 4 h) per plan, and per farm heading when
+  // grouped (the farm's earliest plan). One batched request; warn-only.
+  const weatherItems = useMemo<WindowItem[]>(() => {
+    const items: WindowItem[] = [];
+    const first = new Map<string, string>();
+    for (const w of visibleWos) {
+      const start = String(w.custom_scheduled_application_time || w.planned_start_date || "");
+      const farmName = w.farm || farmOf(w.custom_greenhouse, farmsData.greenhouses_by_farm) || "";
+      if (!farmName || !start) continue;
+      items.push({ key: w.name, farm: farmName, start, wo: w.name });
+      if (!first.has(farmName) || start < first.get(farmName)!) first.set(farmName, start);
+    }
+    if (groupFarms) first.forEach((start, f) => items.push({ key: `farm:${f}`, farm: f, start }));
+    return items;
+  }, [visibleWos, groupFarms, farmsData]);
+  const weather = useWindowWeather(tab === "pending" ? weatherItems : []);
+
   // Drop checked WOs that are no longer visible after filter changes.
   useEffect(() => {
     setChecked((prev) => {
@@ -276,7 +303,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   }, [visibleWos]);
 
   // farm → greenhouses for the place picker.
-  const placeFarms = useMemo(
+  const placeFarms = useMemo<FarmHouses>(
     () => Object.fromEntries(farmsData.farms.map((f) => [f, farmsData.greenhouses_by_farm[f] || []])),
     [farmsData],
   );
@@ -323,8 +350,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   const clearFilters = () => {
     setFrom("");
     setTo("");
-    setFarm(ALL);
-    setGreenhouse(ALL);
+    setPlaces(EMPTY_PLACE_SET);
   };
 
   // ── Bulk approve / stop ───────────────────────────────────────────
@@ -496,13 +522,10 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         </TogglePill>
           ) },
           { key: "place", node: (
-        <PlacePicker
+        <PlaceMultiPicker
           farms={placeFarms}
-          value={{ farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse }}
-          onChange={(p) => {
-            setFarm(p.farm || ALL);
-            setGreenhouse(p.greenhouse || ALL);
-          }}
+          value={places}
+          onChange={setPlaces}
           disabled={!farmsData.farms.length}
         />
           ) },
@@ -513,7 +536,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         ]}
       >
         <ClearFiltersPill
-          active={Boolean(from || to || farm !== ALL || greenhouse !== ALL)}
+          active={Boolean(from || to || !isEmptyPlaceSet(places))}
           onClear={clearFilters}
         />
       </PageHeader>
@@ -539,6 +562,8 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
             onCount={setStaleCount}
           />
         </div>
+
+        {tab === "pending" && <CondensationAlerts farms={places.farms} />}
 
         {tab === "pending" && !errorMsg && !visibleWos.length && !loading && (
           <Card>
@@ -628,6 +653,10 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
                                 {w.__farmHead.plans.length} plan
                                 {w.__farmHead.plans.length !== 1 ? "s" : ""}
                               </span>
+                              <WindowWeatherChip
+                                weather={weather[`farm:${w.__farmHead.farm}`]?.weather}
+                                className="mt-0.5"
+                              />
                             </TableCell>
                           </TableRow>
                         ) : null}
@@ -679,6 +708,11 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
                             <span className="rounded bg-muted px-1.5 py-0.5">
                               {sched}
                             </span>
+                            <WindowWeatherChip
+                              weather={weather[w.name]?.weather}
+                              snapshot={weather[w.name]?.snapshot}
+                              className="mt-1 font-normal"
+                            />
                           </TableCell>
                           <TableCell className="text-xs">
                             {w.custom_spray_type ? (

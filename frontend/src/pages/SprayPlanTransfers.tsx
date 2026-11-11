@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
 import { IssueListPdfButton } from "@/components/store/IssueListPdfButton";
+import { EMPTY_PLACE_SET, encodeNames, type PlaceSet } from "@/lib/places";
 import { SearchInput } from "@/components/SearchInput";
 import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
 import { ZeroValuedList } from "@/components/store/ZeroValuedList";
@@ -76,7 +77,6 @@ import { PlannedChemicalsPanel } from "@/components/PlannedChemicalsPanel";
 import { cn } from "@/lib/utils";
 
 import { errorText } from "@/lib/errors";
-const ALL_FARMS = "__all__";
 
 function fmt(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -90,7 +90,7 @@ const SUBMIT_CHUNK = 5;
 export function SprayPlanTransfers() {
   const [rows, setRows] = useState<TransferRow[]>([]);
   const [farms, setFarms] = useState<string[]>([]);
-  const [farm, setFarm] = useState<string>(ALL_FARMS);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -273,9 +273,9 @@ export function SprayPlanTransfers() {
   };
 
   const visibleRows = useMemo(() => {
-    if (farm === ALL_FARMS) return rows;
-    return rows.filter((r) => (r.farm || "") === farm);
-  }, [rows, farm]);
+    if (!places.farms.length) return rows;
+    return rows.filter((r) => places.farms.includes(r.farm || ""));
+  }, [rows, places]);
 
   const allSelectedHere = useMemo(
     () =>
@@ -472,12 +472,11 @@ export function SprayPlanTransfers() {
         eyebrow="Material Transfer for Manufacture · biometric-authorised bulk submit"
       >
         <div className="flex flex-wrap items-center gap-2">
-            <PlacePicker
-              level="farm"
+            <PlaceMultiPicker
               farms={farms}
               label="Transfers farm"
-              value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
-              onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+              value={places}
+              onChange={setPlaces}
             />
             <DateRangePicker
               label="Transfers date range"
@@ -774,7 +773,7 @@ export function SprayPlanTransfers() {
             <CardDescription>
               {visibleRows.length} draft
               {visibleRows.length === 1 ? "" : "s"} ·{" "}
-              {farm === ALL_FARMS ? "all farms" : farm}
+              {places.farms.length ? places.farms.join(", ") : "all farms"}
               {selected.size > 0 ? ` · ${selected.size} selected` : ""}
             </CardDescription>
           </CardHeader>
@@ -985,7 +984,7 @@ export function SprayPlanTransfers() {
         {/* What is coming, once the GM approves it. Read-only, and below the
             actionable list on purpose: the keeper's work comes first. */}
         <PlannedChemicalsPanel
-          farm={farm === ALL_FARMS ? undefined : farm}
+          farm={encodeNames(places.farms) || undefined}
           fromDate={fromDate || undefined}
           toDate={toDate || undefined}
         />

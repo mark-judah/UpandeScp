@@ -274,6 +274,8 @@ doc_events = {
             "upande_scp.serverscripts.spray_plan_creator.reservations.enforce_stock_gate",
         ],
         "before_update_after_submit": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+        # The spray-window forecast, kept on the plan at submit (warn-only context).
+        "before_submit": "upande_scp.serverscripts.common.weather_window.stamp_snapshot",
         # Live Spray Plan Approvals: tell approvers a plan arrived / moved.
         "after_insert": "upande_scp.serverscripts.spray_plan_ops.approval_realtime.after_insert",
         "on_submit": "upande_scp.serverscripts.spray_plan_ops.approval_realtime.on_submit",
@@ -464,6 +466,10 @@ scheduler_events = {
         "upande_scp.serverscripts.sprayers.register.daily",
     ],
     "hourly": [
+        # Greenhouse sensors: temperature minus dew point <= 2 C for 2 h raises
+        # one "scout for downy mildew" notice per greenhouse per day. A no-op
+        # on a site without the sensors app.
+        "upande_scp.serverscripts.common.condensation.hourly",
         # Keep the current + previous ISO week of scouting payload warm in Redis
         # all day (per-week cache TTL is 1h; writes bust the active week).
         "upande_scp.serverscripts.scouting.scouting_prewarm.hourly_prewarm",

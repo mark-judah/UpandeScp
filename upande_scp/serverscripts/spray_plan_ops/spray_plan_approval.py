@@ -14,6 +14,7 @@ from frappe.utils import add_days, cstr, flt, now_datetime, today
 
 from upande_scp.serverscripts.common import crop_scope
 from upande_scp.serverscripts.common import farm_map
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_TRANSFER
 
 AFP_TYPE = "Application Floor Plan"
@@ -161,15 +162,17 @@ def get_pending_work_orders(
         where.append(f"{date_column} < %(to_date)s")
         params["to_date"] = str(add_days(to_date, 1)) + " 00:00:00"
 
-    if greenhouse:
-        where.append("custom_greenhouse = %(greenhouse)s")
-        params["greenhouse"] = greenhouse
-    elif farm:
+    house_names = parse_names(greenhouse)
+    farm_names = parse_names(farm)
+    if house_names:
+        where.append("custom_greenhouse IN %(greenhouse)s")
+        params["greenhouse"] = tuple(house_names)
+    elif farm_names:
         # By link, not by name. `LIKE '<farm> GH%'` hardcoded one site's naming
         # convention and, even there, missed every greenhouse whose name does
         # not begin with its farm — "Kapkolia Wetland GH 3", the CSU phases, and
         # all 37 test-farm units among them.
-        farm_ghs = farm_map.greenhouses_for_farm(farm)
+        farm_ghs = list(dict.fromkeys(g for f in farm_names for g in farm_map.greenhouses_for_farm(f)))
         if not farm_ghs:
             return {"work_orders": [], "farms": []}
         where.append("custom_greenhouse IN %(farm_ghs)s")

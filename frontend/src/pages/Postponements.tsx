@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
+import { DatePicker } from "@/components/DatePicker";
+import { TimePicker } from "@/components/TimePicker";
 import { HeaderIconButton } from "@/components/header-controls";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -101,6 +103,12 @@ export function Postponements() {
 
   const [target, setTarget] = useState<PostponablePlan | null>(null);
   const [toDate, setToDate] = useState("");
+  // The time of day of the new slot; starts at the plan's own (06:00 if none).
+  const [toTime, setToTime] = useState("06:00");
+  useEffect(() => {
+    const tod = (target?.scheduled || "").slice(11, 16);
+    setToTime(tod && tod !== "00:00" ? tod : "06:00");
+  }, [target]);
   const [reason, setReason] = useState("");
   const [rejecting, setRejecting] = useState<Postponement | null>(null);
   const [note, setNote] = useState("");
@@ -138,7 +146,14 @@ export function Postponements() {
     if (!target) return;
     setBusy(true);
     try {
-      await declarePostponement(target.work_order, toDate, reason);
+      // A picked day at midnight keeps the plan's own time of day (06:00 if none),
+      // so a postponed spray is not instantly "late" at 00:00.
+      let when = toDate;
+      if (/T00:00(:00)?$/.test(when)) {
+        const tod = (target.scheduled || "").slice(11, 16);
+        when = `${when.slice(0, 10)}T${tod && tod !== "00:00" ? tod : "06:00"}`;
+      }
+      await declarePostponement(target.work_order, when, reason);
       push("Sent for approval — the plan keeps its date until then", "ok");
       setTarget(null);
       setToDate("");
@@ -499,11 +514,22 @@ export function Postponements() {
                 ? ` · can move up to ${latestAllowed(target.scheduled, settings.max_days)}`
                 : ""}
             </div>
-            <Input
-              type="datetime-local"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-            />
+            <div className="flex flex-wrap gap-2">
+              <DatePicker
+                variant="field"
+                label="New date"
+                value={toDate.slice(0, 10)}
+                onChange={(d) => setToDate(`${d}T${toTime}`)}
+              />
+              <TimePicker
+                label="New time"
+                value={toTime}
+                onChange={(t) => {
+                  setToTime(t);
+                  if (toDate) setToDate(`${toDate.slice(0, 10)}T${t}`);
+                }}
+              />
+            </div>
             <Input
               placeholder="What stopped it? e.g. rain since dawn"
               value={reason}

@@ -9,6 +9,7 @@
  * list, and the user's selection and expansion are never touched.
  */
 
+import { parseNames } from "@/lib/places";
 import type { PendingWorkOrder } from "@/lib/spray-plan-api";
 
 export const SPRAY_PLAN_EVENT = "scp:spray_plan";
@@ -44,8 +45,10 @@ export function eventMatches(ev: Partial<SprayPlanEvent> | null | undefined, sco
     if (scope.from && day < scope.from) return false;
     if (scope.to && day > scope.to) return false;
   }
-  if (scope.greenhouse && ev.greenhouse && ev.greenhouse !== scope.greenhouse) return false;
-  if (!scope.greenhouse && scope.farm && ev.farm && ev.farm !== scope.farm) return false;
+  const houses = parseNames(scope.greenhouse);
+  const farms = parseNames(scope.farm);
+  if (houses.length && ev.greenhouse && !houses.includes(ev.greenhouse)) return false;
+  if (!houses.length && farms.length && ev.farm && !farms.includes(ev.farm)) return false;
   return true;
 }
 

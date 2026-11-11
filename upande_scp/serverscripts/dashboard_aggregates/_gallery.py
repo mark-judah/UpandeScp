@@ -24,6 +24,7 @@ range (by scout), and the scouts' own photos of it.
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.common import crop_catalog, crop_scope, stage_roles
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows as R
 from upande_scp.serverscripts.dashboard_aggregates._common import (
@@ -118,11 +119,12 @@ def _user_scope(scope, crop: str, greenhouse: str, farm: str):
     allowed = crop_scope.scoped_greenhouses(crop or None)
     if allowed is None:
         return scope
-    if greenhouse and greenhouse not in allowed:
+    houses = parse_names(greenhouse)
+    if any(g not in allowed for g in houses):
         frappe.throw("You do not have access to that greenhouse.", frappe.PermissionError)
-    if farm and not greenhouse:
+    if parse_names(farm) and not houses:
         farms = crop_scope.scoped_farms(crop or None)
-        if farms is not None and farm not in farms:
+        if farms is not None and any(f not in farms for f in parse_names(farm)):
             frappe.throw("You do not have access to that farm.", frappe.PermissionError)
     if scope is None:
         return sorted(allowed)

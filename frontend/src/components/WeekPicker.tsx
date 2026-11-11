@@ -118,7 +118,12 @@ export function WeekPicker({
           {display}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent
+        role="dialog"
+        aria-label={`${label || "Week"} picker`}
+        className="w-auto max-w-[calc(100vw-1rem)] p-0"
+        align="start"
+      >
         <Calendar
           mode="single"
           selected={value.from ? parseYmd(value.from) : undefined}

@@ -26,6 +26,7 @@ from datetime import timedelta
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.spray_plan_creator import crop_settings
 from frappe.utils import now_datetime, add_to_date
 
@@ -977,8 +978,9 @@ def list_planned_transfers(
             row["farm"] = r["farm"]
 
     rows = list(by_wo.values())
-    if farm:
-        rows = [r for r in rows if r["farm"] == farm]
+    farm_names = parse_names(farm)
+    if farm_names:
+        rows = [r for r in rows if r["farm"] in farm_names]
         kept = {r["work_order"] for r in rows}
         items = [r for r in items if r["work_order"] in kept]
 

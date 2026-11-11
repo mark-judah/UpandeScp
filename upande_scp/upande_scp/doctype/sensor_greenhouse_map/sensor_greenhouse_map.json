@@ -1,0 +1,115 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "deveui",
+  "greenhouse",
+  "source",
+  "method",
+  "distance_m",
+  "latitude",
+  "longitude",
+  "sensor_site"
+ ],
+ "fields": [
+  {
+   "fieldname": "deveui",
+   "fieldtype": "Data",
+   "label": "Sensor (deveui)",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Link",
+   "label": "Greenhouse",
+   "options": "Warehouse",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Auto\nManual",
+   "default": "Auto",
+   "in_list_view": 1,
+   "description": "Manual rows are never overwritten by the automatic GPS mapping."
+  },
+  {
+   "fieldname": "method",
+   "fieldtype": "Data",
+   "label": "How it was placed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "distance_m",
+   "fieldtype": "Float",
+   "label": "Distance to outline (m)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "7",
+   "read_only": 1
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "7",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sensor_site",
+   "fieldtype": "Data",
+   "label": "Sensor site",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-11 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Sensor Greenhouse Map",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "SCP General Manager",
+   "write": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Scout"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "field:deveui"
+}

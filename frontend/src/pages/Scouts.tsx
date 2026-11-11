@@ -17,7 +17,8 @@ import { BarChart3, CalendarDays, ChevronLeft, MapPinned } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, encodeNames, parseNames, type PlaceSet } from "@/lib/places";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { LoadProgress, TextSkeleton } from "@/components/Loading";
 import { Figure, FigureRow } from "@/components/people/Figure";
@@ -106,14 +107,17 @@ function Pending({ label }: { label: string }) {
 
 export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
-  const [farm, setFarm] = useState<string>(""); // "" → the server's choice
+  // Empty and never picked → the server's choice; empty after a pick → every farm.
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const [picked, setPicked] = useState(false);
+  const farm = places.farms.length ? encodeNames(places.farms) : picked ? ALL : "";
   const [{ from, to }, setRange] = useState(() => lastFourWeeks());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [comparing, setComparing] = useState(false);
 
   const q = useDashboardAggregate<ScoutsPayload>(
     "scouts",
-    { from_date: from, to_date: to, crop, farm: farm === ALL ? "" : farm },
+    { from_date: from, to_date: to, crop, farm },
     true,
   );
   const data = q.data;
@@ -183,14 +187,19 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
       <PageHeader eyebrow="Personnel · Scouting" title="Scouts">
-          <PlacePicker
-            level="farm"
+          <PlaceMultiPicker
             farms={data?.farms || []}
             crop={crop}
             label="Scouts farm"
-            allLabel={(data?.allFarms ?? true) ? undefined : false}
-            value={{ farm: farm === ALL ? "" : farm || data?.farm || "", greenhouse: "" }}
-            onChange={(p) => setFarm(p.farm || ALL)}
+            value={
+              places.farms.length || picked || !data?.farm
+                ? places
+                : { farms: parseNames(data.farm), greenhouses: [] }
+            }
+            onChange={(p) => {
+              setPicked(true);
+              setPlaces(p);
+            }}
             disabled={!data}
           />
           <DateRangePicker label="Scouts date range" value={{ from, to }} onChange={setRange} />

@@ -10,6 +10,7 @@ import re
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.common import crop_catalog
 from upande_scp.serverscripts.common import stage_roles
 from upande_scp.serverscripts.common import threshold_bands as B
@@ -55,11 +56,22 @@ def resolve_greenhouse_scope(
     - explicit greenhouse wins → [greenhouse]
     - farm without greenhouse → farms_map[farm] (empty list if farm unknown)
     - both empty → None (i.e. no greenhouse filter)
+
+    ``greenhouse`` and ``farm`` may each name several (a JSON list, see
+    ``common.place_filter.parse_names``): several houses → those houses; several
+    farms → the union of their houses.
     """
-    if greenhouse:
-        return [greenhouse]
-    if farm:
-        return list(farms_map.get(farm, []))
+    houses = parse_names(greenhouse)
+    if houses:
+        return houses
+    farms = parse_names(farm)
+    if farms:
+        out: list = []
+        for f in farms:
+            for h in farms_map.get(f, []):
+                if h not in out:
+                    out.append(h)
+        return out
     return None
 
 

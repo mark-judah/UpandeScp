@@ -4,10 +4,11 @@
  * (`DataQualityTab`) the Dashboard's "Data quality" tab used, unchanged, with
  * its own farm and date filters; this is now its one home.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { EMPTY_PLACE_SET, placeSetParams, type PlaceSet } from "@/lib/places";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { LoadProgress } from "@/components/Loading";
 import { PageHeader } from "@/components/PageHeader";
@@ -27,25 +28,25 @@ function lastThirtyDays() {
 export function Coverage({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
   const { farms, loading: farmsLoading } = useCropFarms(crop);
-  const [farm, setFarm] = useState(""); // "" → all farms
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET); // empty → all farms
+  const { farm, greenhouse } = useMemo(() => placeSetParams(places, farms), [places, farms]);
   const [{ from, to }, setRange] = useState(lastThirtyDays);
 
   const quality = useDashboardAggregate<QualityPayload>(
     "quality",
-    { from_date: from, to_date: to, crop, farm, greenhouse: "" },
+    { from_date: from, to_date: to, crop, farm, greenhouse },
     true,
   );
 
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
       <PageHeader eyebrow="Reports · Scouting data quality" title="Coverage">
-          <PlacePicker
-            level="farm"
-            farms={Object.keys(farms).sort()}
+          <PlaceMultiPicker
+            farms={farms}
             crop={crop}
-            label="Coverage farm"
-            value={{ farm, greenhouse: "" }}
-            onChange={(p) => setFarm(p.farm)}
+            label="Places"
+            value={places}
+            onChange={setPlaces}
             disabled={farmsLoading}
           />
           <DateRangePicker label="Date range" value={{ from, to }} onChange={setRange} />

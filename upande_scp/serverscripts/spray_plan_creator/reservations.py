@@ -125,6 +125,8 @@ import json
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
+
 ALLOWED_ROLES = {"System Manager", "Administrator", "SCP General Manager", "SCP Chemical Store Keeper"}
 AFP = "Application Floor Plan"
 
@@ -379,6 +381,8 @@ def get_stale_plans(farm=None):
     """AFPs planned before the reservation window that are still live and not
     issued: they no longer reserve stock but still clutter the approval queue."""
     _check_roles()
+    farm_names = parse_names(farm)
+    farm = tuple(farm_names) if farm_names else None
     rows = frappe.db.sql(
         f"""
         SELECT wo.name, wo.docstatus, wo.status, wo.workflow_state,
@@ -392,7 +396,7 @@ def get_stale_plans(farm=None):
           AND DATE(wo.planned_start_date) < %(cutoff)s
           AND (wo.status IS NULL OR wo.status NOT IN ('Stopped','Closed','Cancelled'))
           AND COALESCE(wo.workflow_state, 'Pending Submission') NOT IN %(issued)s
-          {"AND gh.custom_farm = %(farm)s" if farm else ""}
+          {"AND gh.custom_farm IN %(farm)s" if farm else ""}
         ORDER BY wo.planned_start_date
         LIMIT 1000
         """,

@@ -124,6 +124,10 @@ def get_settings_bundle() -> dict:
             "progress_email_enabled": int(settings.progress_email_enabled or 0),
             "progress_email_hour": settings.progress_email_hour if settings.progress_email_hour is not None else 18,
             "report_email_account": settings.get("report_email_account") or "",
+            "spray_records_email_enabled": int(settings.get("spray_records_email_enabled") if settings.get("spray_records_email_enabled") is not None else 1),
+            "spray_records_email_day": settings.get("spray_records_email_day") or "Monday",
+            "avocado_scout_email_enabled": int(settings.get("avocado_scout_email_enabled") if settings.get("avocado_scout_email_enabled") is not None else 1),
+            "avocado_scout_email_day": settings.get("avocado_scout_email_day") or "Monday",
             # Blank/unknown reads back as "labels" so the editor shows the
             # scan-required state whenever the setting isn't explicitly "tick",
             # matching spray_session.get_scan_verification_method.
@@ -209,6 +213,10 @@ def save_spray_plan_settings(payload) -> dict:
         "progress_email_enabled",
         "progress_email_hour",
         "report_email_account",
+        "spray_records_email_enabled",
+        "spray_records_email_day",
+        "avocado_scout_email_enabled",
+        "avocado_scout_email_day",
         # Only "labels" / "tick" are valid; the field is a Select, so Frappe
         # rejects anything else on save rather than letting a bad value through
         # and silently dropping the CSU scan check.

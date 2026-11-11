@@ -33,6 +33,13 @@ export interface LifecycleStep {
   detail: string | null;
 }
 
+/** The plan's team supervisor(s) and whoever actually scanned / started it. */
+export interface PlanAccountability {
+  supervisors: { employee: string; name: string }[];
+  scanners: { employee: string; name: string; at: string | null }[];
+  nobody_scanned: boolean;
+}
+
 export interface Lifecycle {
   work_order: string;
   current_state: string;
@@ -43,6 +50,7 @@ export interface Lifecycle {
   greenhouse: string | null;
   spray_type: string | null;
   steps: LifecycleStep[];
+  accountability?: PlanAccountability | null;
 }
 
 export interface LifecycleSummaryRow {
@@ -56,6 +64,7 @@ export interface LifecycleSummaryRow {
   scheduled: string | null;
   /** When the plan last moved (its last workflow step). */
   last_step_at?: string | null;
+  accountability?: PlanAccountability | null;
 }
 
 const NS = "upande_scp.serverscripts.spray_plan_creator.lifecycle";

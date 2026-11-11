@@ -430,6 +430,13 @@ scheduler_events = {
         "0 4 * * 1": [
             "upande_scp.serverscripts.reports.block_weekly_email.send_weekly_block_report"
         ],
+        # Weekly spray records and the avocado scout coverage email: the job wakes
+        # every day at 07:30 EAT (04:30 UTC) and each sends only when today is the
+        # weekday chosen in Settings (default Monday), for the ISO week just ended
+        "30 4 * * *": [
+            "upande_scp.serverscripts.reports.spray_records_email.send_weekly_spray_records",
+            "upande_scp.serverscripts.reports.avocado_scout_email.send_weekly_avocado_scouts",
+        ],
         # KEPHIS FCM Weekly Excel — Tuesdays 08:00
         "0 8 * * 2": [
             "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"

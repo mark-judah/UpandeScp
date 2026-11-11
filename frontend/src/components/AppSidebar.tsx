@@ -31,6 +31,7 @@ import {
   SprayCan,
   Sprout,
   UserRoundSearch,
+  ClipboardCheck,
   Truck,
   Users,
   Warehouse,
@@ -129,6 +130,13 @@ const PERSONNEL_SECTION: NavSection = {
       view: "sprayers",
       label: "Sprayers",
       icon: SprayCan,
+      requireRoles: SPRAY_PERSONNEL_ROLES,
+    },
+    {
+      kind: "view",
+      view: "supervisors",
+      label: "Supervisors",
+      icon: ClipboardCheck,
       requireRoles: SPRAY_PERSONNEL_ROLES,
     },
     {

@@ -111,6 +111,48 @@ def build_rows(stations, week_start, week_rows, last_seen, names) -> list[dict]:
     return rows
 
 
+ZTABLE = f'cellpadding="3" style="width:100%;border-collapse:collapse;margin:0 0 8px 0;font-size:12px;color:{INK};"'
+ZONE_TOP = 5  # lowest-coverage houses listed per farm; the page has the rest
+
+
+def _zone_rows(week_start) -> dict:
+    """``{house: zone-coverage row}`` for the week (rose houses with zones)."""
+    try:
+        from upande_scp.serverscripts.scouting import zone_coverage as Z
+
+        week = Z.zone_coverage(from_date=week_start, to_date=week_start + timedelta(days=6), user="Administrator")
+        return {r["house"]: r for r in (week["weeks"][0]["rows"] if week["weeks"] else [])}
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "weekly coverage email: zone coverage")
+        return {}
+
+
+def _zone_html(zrows) -> str:
+    """A compact zone summary for one farm: how many houses were Full / Partial
+    and the lowest-coverage houses with their worst beds. Capped (ZONE_TOP)."""
+    scouted = [z for z in zrows if z["entries"]]
+    if not zrows:
+        return ""
+    esc = frappe.utils.escape_html
+    full = sum(z["status"] == "Full" for z in zrows)
+    part = sum(z["status"] == "Partial" for z in zrows)
+    low = sorted(scouted, key=lambda z: (z["zone_pct"] or 0, z["house"]))[:ZONE_TOP]
+    rows = "".join(
+        f'<tr valign="top"><td>{esc(z["house"])}</td><td align="right">{z["zone_pct"]}%</td>'
+        f'<td align="right">{z["beds_scouted"]}/{z["beds_total"]}</td>'
+        f'<td align="right">{z["entries_per_bed"] if z["entries_per_bed"] is not None else ""}</td>'
+        f'<td>{esc(", ".join(b["bed"] for b in z["under"][:3]))}{" ..." if (z["beds_under"] or 0) > 3 else ""}</td></tr>'
+        for z in low
+    )
+    return (
+        f'<p style="margin:10px 0 4px 0;font-size:12px;"><b>Zone coverage</b> · <span style="color:{GOOD};">{full} full</span>'
+        f' · {part} partial (a house is full above 80% of its zones)</p>'
+        + (f"<table {ZTABLE}><tr align=\"left\"><th>Lowest coverage</th><th align=\"right\">Zones</th>"
+           f"<th align=\"right\">Beds</th><th align=\"right\">Entries/bed</th><th>Beds to revisit</th></tr>{rows}</table>"
+           if rows else "")
+    )
+
+
 def collect(week_start=None) -> dict:
     week_start = frappe.utils.getdate(week_start) if week_start else last_week_start()
     week_end = week_start + timedelta(days=6)
@@ -159,6 +201,7 @@ def collect(week_start=None) -> dict:
         )
     ) if scouts else {}
 
+    zones = _zone_rows(week_start)
     out = []
     for farm in farms:
         rows = build_rows(houses_for_farm(farm), week_start, week_rows, last_seen, names)
@@ -169,6 +212,7 @@ def collect(week_start=None) -> dict:
             "rows": rows,
             "total": len(rows),
             "scouted": sum(1 for r in rows if r["scouted"]),
+            "zones": [zones[r["station"]] for r in rows if r["station"] in zones],
         })
     return {"week_start": week_start, "week_end": week_end, "farms": out}
 
@@ -230,6 +274,7 @@ def build_html(week_start=None, data=None) -> str:
         )
         parts.extend(_row_html(r) for r in f["rows"])
         parts.append("</table>")
+        parts.append(_zone_html(f.get("zones") or []))
     parts.append(
         f'<p style="margin:18px 0 0 0;color:{MUTED};font-size:11px;">Every greenhouse and block of each farm scouted '
         f"in the last {LOOKBACK_DAYS // 7} weeks. A house counts as scouted when it has at least one Scouting Entry that week.</p></div>"

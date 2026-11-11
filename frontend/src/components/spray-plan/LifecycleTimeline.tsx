@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Bar, TextSkeleton } from "@/components/Loading";
+import { Accountability } from "@/components/spray-plan/Accountability";
 import {
   fetchLifecycle,
   type Lifecycle,
@@ -192,6 +193,7 @@ export function LifecycleTimeline({
           This plan was stopped / cancelled — remaining steps will not run.
         </div>
       )}
+      <Accountability value={lifecycle.accountability} />
       <ol className="flex flex-col">
         {lifecycle.steps.map((step, i) => (
           <StepRow

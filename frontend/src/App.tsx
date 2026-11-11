@@ -147,6 +147,9 @@ const Teams = lazy(() =>
 const Sprayers = lazy(() =>
   import("@/pages/Sprayers").then((m) => ({ default: m.Sprayers })),
 );
+const Supervisors = lazy(() =>
+  import("@/pages/Supervisors").then((m) => ({ default: m.Supervisors })),
+);
 const Scouts = lazy(() =>
   import("@/pages/Scouts").then((m) => ({ default: m.Scouts })),
 );
@@ -202,6 +205,7 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/Teams"),
   () => import("@/pages/Sprayers"),
   () => import("@/pages/Scouts"),
+  () => import("@/pages/Supervisors"),
   () => import("@/pages/Coverage"),
 ];
 
@@ -343,6 +347,8 @@ function renderView(crop: string, view: View): ReactNode {
       return <Sprayers initialCrop={cropName} />;
     case "scouts":
       return <Scouts initialCrop={cropName} />;
+    case "supervisors":
+      return <Supervisors initialCrop={cropName} />;
     // Reports ▸ Coverage: the scouting data-quality view.
     case "coverage":
       return <Coverage initialCrop={cropName} />;

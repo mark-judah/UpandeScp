@@ -210,8 +210,21 @@ def _plan(wo: dict, target) -> dict:
         "reach": reach,
         "state": state,
         "missed": bool(lc.get("missed")),
+        "acc": lc.get("accountability"),
         "target": target,
     }
+
+
+def _acc_line(p) -> str:
+    """Who was assigned and who acted, for a plan that has not finished: the
+    team supervisor and whoever scanned (or that nobody did)."""
+    acc = p.get("acc")
+    if not acc or p["state"] in ("done", "stopped"):
+        return ""
+    esc = frappe.utils.escape_html
+    sup = ", ".join(esc(s["name"]) for s in acc["supervisors"]) or "no supervisor on the team"
+    scan = "nobody scanned" if acc["nobody_scanned"] else "scanned by " + ", ".join(esc(s["name"]) for s in acc["scanners"])
+    return f' &nbsp;·&nbsp; Supervisor {sup}, {scan}'
 
 
 def _tail(p) -> str:
@@ -226,7 +239,7 @@ def _tail(p) -> str:
             out += f" by {who}"
         return out + (f' &nbsp;·&nbsp; {span} from issue to done' if span else "")
     if reach == 0:
-        return "Not started"
+        return "Not started" + _acc_line(p)
     last = steps[order[reach - 1]]
     nxt = STEPS[reach][1] or "completion"
     # migrated plans can carry a step with no workflow comment behind it, so the
@@ -241,7 +254,7 @@ def _tail(p) -> str:
         head += f' — {_clock(ts, target)}'
     ago = _ago(ts, target) if ts else ""
     return head + (f' &nbsp;·&nbsp; {ago}, waiting on {nxt}' if ago
-                   else f' &nbsp;·&nbsp; waiting on {nxt}')
+                   else f' &nbsp;·&nbsp; waiting on {nxt}') + _acc_line(p)
 
 
 def _one_line(p, first) -> str:
@@ -270,6 +283,7 @@ def _one_line(p, first) -> str:
                if a.get("actor") else "Not started")
         label = STATE_PILL[p["state"]][0]
         sub += f" &nbsp;·&nbsp; {label.lower()}" if label else ""
+        sub += _acc_line(p)
     return f"""
   <tr><td style="padding:{'10px' if first else '6px'} 26px 0;">
     <table role="presentation" class="plan" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{CARD};border-radius:12px;">

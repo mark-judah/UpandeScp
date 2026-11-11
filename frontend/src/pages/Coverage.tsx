@@ -12,6 +12,7 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { LoadProgress } from "@/components/Loading";
 import { PageHeader } from "@/components/PageHeader";
 import { DataQualityTab } from "@/pages/dashboard/DataQualityTab";
+import { ZoneCoverage } from "@/components/coverage/ZoneCoverage";
 import type { QualityPayload } from "@/pages/dashboard/quality-types";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
 import { ymd } from "@/lib/utils";
@@ -62,6 +63,9 @@ export function Coverage({ initialCrop }: { initialCrop?: string } = {}) {
         ) : null}
         {/* A failed first load shows the error above, not tiles pulsing forever. */}
         {quality.data || !quality.error ? <DataQualityTab data={quality.data} /> : null}
+        {crop.toLowerCase() === "rose" && (
+          <ZoneCoverage crop={crop} farm={farm} greenhouse={greenhouse} from={from} to={to} />
+        )}
       </div>
     </div>
   );

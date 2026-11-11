@@ -30,6 +30,8 @@ from typing import Any
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
+from upande_scp.serverscripts.sprayers import supervisors as sup_acc
+
 AFP_TYPE = "Application Floor Plan"
 SE_PURPOSE = "Material Transfer for Manufacture"
 
@@ -416,6 +418,8 @@ def get_lifecycle(work_order: str) -> dict:
         "greenhouse": wo.custom_greenhouse,
         "spray_type": wo.custom_spray_type,
         "steps": steps,
+        # who was meant to run it (team supervisor) and who actually scanned / started
+        "accountability": sup_acc.accountability([work_order]).get(work_order),
     }
 
 
@@ -466,6 +470,7 @@ def get_lifecycle_summary(
         rows = [r for r in rows if r.custom_greenhouse in houses]
 
     now = now_datetime()
+    acc = sup_acc.accountability([r.name for r in rows])
     out = []
     for r in rows:
         # to_date filters on creation upper bound (creation filter above only
@@ -494,5 +499,6 @@ def get_lifecycle_summary(
             # The plan's last write is the closest cheap proxy for "when the
             # last step happened" (each step is a workflow transition).
             "last_step_at": _iso(r.modified),
+            "accountability": acc.get(r.name),
         })
     return out

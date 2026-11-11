@@ -26,6 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
 import { BlockWeeklyReport } from "./BlockWeeklyReport";
+import { WeeklyEmailCards } from "@/components/WeeklyEmailCards";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
@@ -129,10 +130,18 @@ export function Reports({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = (initialCrop || "").toLowerCase();
   if (BLOCK_GROWN.has(crop)) {
     return (
-      <BlockWeeklyReport crop={crop.charAt(0).toUpperCase() + crop.slice(1)} />
+      <>
+        <BlockWeeklyReport crop={crop.charAt(0).toUpperCase() + crop.slice(1)} />
+        <WeeklyEmailCards show={crop === "avocado" ? ["spray_records", "avocado_scout"] : ["spray_records"]} />
+      </>
     );
   }
-  return <RoseReports />;
+  return (
+    <>
+      <RoseReports />
+      <WeeklyEmailCards show={["spray_records"]} />
+    </>
+  );
 }
 
 function RoseReports() {

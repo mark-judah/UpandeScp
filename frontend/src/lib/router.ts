@@ -44,6 +44,7 @@ export type View =
   | "coverage"
   | "scouts"
   | "sprayers"
+  | "supervisors"
   | "teams"
   | "reentry";
   | "biologicals"
@@ -79,6 +80,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "coverage",
   "scouts",
   "sprayers",
+  "supervisors",
   "teams",
   "reentry",
 ]);

@@ -5,6 +5,7 @@
  * shows exactly what the GM and creator see, framed around the steps the store
  * acts on.
  */
+import { Accountability } from "@/components/spray-plan/Accountability";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -211,6 +212,9 @@ export function ChemicalProgress() {
                                 </span>
                               )}
                             </div>
+                            {(r.missed || r.current_state !== "Completed") && !r.stopped && (
+                              <Accountability value={r.accountability} className="mt-1" />
+                            )}
                           </TableCell>
                           <TableCell className="text-xs tabular-nums">
                             {r.scheduled ? r.scheduled.slice(0, 16) : "—"}

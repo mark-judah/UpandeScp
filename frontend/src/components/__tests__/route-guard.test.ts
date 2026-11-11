@@ -75,6 +75,8 @@ describe("canOpenView — Personnel", () => {
   it("routes match the sidebar roles", () => {
     expect(canOpenView("teams", "rose", ["SCP Spray Plan Creator"])).toBe(true);
     expect(canOpenView("sprayers", "avocado", ["SCP Spray Supervisor"])).toBe(true);
+    expect(canOpenView("supervisors", "rose", ["SCP Spray Supervisor"])).toBe(true);
+    expect(canOpenView("supervisors", "rose", ["SCP Scouting User"])).toBe(false);
     expect(canOpenView("scouts", "rose", ["SCP Scouting User"])).toBe(true);
     expect(canOpenView("scouts", "rose", ["SCP Spray Plan Creator"])).toBe(false);
     expect(canOpenView("teams", "rose", ["SCP Scouting User"])).toBe(false);

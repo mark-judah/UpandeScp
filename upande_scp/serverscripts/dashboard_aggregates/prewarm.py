@@ -118,6 +118,15 @@ def prewarm_dashboard_aggregates():
         failed += 1
         frappe.log_error("prewarm quality failed", "SCP dash prewarm")
 
+    try:
+        from upande_scp.serverscripts.scouting import zone_coverage
+
+        zone_coverage.prewarm()
+        warmed += 1
+    except Exception:
+        failed += 1
+        frappe.log_error("prewarm zone coverage failed", "SCP dash prewarm")
+
     return {"warmed": warmed, "failed": failed, "from": from_date, "to": to_date}
 
 

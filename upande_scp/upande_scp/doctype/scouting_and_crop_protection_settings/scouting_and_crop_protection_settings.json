@@ -77,6 +77,10 @@
   "report_email_account",
   "report_sender_accounts",
   "cumulative_alert_paused",
+  "spray_records_email_enabled",
+  "spray_records_email_day",
+  "avocado_scout_email_enabled",
+  "avocado_scout_email_day",
   "crop_overrides_section",
   "crop_overrides",
   "accounts_tab",
@@ -240,10 +244,6 @@
    "default": "Warn"
   },
   {
-   "fieldname": "tank_mix_incompatibilities",
-   "fieldtype": "Table",
-   "label": "Tank Mix Incompatibilities",
-  {
    "fieldname": "rule_predator_harm",
    "fieldtype": "Select",
    "label": "No product harmful to predators present in the greenhouse",
@@ -259,6 +259,10 @@
    "non_negative": 1,
    "description": "A predator counts as present in a greenhouse if it was released or seen in scouting within this many days."
   },
+  {
+   "fieldname": "tank_mix_incompatibilities",
+   "fieldtype": "Table",
+   "label": "Tank Mix Incompatibilities",
    "options": "Tank Mix Incompatibility"
   },
   {
@@ -586,6 +590,36 @@
    "fieldname": "cumulative_alert_paused",
    "fieldtype": "Check",
    "label": "Pause cumulative per-ha alert emails"
+  },
+  {
+   "default": "1",
+   "description": "Weekly: per farm, every location x active ingredient x product sprayed last week (applications, quantity, last date), with a workbook. To farm managers and the GM of each company.",
+   "fieldname": "spray_records_email_enabled",
+   "fieldtype": "Check",
+   "label": "Send the weekly spray records email"
+  },
+  {
+   "default": "Monday",
+   "depends_on": "spray_records_email_enabled",
+   "fieldname": "spray_records_email_day",
+   "fieldtype": "Select",
+   "label": "Spray records email day",
+   "options": "Monday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday"
+  },
+  {
+   "default": "1",
+   "description": "Weekly, to the avocado teams only: per scout trees scouted, entries, blocks, active days and distance walked, plus the blocks not scouted that week.",
+   "fieldname": "avocado_scout_email_enabled",
+   "fieldtype": "Check",
+   "label": "Send the weekly avocado scout coverage email"
+  },
+  {
+   "default": "Monday",
+   "depends_on": "avocado_scout_email_enabled",
+   "fieldname": "avocado_scout_email_day",
+   "fieldtype": "Select",
+   "label": "Avocado scout email day",
+   "options": "Monday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday"
   },
   {
    "fieldname": "crop_overrides_section",

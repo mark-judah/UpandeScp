@@ -78,6 +78,11 @@ export interface SprayPlanSettings {
   progress_email_hour: number;
   /** Email Account every SCP report, digest and notification email is sent from. "" = the site's default outgoing account. */
   report_email_account: string;
+  /** Weekly emails: on/off and the weekday each goes out (Monday..Sunday). */
+  spray_records_email_enabled?: number;
+  spray_records_email_day?: string;
+  avocado_scout_email_enabled?: number;
+  avocado_scout_email_day?: string;
   /** One sending account per company; a company with no row uses report_email_account. */
   report_sender_accounts?: ReportSenderRow[];
   /**

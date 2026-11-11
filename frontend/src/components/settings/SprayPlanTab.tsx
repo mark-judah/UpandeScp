@@ -39,6 +39,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { TrapPhotoCard } from "@/components/settings/TrapPhotoCard";
 import { ReportSenderCard } from "@/components/settings/ReportSenderCard";
+import { WeeklyEmailsCard } from "@/components/settings/WeeklyEmailsCard";
 import { ScoutCaptureCard, maxCountError } from "@/components/settings/ScoutCaptureCard";
 import {
   saveSprayPlanSettings,
@@ -799,6 +800,14 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      <WeeklyEmailsCard
+        value={draft}
+        onChange={(patch) => {
+          setDraft((d) => ({ ...d, ...patch }));
+          setOk(false);
+        }}
+      />
 
       <ReportSenderCard
         value={draft.report_email_account ?? ""}

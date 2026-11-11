@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PlacePicker } from "@/components/PlacePicker";
+import { IssueListPdfButton } from "@/components/store/IssueListPdfButton";
 import {
   Select,
   SelectContent,
@@ -665,6 +666,7 @@ export function Labels() {
             setToDate(r.to);
           }}
         />
+        <IssueListPdfButton />
         <HeaderIconButton onClick={load} disabled={loading} title="Refresh">
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </HeaderIconButton>

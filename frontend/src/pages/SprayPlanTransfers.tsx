@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { PlacePicker } from "@/components/PlacePicker";
+import { IssueListPdfButton } from "@/components/store/IssueListPdfButton";
 import { SearchInput } from "@/components/SearchInput";
 import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
 import { ZeroValuedList } from "@/components/store/ZeroValuedList";
@@ -486,6 +487,7 @@ export function SprayPlanTransfers() {
                 setToDate(r.to);
               }}
             />
+            <IssueListPdfButton />
             <HeaderIconButton
               onClick={load}
               disabled={loading || submitting}

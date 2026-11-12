@@ -20,7 +20,7 @@
  */
 import { SearchInput } from "@/components/SearchInput";
 import { DateRangePicker } from "@/components/DateRangePicker";
-import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Bar, RowsSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
   AlertTriangle,
@@ -46,7 +46,8 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
 import { ToolbarButton } from "@/components/ToolbarButton";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -170,7 +171,10 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [cycleId, setCycleId] = useState<string>("");
   const [farms, setFarms] = useState<string[]>([]);
-  const [farm, setFarm] = useState<string>("");
+  // The farms the planner is looking at (empty set = every farm of the cycle). Each
+  // farm has its own requirement, so the requirement tab stacks one per farm.
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const picked = useRef(false);
   const [newOpen, setNewOpen] = useState(false);
   // Until the cycles land, "No cycle open" would be a guess: the frame is
   // drawn and the cycle, eyebrow and tab body pend.
@@ -206,7 +210,11 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
       .then((fs) => {
         if (!alive) return;
         setFarms(fs);
-        setFarm((prev) => (fs.includes(prev) ? prev : fs[0] || ""));
+        // Open on the first farm (as before); Select all stacks every farm.
+        setPlaces((prev) => {
+          const kept = prev.farms.filter((f) => fs.includes(f));
+          return isEmptyPlaceSet(prev) && !picked.current ? { farms: fs.slice(0, 1), greenhouses: [] } : { farms: kept, greenhouses: [] };
+        });
         setFarmsReady(true);
       });
     return () => {
@@ -215,6 +223,7 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
   }, [shellLoaded, initialCrop, cycleId]);
 
   const cycle = cycles.find((c) => c.name === cycleId);
+  const shownFarms = isEmptyPlaceSet(places) ? farms : farms.filter((f) => places.farms.includes(f));
 
   return (
     <CropCtx.Provider value={initialCrop}>
@@ -266,15 +275,18 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
           ) : null },
           { key: "farm", tabs: ["requirement", "pool"], node: (
             <>
-        {/* The planner's farm (place picker G2): always shown once there is a
-            farm, a single farm reading as itself; there is no "all" here. */}
+        {/* The planner's farms: always shown once there is a farm, a single farm
+            reading as itself. */}
         {(!shellLoaded || !farmsReady || farms.length > 0) && (
-          <PlacePicker
-            level="farm"
+          <PlaceMultiPicker
             farms={farms}
-            allLabel={false}
-            value={{ farm, greenhouse: "" }}
-            onChange={(p) => setFarm(p.farm)}
+            value={places}
+            onChange={(p) => {
+              picked.current = true;
+              setPlaces(p);
+            }}
+            remember={false}
+            label="Farms"
             disabled={!shellLoaded || !farmsReady}
           />
         )}
@@ -306,13 +318,24 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
       ) : (
         <>
           {tab === "requirement" && (
-            <RequirementTab
-              cycle={cycleId}
-              farm={farm}
-              push={push}
-              busy={busy}
-              setBusy={setBusy}
-            />
+            shownFarms.length === 0 ? (
+              <EmptyState
+                icon={ClipboardList}
+                title="No farm"
+                detail="You are not assigned to a farm that raises chemical requirements."
+              />
+            ) : (
+              shownFarms.map((f) => (
+                <RequirementTab
+                  key={f}
+                  cycle={cycleId}
+                  farm={f}
+                  push={push}
+                  busy={busy}
+                  setBusy={setBusy}
+                />
+              ))
+            )
           )}
           {tab === "review" && (
             <ReviewTab cycle={cycleId} push={push} busy={busy} setBusy={setBusy} />
@@ -330,7 +353,7 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
           )}
           {tab === "pool" && (
             <PoolTab
-              farm={farm}
+              farms={shownFarms}
               isKeeper={isKeeper || isGm}
               push={push}
               busy={busy}
@@ -1661,13 +1684,13 @@ function AllocationTab({
 // ── the general store ─────────────────────────────────────────────────────
 
 function PoolTab({
-  farm,
+  farms,
   isKeeper,
   push,
   busy,
   setBusy,
 }: {
-  farm: string;
+  farms: string[];
   isKeeper: boolean;
   push: (m: string, v?: ToastItem["kind"]) => void;
   busy: boolean;
@@ -1678,6 +1701,9 @@ function PoolTab({
   const [incoming, setIncoming] = useState<PoolRequest[]>([]);
   const [outgoing, setOutgoing] = useState<PoolRequest[]>([]);
   const [askOpen, setAskOpen] = useState(false);
+  // The pool is the company's; a request is raised for one farm, so with several
+  // picked there is one Ask button per farm.
+  const [farm, setFarm] = useState("");
   const [askRows, setAskRows] = useState<BasketRow[]>([]);
   const [askReason, setAskReason] = useState("");
   const [query, setQuery] = useState("");
@@ -1776,11 +1802,19 @@ function PoolTab({
           <Warehouse className="size-3.5" />
           {status ? status.store || "no general store" : pending ? <TextSkeleton width="12ch" /> : "—"}
         </Badge>
-        {farm && (
-          <Button variant="outline" disabled={busy} onClick={() => setAskOpen(true)}>
-            <Plus className="mr-1 size-4" /> Ask for stock from the pool
+        {farms.map((f) => (
+          <Button
+            key={f}
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setFarm(f);
+              setAskOpen(true);
+            }}
+          >
+            <Plus className="mr-1 size-4" /> Ask for stock from the pool{farms.length > 1 ? ` · ${f}` : ""}
           </Button>
-        )}
+        ))}
       </div>
 
       {isKeeper && (

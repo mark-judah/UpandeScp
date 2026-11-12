@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { PlacePicker } from "@/components/PlacePicker";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, encodeNames, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import {
   Mail,
   Download,
@@ -32,6 +33,25 @@ import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
 import { errorText } from "@/lib/errors";
 import { cn } from "@/lib/utils";
+
+/** One download per farm: a plain navigation would keep only the last, so each goes
+ *  through its own hidden link a moment apart. */
+function downloadEach(farms: string[], url: (farm: string) => string) {
+  if (farms.length === 1) {
+    window.location.href = url(farms[0]);
+    return;
+  }
+  farms.forEach((f, i) =>
+    window.setTimeout(() => {
+      const a = document.createElement("a");
+      a.href = url(f);
+      a.download = "";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }, i * 700),
+  );
+}
 
 type Status = { kind: "ok" | "err"; text: string } | null;
 
@@ -150,7 +170,15 @@ function RoseReports() {
   // while their options load — never "No weeks with data" before we know.
   const [farmsLoading, setFarmsLoading] = useState(true);
   const [weeksLoading, setWeeksLoading] = useState(false);
-  const [farm, setFarm] = useState<string>("");
+  // Every farm has its own workbook, so a report for several farms is one per farm.
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const picked = useRef(false);
+  const farmNames = useMemo(() => farms.map((f) => f.farm), [farms]);
+  const selFarms = useMemo(
+    () => (isEmptyPlaceSet(places) ? farmNames : farmNames.filter((f) => places.farms.includes(f))),
+    [places, farmNames],
+  );
+  const farm = encodeNames(selFarms);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [week, setWeek] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -164,7 +192,8 @@ function RoseReports() {
       .then((r: any) => {
         const arr: FarmOption[] = Array.isArray(r) ? r : Array.isArray(r?.message) ? r.message : [];
         setFarms(arr);
-        if (arr.length && !farm) setFarm(arr[0].farm);
+        // Open on the first farm; Select all picks every one.
+        if (arr.length && !picked.current) setPlaces({ farms: [arr[0].farm], greenhouses: [] });
       })
       .catch(() => {})
       .finally(() => setFarmsLoading(false));
@@ -203,7 +232,11 @@ function RoseReports() {
     setBusy(`${spec.key}:email`);
     setStatus(null);
     try {
-      await call(spec.emailMethod, spec.needsFarm ? { farm, week } : {});
+      if (spec.needsFarm) {
+        for (const f of selFarms) await call(spec.emailMethod, { farm: f, week });
+      } else {
+        await call(spec.emailMethod, {});
+      }
       setStatus({ kind: "ok", text: `${spec.title} emailed.` });
     } catch (e: any) {
       setStatus({ kind: "err", text: errorText(e, "Email failed.") });
@@ -218,7 +251,7 @@ function RoseReports() {
       return;
     }
     if (!spec.downloadUrl) return;
-    window.location.href = spec.downloadUrl({ farm, week });
+    downloadEach(selFarms, (f) => spec.downloadUrl!({ farm: f, week }));
     setStatus({ kind: "ok", text: `${spec.title} download started.` });
   };
 
@@ -234,7 +267,7 @@ function RoseReports() {
       setStatus({ kind: "err", text: "Pick a week first." });
       return;
     }
-    window.location.href = spec.extraDownload.url({ farm, week });
+    downloadEach(selFarms, (f) => spec.extraDownload!.url({ farm: f, week }));
     setStatus({
       kind: "ok",
       text: `${spec.extraDownload.label} download started.`,
@@ -285,20 +318,19 @@ function RoseReports() {
                 <div className="contents" aria-busy={farmsLoading || weeksLoading || undefined}>
                   <div className="flex flex-col gap-1">
                     <Label>Farm</Label>
-                    <PlacePicker
-                      level="farm"
-                      variant="field"
+                    <PlaceMultiPicker
                       remember={false}
-                      allLabel={false}
-                      farms={farms.map((f) => f.farm)}
+                      farms={farmNames}
                       label={`${r.title} farm`}
-                      placeholder={farmsLoading ? "Loading farms…" : "Pick a farm"}
-                      value={{ farm, greenhouse: "" }}
-                      onChange={(p) => setFarm(p.farm)}
+                      value={places}
+                      onChange={(p) => {
+                        picked.current = true;
+                        setPlaces(p);
+                      }}
                       disabled={!farms.length}
                     />
                     {(() => {
-                      const k = farms.find((f) => f.farm === farm)?.kephis_farm_id;
+                      const k = selFarms.length === 1 ? farms.find((f) => f.farm === selFarms[0])?.kephis_farm_id : "";
                       return k ? (
                         <span className="text-xs text-muted-foreground">KEPHIS farm ID {k}</span>
                       ) : null;

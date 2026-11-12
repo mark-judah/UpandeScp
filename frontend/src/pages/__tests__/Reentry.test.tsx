@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EntryBoard } from "@/lib/reentry-api";
 
@@ -74,6 +75,18 @@ describe("Re-entry board", () => {
     expect(within(cleared).getAllByTestId("cleared-row")).toHaveLength(1);
     expect(within(cleared).getByText("Kapkolia GH 9")).toBeInTheDocument();
     expect(within(cleared).queryByText("Kapkolia GH 8")).toBeNull();
+  });
+
+  it("filters to the picked farms and houses (multi-select tree)", async () => {
+    render(<Reentry initialCrop="Rose" />);
+    const noEntry = await screen.findByTestId("section-no-entry");
+    await waitFor(() => expect(within(noEntry).getAllByTestId("no-entry-row")).toHaveLength(1));
+    await userEvent.click(screen.getByRole("button", { name: "Re-entry farm and house" }));
+    // tick only Kapkolia: Deselect all, then the farm
+    await userEvent.click(screen.getByText("Deselect all"));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Kapkolia" }));
+    await waitFor(() => expect(screen.queryAllByTestId("no-entry-row")).toHaveLength(0));
+    expect(screen.getByTestId("section-cleared")).toHaveTextContent("Kapkolia GH 9");
   });
 
   it("asks for the route's crop", async () => {

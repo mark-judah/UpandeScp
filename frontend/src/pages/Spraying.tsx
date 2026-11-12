@@ -12,6 +12,7 @@
  *   - fetchBedsAndZones   → IDB-cached bed/zone GeoJSON (warmed on boot)
  */
 
+import { focusFarm, nameOnFarms, parseNames } from "@/lib/places";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
@@ -160,8 +161,8 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    const gh = filters.greenhouse === ALL ? undefined : filters.greenhouse;
-    fetchSprayerGpsLogs(filters.from, filters.to, gh)
+    const gh = parseNames(filters.greenhouse);
+    fetchSprayerGpsLogs(filters.from, filters.to, gh.length ? gh : undefined)
       .then((rows) => {
         if (alive) {
           setLogs(rows);
@@ -176,7 +177,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
     };
   }, [filters.from, filters.to, filters.greenhouse]);
 
-  const farmNeedle = filters.farm === ALL ? "" : filters.farm.toLowerCase();
+  const farmNeedle = filters.farm;
 
   // Parse + narrow to valid points for the day (greenhouse filtered server-side;
   // farm filtered here against the greenhouse name).
@@ -186,8 +187,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
       const lat = Number(r.latitude);
       const lng = Number(r.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-      if (farmNeedle && !(r.greenhouse || "").toLowerCase().includes(farmNeedle))
-        continue;
+      if (!nameOnFarms(r.greenhouse, farmNeedle)) continue;
       out.push({
         sprayer: r.employee || "Unknown",
         zone: r.zone || null,
@@ -422,7 +422,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
     if (bounds.isValid()) {
       m.fitBounds(bounds.pad(0.05), { animate: false });
     } else if (mapSettings.lat || mapSettings.lon) {
-      flyToFarm(m, mapSettings, filters.farm === ALL ? null : filters.farm, {
+      flyToFarm(m, mapSettings, focusFarm(filters.farm) || null, {
         animate: false,
       });
     }
@@ -442,13 +442,13 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
     if (!farmFlyMounted.current) {
       farmFlyMounted.current = true;
       const t = setTimeout(() => {
-        flyToFarm(mapRef.current, mapSettings, filters.farm === ALL ? null : filters.farm, {
+        flyToFarm(mapRef.current, mapSettings, focusFarm(filters.farm) || null, {
           animate: false,
         });
       }, 60);
       return () => clearTimeout(t);
     }
-    flyToFarm(mapRef.current, mapSettings, filters.farm === ALL ? null : filters.farm, {
+    flyToFarm(mapRef.current, mapSettings, focusFarm(filters.farm) || null, {
       animate: true,
     });
   }, [filters.farm, mapSettings]);

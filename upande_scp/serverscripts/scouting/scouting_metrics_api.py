@@ -16,6 +16,7 @@ from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
 
 from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common import farm_map
+from upande_scp.serverscripts.common.place_filter import parse_names
 
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.common.cache_utils import (
@@ -243,10 +244,14 @@ def list_tank_mixes(farm=None, q=None, active_only=1, limit=200):
     # every user saw every farm's mixes and the farm dropdown was built from
     # whatever happened to be on the page.
     visible = crop_scope.visible_farms(user=frappe.session.user)
-    if farm:
-        if visible is not None and farm not in visible:
-            return {"tank_mixes": [], "farms": []}
-        bom_filters.append(["BOM", "custom_farm", "=", farm])
+    # `farm` takes one name or several (JSON list / comma names).
+    wanted = parse_names(farm)
+    if wanted:
+        if visible is not None:
+            wanted = [f for f in wanted if f in visible]
+            if not wanted:
+                return {"tank_mixes": [], "farms": []}
+        bom_filters.append(["BOM", "custom_farm", "in", wanted])
     elif visible is not None:
         if not visible:
             return {"tank_mixes": [], "farms": []}
@@ -805,9 +810,9 @@ def get_block_areas(farm=None):
     "judged and found calm". Endebess's 64 coffee blocks are all in that state.
     """
     filters = {"warehouse_type": "Block", "disabled": 0}
-    farm = (farm or "").strip()
-    if farm:
-        filters["custom_farm"] = farm
+    farms = parse_names(farm)  # one farm or several
+    if farms:
+        filters["custom_farm"] = farms[0] if len(farms) == 1 else ["in", farms]
     rows = frappe.get_all(
         "Warehouse",
         filters=filters,

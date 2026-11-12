@@ -13,6 +13,7 @@
  * always paints above the map.
  */
 
+import { focusFarm, nameOnFarms, nameOnHouses, parseNames } from "@/lib/places";
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
@@ -92,12 +93,11 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
 
   // Single-day query: from === to. The IDB cache is day-precise, so this
   // is a single-day slice of an already-resident dataset.
-  const ghForCall =
-    filters.greenhouse === ALL ? undefined : filters.greenhouse;
+  const ghList = useMemo(() => parseNames(filters.greenhouse), [filters.greenhouse]);
   const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
-    greenhouse: ghForCall,
+    greenhouses: ghList.length ? ghList : undefined,
     crop: filters.crop,
   });
 
@@ -117,13 +117,8 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
     fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
   }, []);
 
-  const farmNeedle = filters.farm === ALL ? "" : filters.farm.toLowerCase();
-  const inFarm = (e: ScoutingEntry) => {
-    if (!farmNeedle) return true;
-    return (e.greenhouse || e.block || "")
-      .toLowerCase()
-      .includes(farmNeedle);
-  };
+  const farmNeedle = filters.farm;
+  const inFarm = (e: ScoutingEntry) => nameOnFarms(e.greenhouse || e.block || "", farmNeedle);
 
   // Entries to consider — single day, filtered by farm.
   const dayEntries = useMemo(() => {
@@ -243,10 +238,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
       const z = zoneByName.get(zoneName);
       if (!z?.geometry) return;
       // Restrict by greenhouse selector.
-      if (
-        filters.greenhouse !== ALL &&
-        !z.bedName.startsWith(filters.greenhouse)
-      ) {
+      if (!nameOnHouses(z.bedName, filters.greenhouse)) {
         return;
       }
 
@@ -318,7 +310,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
       flyToFarm(
         map,
         mapSettings,
-        filters.farm === ALL ? null : filters.farm,
+        focusFarm(filters.farm) || null,
         { animate: false },
       );
     }
@@ -335,7 +327,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
         flyToFarm(
           mapRef.current,
           mapSettings,
-          filters.farm === ALL ? null : filters.farm,
+          focusFarm(filters.farm) || null,
           { animate: false },
         );
       }, 60);
@@ -344,7 +336,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
     flyToFarm(
       mapRef.current,
       mapSettings,
-      filters.farm === ALL ? null : filters.farm,
+      focusFarm(filters.farm) || null,
       { animate: true },
     );
   }, [filters.farm, mapSettings]);

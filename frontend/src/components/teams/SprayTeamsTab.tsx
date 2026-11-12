@@ -4,8 +4,9 @@
  * enable or disable it. Saving re-syncs the changed members into the sprayer
  * register (the Spray Team on_update hook).
  */
-import { PlacePicker } from "@/components/PlacePicker";
-import { useEffect, useState } from "react";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { useEffect, useMemo, useState } from "react";
+import { EMPTY_PLACE_SET, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import { Loader2, RotateCcw, Save, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,17 +78,24 @@ function TeamCard({
           {!draft.enabled && <Badge variant="outline">Disabled</Badge>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <PlacePicker
-            level="farm"
-            remember={false}
-            farms={ctx.farms}
-            label={`Farm of ${team.name}`}
-            allLabel={ctx.manager || !team.farm ? "No farm" : false}
-            fixedWhenSingle={!(ctx.manager || !team.farm)}
-            placeholder="No farm"
-            value={{ farm: draft.farm || "", greenhouse: "" }}
-            onChange={(p) => setDraft((d) => ({ ...d, farm: p.farm || null }))}
-          />
+          {/* A team has exactly one farm (or none), so this is a plain choice, not a
+              multi-select; the farm filter for the list is above the cards. */}
+          <Select
+            value={draft.farm || NO_FARM}
+            onValueChange={(v) => setDraft((d) => ({ ...d, farm: v === NO_FARM ? null : v }))}
+          >
+            <SelectTrigger aria-label={`Farm of ${team.name}`} className="h-8 w-auto min-w-[9rem] gap-2 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(ctx.manager || !team.farm) && <SelectItem value={NO_FARM}>No farm</SelectItem>}
+              {[...new Set([...ctx.farms, ...(draft.farm ? [draft.farm] : [])])].map((f) => (
+                <SelectItem key={f} value={f}>
+                  {f}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               aria-label={`Enabled ${team.name}`}
@@ -142,6 +150,12 @@ export function SprayTeamsTab({
   crop: string;
   onSaved: (t: SprayTeam) => void;
 }) {
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  // Everything picked (the empty set) shows every team, farmless ones included.
+  const shown = useMemo(
+    () => (isEmptyPlaceSet(places) ? teams : teams.filter((t) => !!t.farm && places.farms.includes(t.farm))),
+    [teams, places],
+  );
   if (!teams.length) {
     return (
       <Card>
@@ -152,10 +166,23 @@ export function SprayTeamsTab({
     );
   }
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      {teams.map((t) => (
-        <TeamCard key={t.name} team={t} ctx={ctx} crop={crop} onSaved={onSaved} />
-      ))}
+    <div className="flex flex-col gap-4">
+      {ctx.farms.length > 1 && (
+        <div className="flex items-center gap-2">
+          <PlaceMultiPicker
+            farms={ctx.farms}
+            crop={crop}
+            label="Filter teams by farm"
+            value={places}
+            onChange={setPlaces}
+          />
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {shown.map((t) => (
+          <TeamCard key={t.name} team={t} ctx={ctx} crop={crop} onSaved={onSaved} />
+        ))}
+      </div>
     </div>
   );
 }

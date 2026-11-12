@@ -20,7 +20,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
 import { TreePicker } from "@/components/TreePicker";
 import type { TreeNode } from "@/pages/trends/trends-types";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, encodeNames, type PlaceSet } from "@/lib/places";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import {
   KpiValueSkeleton,
@@ -38,7 +39,6 @@ import {
 } from "@/components/ui/table";
 import { call } from "@/lib/frappe";
 
-const ALL_FARMS = "__all__";
 
 interface ChemicalRow {
   item_code: string;
@@ -100,7 +100,9 @@ export function matchesPicked(tm: TankMix, picked: Set<string>): boolean {
 export function TankMixes() {
   // Multi-level item filter (farm -> item). Empty = everything.
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [farm, setFarm] = useState<string>(ALL_FARMS);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  // One farm travels as a string, several as a JSON list (the server reads both).
+  const farm = encodeNames(places.farms);
   const [activeOnly, setActiveOnly] = useState(true);
   const [data, setData] = useState<{ tank_mixes: TankMix[]; farms: string[] }>({
     tank_mixes: [],
@@ -118,7 +120,7 @@ export function TankMixes() {
     call<{ tank_mixes: TankMix[]; farms: string[] }>(
       "upande_scp.serverscripts.scouting.scouting_metrics_api.list_tank_mixes",
       {
-        farm: farm === ALL_FARMS ? undefined : farm,
+        farm: farm || undefined,
         active_only: activeOnly ? 1 : 0,
       },
     )
@@ -165,11 +167,11 @@ export function TankMixes() {
           />
           {/* One place pill (place picker G2). `farms` is already scoped
               server-side to what this user may see; one farm reads as itself. */}
-          <PlacePicker
-            level="farm"
+          <PlaceMultiPicker
             farms={farms}
-            value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
-            onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+            label="Tank mix farms"
+            value={places}
+            onChange={setPlaces}
             disabled={skeleton}
           />
           <Select

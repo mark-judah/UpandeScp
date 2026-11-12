@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,7 +25,7 @@ import {
   type EntryBoard,
   type HouseEntry,
 } from "@/lib/reentry-api";
-import type { Place } from "@/lib/places";
+import { EMPTY_PLACE_SET, inPlaceSet, type PlaceSet } from "@/lib/places";
 import { errorText } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
@@ -115,7 +115,7 @@ function Section({
 export function Reentry({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
   const { farms, loading: farmsLoading } = useCropFarms(crop);
-  const [place, setPlace] = useState<Place>({ farm: "", greenhouse: "" });
+  const [place, setPlace] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [board, setBoard] = useState<EntryBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
   // server clock minus browser clock at the last fetch, plus a tick for the countdown
@@ -156,9 +156,7 @@ export function Reentry({ initialCrop }: { initialCrop?: string } = {}) {
 
   const visible = useMemo(() => {
     const all = board?.houses ?? [];
-    return all.filter((h) =>
-      place.greenhouse ? h.house === place.greenhouse : place.farm ? h.farm === place.farm : true,
-    );
+    return all.filter((h) => inPlaceSet(place, h.farm, h.house));
   }, [board, place]);
 
   const noEntry = visible.filter((h) => h.status === "no_entry");
@@ -179,7 +177,7 @@ export function Reentry({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
       <PageHeader eyebrow="Crop Protection · Spray safety" title="Re-entry">
-        <PlacePicker
+        <PlaceMultiPicker
           farms={farms}
           crop={crop}
           label="Re-entry farm and house"

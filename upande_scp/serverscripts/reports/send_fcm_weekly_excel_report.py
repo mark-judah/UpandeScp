@@ -39,6 +39,7 @@ from datetime import date, timedelta
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.reports.report_sender import report_sender, sender_for_farms
 from upande_scp.serverscripts.scouting.scouting_metrics import (
     MOTH_OTHERS,
@@ -1020,9 +1021,11 @@ def list_report_weeks(farm, year=None):
 
     Powers the week selector on the Reports page. Weeks are returned newest
     first, capped at the current week, each with a human label and the
-    Monday/Sunday bounds.
+    Monday/Sunday bounds. ``farm`` is one farm or several (JSON list / comma
+    names): the weeks with data on any of them.
     """
-    if not farm:
+    farms = parse_names(farm)
+    if not farms:
         return []
     current_year = int(year) if year else date.today().year
     current_week = int(date.today().isocalendar()[1])
@@ -1033,10 +1036,10 @@ def list_report_weeks(farm, year=None):
         FROM  `tabScouting Entry` se
         JOIN  `tabWarehouse` gh ON gh.name = se.greenhouse
         WHERE YEAR(se.date_of_capture) = %s
-          AND gh.custom_farm = %s
+          AND gh.custom_farm IN %s
         ORDER BY wk DESC
         """,
-        (current_year, farm),
+        (current_year, tuple(farms)),
         as_dict=True,
     )
 

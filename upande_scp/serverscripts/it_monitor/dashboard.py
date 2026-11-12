@@ -15,6 +15,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime
 
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.it_monitor import clean as C
 from upande_scp.serverscripts.it_monitor.ingest import latest_for_runtime
 
@@ -53,11 +54,12 @@ def _json(value, default):
 
 
 def _device_rows(farm=None):
-	"""Every device (a few hundred) with user/employee names, status computed live, queues parsed."""
+	"""Every device (a few hundred); `farm` is one farm name or several (JSON list / comma names) (a few hundred) with user/employee names, status computed live, queues parsed."""
 	now_dt = now_datetime()
 	where, args = "", []
-	if farm:
-		where, args = "WHERE d.farm = %s", [farm]
+	farms = parse_names(farm)
+	if farms:
+		where, args = "WHERE d.farm IN %s", [tuple(farms)]
 	rows = frappe.db.sql(
 		f"""SELECT {", ".join(DEVICE_FIELDS)}
 		    FROM `tabSCP Mobile Device` d
@@ -83,7 +85,8 @@ def overview(days=7, farm=None):
 	_require()
 	days = _days(days)
 	now_dt = now_datetime()
-	rows = _device_rows(farm or None)
+	farm = parse_names(farm)
+	rows = _device_rows(farm)
 	latest = latest_for_runtime(None, now_dt)
 
 	day_ago = add_days(now_dt, -1)
@@ -157,7 +160,7 @@ def _logins_today(farm, rows, now_dt):
 def devices(farm=None, status=None, search=None, stuck_only=0, limit=500):
 	"""A list of device rows (see DEVICE_FIELDS): status live, `queues` parsed, `flags` = why it needs attention."""
 	_require()
-	rows = _device_rows(farm or None)
+	rows = _device_rows(parse_names(farm))
 	if status:
 		rows = [r for r in rows if r.status == status]
 	if cint(stuck_only):
@@ -284,6 +287,7 @@ def logins(days=7, farm=None):
 	days = _days(days)
 	since = add_days(now_datetime(), -days)
 	users = None
+	farm = parse_names(farm)
 	if farm:
 		users = tuple({r.user for r in _device_rows(farm) if r.user}) or ("",)
 	cond, args = "", [since]
@@ -387,14 +391,14 @@ def data_flow(days=7, farm=None):
 	days = _days(days)
 	to_d = getdate()
 	from_d = to_d - timedelta(days=days - 1)
-	farm = farm or None
+	farm = parse_names(farm)
 
 	# Scouting Entry: date_of_capture first (indexed), farm via the greenhouse/block Warehouse.
 	farm_join, farm_cond, fargs = "", "", []
 	if farm:
 		farm_join = "JOIN `tabWarehouse` w ON w.name = COALESCE(NULLIF(e.greenhouse, ''), e.block)"
-		farm_cond = " AND w.custom_farm = %s"
-		fargs = [farm]
+		farm_cond = " AND w.custom_farm IN %s"
+		fargs = [tuple(farm)]
 	by_scout = frappe.db.sql(
 		f"""SELECT e.date_of_capture AS date, e.scouts_name AS scout, COUNT(*) AS entries
 		    FROM `tabScouting Entry` e {farm_join}
@@ -422,8 +426,8 @@ def data_flow(days=7, farm=None):
 	cargs = []
 	if farm:
 		csu_join = "JOIN `tabWarehouse` w ON w.name = s.csu_warehouse"
-		csu_cond = " AND w.custom_farm = %s"
-		cargs = [farm]
+		csu_cond = " AND w.custom_farm IN %s"
+		cargs = [tuple(farm)]
 	scans = frappe.db.sql(
 		f"""SELECT DATE(s.scanned_at) AS date, COUNT(*) AS n
 		    FROM `tabWork Order Chemical Scan` s {csu_join}
@@ -435,7 +439,7 @@ def data_flow(days=7, farm=None):
 
 	tok_cond, targs = "", []
 	if farm:
-		tok_cond, targs = " AND farm = %s", [farm]
+		tok_cond, targs = " AND farm IN %s", [tuple(farm)]
 	tokens = frappe.db.sql(
 		f"""SELECT DATE(creation) AS date, status, COUNT(*) AS n
 		    FROM `tabSpray Session Token`

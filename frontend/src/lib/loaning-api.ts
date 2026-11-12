@@ -103,9 +103,11 @@ export async function fetchLenderStock(
 
 export async function listDirectedLoans(
   box: "outgoing" | "incoming",
+  /** my farm(s): one name or a JSON list; empty = all of mine */
+  farm?: string,
 ): Promise<LoanRequestV2[]> {
   try {
-    return (await call<LoanRequestV2[]>(`${V2}.list_requests_v2`, { box })) || [];
+    return (await call<LoanRequestV2[]>(`${V2}.list_requests_v2`, farm ? { box, farm } : { box })) || [];
   } catch {
     return [];
   }

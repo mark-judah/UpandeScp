@@ -10,6 +10,8 @@ import math
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
+
 from upande_scp.serverscripts.common.cache_utils import (
     K_ORCHARD_TREES_PREFIX,
     TTL_LONG,
@@ -175,13 +177,17 @@ def get_orchard_tree_rows(block=None, farm=None):
             lambda: _rows_for_block(block),
             ttl=TTL_LONG,
         )
-    if farm:
-        return get_or_set(
-            f"{K_ORCHARD_TREES_PREFIX}:rows:farm:{farm}",
-            lambda: _rows_for_farm(farm),
+    # ``farm`` is one name or several (JSON list / comma names): each farm keeps
+    # its own cache entry and the rows are concatenated.
+    rows: list = []
+    for f in parse_names(farm):
+        got = get_or_set(
+            f"{K_ORCHARD_TREES_PREFIX}:rows:farm:{f}",
+            lambda f=f: _rows_for_farm(f),
             ttl=TTL_LONG,
         )
-    return {"rows": []}
+        rows.extend((got or {}).get("rows") or [])
+    return {"rows": rows}
 
 
 def _features_from_trees(tree_rows):

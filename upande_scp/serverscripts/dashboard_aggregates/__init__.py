@@ -144,9 +144,11 @@ def quality(**kwargs):
     farms_map = scouting_metrics.get_farms_and_warehouses() or {}
     fs = scouts_api.farm_scope(crop, kwargs.get("farm"), farms_map)
     kwargs["farm"] = fs["farm"]
-    greenhouse = (kwargs.get("greenhouse") or "").strip()
-    if greenhouse:
-        allowed = {w for f in fs["farms"] for w in (farms_map.get(f) or [])}
+    # greenhouse may name several (JSON list); each must sit on one of the user's farms
+    from upande_scp.serverscripts.common.place_filter import parse_names
+
+    allowed = {w for f in fs["farms"] for w in (farms_map.get(f) or [])}
+    for greenhouse in parse_names(kwargs.get("greenhouse")):
         if greenhouse not in allowed:
             frappe.throw(f"You cannot see greenhouse {greenhouse}.", frappe.PermissionError)
     # _call's force / crop handling, inline so the farms map read above is

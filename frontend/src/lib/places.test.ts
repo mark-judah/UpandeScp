@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  farmOf, farmPrefix, houseLabel, housesOf, matchesQuery, placeKey, readPlace, shortHouse, writePlace,
+  farmOf, farmPrefix, focusFarm, nameOnFarms, nameOnHouses, placeSetFromFilter, placeSetToFilter, houseLabel, housesOf, inPlaceSet, matchesQuery, singlePlace, placeKey, readPlace, shortHouse, writePlace,
 } from "@/lib/places";
 
 const FARMS = {
@@ -86,5 +86,62 @@ describe("readPlace / writePlace", () => {
     });
     expect(readPlace("Rose")).toBeNull();
     expect(() => writePlace("Rose", { farm: "A", greenhouse: "" })).not.toThrow();
+  });
+});
+
+describe("inPlaceSet / singlePlace", () => {
+  const none = { farms: [], greenhouses: [] };
+  it("the empty set holds every house", () => {
+    expect(inPlaceSet(none, "Chepsito", "Chepsito GH 16 - KR")).toBe(true);
+  });
+  it("a whole farm or a loose house is in; anything else is out", () => {
+    const set = { farms: ["Endebess"], greenhouses: ["Chepsito GH 16 - KR"] };
+    expect(inPlaceSet(set, "Endebess", "Q - KL")).toBe(true);
+    expect(inPlaceSet(set, "Chepsito", "Chepsito GH 16 - KR")).toBe(true);
+    expect(inPlaceSet(set, "Chepsito", "Chepsito GH 02 - KR")).toBe(false);
+  });
+  it("singlePlace is set only for exactly one farm or one house", () => {
+    expect(singlePlace(none)).toBeNull();
+    expect(singlePlace({ farms: ["A"], greenhouses: [] })).toEqual({ farm: "A", greenhouse: "" });
+    expect(singlePlace({ farms: [], greenhouses: ["H"] })).toEqual({ farm: "", greenhouse: "H" });
+    expect(singlePlace({ farms: ["A"], greenhouses: ["H"] })).toBeNull();
+  });
+});
+
+describe("map header filter <-> PlaceSet", () => {
+  it("a whole-farm pick carries only the farm list", () => {
+    expect(placeSetToFilter({ farms: ["Chepsito"], greenhouses: [] }, FARMS)).toEqual({ farm: "Chepsito", greenhouse: "" });
+    expect(placeSetToFilter({ farms: ["Chepsito", "Endebess"], greenhouses: [] }, FARMS)).toEqual({
+      farm: JSON.stringify(["Chepsito", "Endebess"]),
+      greenhouse: "",
+    });
+    expect(placeSetToFilter({ farms: [], greenhouses: [] }, FARMS)).toEqual({ farm: "", greenhouse: "" });
+  });
+  it("loose houses carry the houses and the farms they sit on", () => {
+    const p = placeSetToFilter({ farms: ["Endebess"], greenhouses: ["Chepsito GH 16 - KR"] }, FARMS);
+    expect(JSON.parse(p.greenhouse)).toEqual(["Chepsito GH 16 - KR", "Q - KL", "P2 - KL"]);
+    expect(JSON.parse(p.farm)).toEqual(["Chepsito", "Endebess"]);
+    expect(placeSetToFilter({ farms: [], greenhouses: ["Chepsito GH 16 - KR"] }, FARMS)).toEqual({
+      farm: "Chepsito",
+      greenhouse: "Chepsito GH 16 - KR",
+    });
+  });
+  it("reads it back, folding full farms", () => {
+    expect(placeSetFromFilter("Chepsito", "", FARMS)).toEqual({ farms: ["Chepsito"], greenhouses: [] });
+    expect(placeSetFromFilter("Chepsito", "Chepsito GH 16 - KR", FARMS)).toEqual({ farms: [], greenhouses: ["Chepsito GH 16 - KR"] });
+    expect(
+      placeSetFromFilter("", JSON.stringify(["Q - KL", "P2 - KL"]), FARMS),
+    ).toEqual({ farms: ["Endebess"], greenhouses: [] });
+    expect(placeSetFromFilter("__all__", "__all__", FARMS)).toEqual({ farms: [], greenhouses: [] });
+  });
+  it("name matching and fly-to focus", () => {
+    const two = JSON.stringify(["Chepsito", "Endebess"]);
+    expect(nameOnFarms("Endebess P2 - KL", two)).toBe(true);
+    expect(nameOnFarms("Torongo GH 1", two)).toBe(false);
+    expect(nameOnFarms("Torongo GH 1", "__all__")).toBe(true);
+    expect(nameOnHouses("Chepsito GH 16 - KR-Z1", JSON.stringify(["Chepsito GH 16 - KR"]))).toBe(true);
+    expect(nameOnHouses("Chepsito GH 02 - KR", "Chepsito GH 16 - KR")).toBe(false);
+    expect(focusFarm(two)).toBe("Chepsito");
+    expect(focusFarm("__all__")).toBe("");
   });
 });

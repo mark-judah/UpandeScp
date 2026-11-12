@@ -8,6 +8,7 @@
  * greenhouse. Outside any provider the name stays plain text, so a component
  * rendered somewhere without a scope never offers a pop-up it cannot fill.
  */
+import { parseNames } from "@/lib/places";
 import { ThumbImg } from "@/components/gallery/ThumbImg";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ImageOff } from "lucide-react";
@@ -135,7 +136,8 @@ export function ObservationGalleryDialog({
   };
 
   const ref = data?.reference;
-  const where = scope.greenhouse || scope.farm || (scope.crop ? `All ${scope.crop} houses` : "All houses");
+  const names = parseNames(scope.greenhouse || scope.farm);
+  const where = names.length > 1 ? `${names.length} places` : names[0] || (scope.crop ? `All ${scope.crop} houses` : "All houses");
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>

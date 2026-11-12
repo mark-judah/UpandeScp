@@ -39,6 +39,7 @@ from zoneinfo import ZoneInfo
 import frappe
 
 from upande_scp.serverscripts.common import crop_catalog, crop_scope, notifications
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.common import threshold_bands as B
 from upande_scp.serverscripts.dashboard_aggregates import _common
@@ -799,16 +800,21 @@ def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = Non
     crop_scope.assert_crop(crop)
     farms = crop_scope.scoped_farms(crop)
     filters = {"crop": crop, "status": ["in", list(OPEN_STATES)]}
-    if farm:
-        if farms is not None and farm not in farms:
-            return []
-        filters["farm"] = farm
+    # farm / greenhouse each take one name or several (JSON list / comma names).
+    want_farms = parse_names(farm)
+    if want_farms:
+        if farms is not None:
+            want_farms = [f for f in want_farms if f in farms]
+            if not want_farms:
+                return []
+        filters["farm"] = want_farms[0] if len(want_farms) == 1 else ["in", want_farms]
     elif farms is not None:
         if not farms:
             return []
         filters["farm"] = ["in", sorted(farms)]
-    if greenhouse:
-        filters["warehouse"] = greenhouse
+    houses = parse_names(greenhouse)
+    if houses:
+        filters["warehouse"] = houses[0] if len(houses) == 1 else ["in", houses]
     rows = frappe.get_all(DOCTYPE, filters=filters, fields=ALERT_FIELDS, 
                           limit_page_length=0)   # no cap: it would cut before the severity sort
     station = _common.station_word(crop)

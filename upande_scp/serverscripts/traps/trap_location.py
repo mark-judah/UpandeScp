@@ -22,6 +22,7 @@ import json
 import frappe
 from frappe.utils import now_datetime
 
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.traps import trap_geometry as G
 
 RUN_ROLES = ("System Manager", "SCP General Manager")
@@ -194,8 +195,9 @@ def get_trap_locations(farm=None):
     """{trap: {lat, lng, source, fixes, spread_m, flag}} for every trap that has
     a fixed location. Maps draw a trap here instead of at its entries' average."""
     filters = {"geojson": ["is", "set"]}
-    if farm:
-        filters["farm"] = farm
+    farms = parse_names(farm)  # one farm or several
+    if farms:
+        filters["farm"] = farms[0] if len(farms) == 1 else ["in", farms]
     out = {}
     for t in frappe.get_all(
         "Trap", filters=filters,

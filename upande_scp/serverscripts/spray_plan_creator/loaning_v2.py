@@ -32,6 +32,7 @@ import frappe
 
 from upande_scp.serverscripts.common import crop_scope
 from upande_scp.serverscripts.common import stores
+from upande_scp.serverscripts.common.place_filter import parse_names
 from frappe.utils import flt, now_datetime
 
 from upande_scp.serverscripts.common.crop_protection import is_foliar_group
@@ -184,19 +185,31 @@ def get_lender_stock(lender_farm: str, item_codes) -> dict:
     return out
 
 
+def narrow_farms(allowed, farm) -> list[str] | None:
+    """The farms a list is scoped to: ``allowed`` (None = no limit) narrowed by the
+    ``farm`` filter (one name or several). None means no farm filter at all."""
+    want = parse_names(farm)
+    if allowed is None:
+        return want or None
+    allowed = list(allowed)
+    return [f for f in want if f in allowed] if want else allowed
+
+
 @frappe.whitelist()
-def list_requests_v2(box: str = "outgoing") -> list[dict]:
+def list_requests_v2(box: str = "outgoing", farm=None) -> list[dict]:
     """``outgoing`` = requests this user's farms raised.
     ``incoming`` = requests addressed TO this user's farms, for them to decide.
 
     Both are farm-scoped for a plain planner; elevated roles see everything.
+    ``farm`` (one name, a JSON list or comma names) narrows to those of *my* farms:
+    the requesting farm for ``outgoing``, the lender for ``incoming``.
     """
     _ensure_creator()
     allowed = _user_farms()
     filters: dict = {}
-    if allowed is not None:
-        farms = list(allowed) or ["__none__"]
-        filters["requesting_farm" if box == "outgoing" else "lender_farm"] = ("in", farms)
+    farms = narrow_farms(allowed, farm)
+    if farms is not None:
+        filters["requesting_farm" if box == "outgoing" else "lender_farm"] = ("in", farms or ["__none__"])
 
     rows = frappe.get_all(
         DOCTYPE,

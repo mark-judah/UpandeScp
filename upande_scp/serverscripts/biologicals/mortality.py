@@ -78,9 +78,13 @@ def summarise(rows) -> dict:
 # --- database ---------------------------------------------------------------
 
 def _houses(greenhouse=None, farm=None):
-	if greenhouse:
-		return [greenhouse]
-	filters = {"custom_farm": farm} if farm else {"custom_farm": ["is", "set"]}
+	"""greenhouse / farm each take one name or several (JSON list, comma names)."""
+	from upande_scp.serverscripts.common.place_filter import parse_names
+	houses = parse_names(greenhouse)
+	if houses:
+		return houses
+	farms = parse_names(farm)
+	filters = {"custom_farm": ["in", farms]} if farms else {"custom_farm": ["is", "set"]}
 	return frappe.get_all("Warehouse", filters=filters, pluck="name")
 
 

@@ -37,7 +37,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
 import { HeaderIconButton } from "@/components/header-controls";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, encodeNames, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -103,6 +104,13 @@ export function ChemicalLoaning() {
   // -- scope ---------------------------------------------------------------
   const [farms, setFarms] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(true);
+  // "My farms": filters Incoming and Sent. A new request is raised by ONE farm, so
+  // the Borrow form takes it from the farms picked here (a choice shows when several).
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const scopeFarms = useMemo(
+    () => (isEmptyPlaceSet(places) ? farms : farms.filter((f) => places.farms.includes(f))),
+    [places, farms],
+  );
   const [myFarm, setMyFarm] = useState("");
   const [lenders, setLenders] = useState<string[]>([]);
   const [lender, setLender] = useState("");
@@ -112,10 +120,13 @@ export function ChemicalLoaning() {
       .then((r) => {
         setFarms(r?.farms ?? []);
         setEnabled(r?.enabled !== false);
-        if (r?.farms?.length) setMyFarm((f) => f || r.farms[0]);
       })
       .catch(() => setFarms([]));
   }, []);
+
+  useEffect(() => {
+    setMyFarm((cur) => (scopeFarms.includes(cur) ? cur : scopeFarms[0] || ""));
+  }, [scopeFarms]);
 
   useEffect(() => {
     if (!myFarm) return;
@@ -247,14 +258,15 @@ export function ChemicalLoaning() {
   const [incoming, setIncoming] = useState<LoanRequestV2[] | null>(null);
   const [outgoing, setOutgoing] = useState<LoanRequestV2[] | null>(null);
 
+  const farmParam = isEmptyPlaceSet(places) ? "" : encodeNames(places.farms);
   const reload = useCallback(async () => {
     const [inc, out] = await Promise.all([
-      listDirectedLoans("incoming"),
-      listDirectedLoans("outgoing"),
+      listDirectedLoans("incoming", farmParam),
+      listDirectedLoans("outgoing", farmParam),
     ]);
     setIncoming(inc);
     setOutgoing(out);
-  }, []);
+  }, [farmParam]);
 
   useEffect(() => {
     void reload();
@@ -308,16 +320,13 @@ export function ChemicalLoaning() {
           </Tabs>
         }
       >
-        {/* My farm (place picker G2): shown once the farms land, a single
-            farm reading as itself; there is no "all" here. */}
+        {/* My farms: shown once the farms land. */}
         {farms.length > 0 ? (
-          <PlacePicker
-            level="farm"
+          <PlaceMultiPicker
             farms={farms}
-            label="My farm"
-            allLabel={false}
-            value={{ farm: myFarm, greenhouse: "" }}
-            onChange={(p) => setMyFarm(p.farm)}
+            label="My farms"
+            value={places}
+            onChange={setPlaces}
           />
         ) : null}
         <HeaderIconButton onClick={() => void reload()} title="Reload">
@@ -329,6 +338,8 @@ export function ChemicalLoaning() {
         {tab === "request" ? (
           <BorrowForm
             myFarm={myFarm}
+            setMyFarm={setMyFarm}
+            myFarms={scopeFarms}
             lenders={lenders}
             lender={lender}
             setLender={setLender}
@@ -411,6 +422,8 @@ export function ChemicalLoaning() {
 
 function BorrowForm(props: {
   myFarm: string;
+  setMyFarm: (v: string) => void;
+  myFarms: string[];
   lenders: string[];
   lender: string;
   setLender: (v: string) => void;
@@ -428,7 +441,7 @@ function BorrowForm(props: {
   onSubmit: () => void;
 }) {
   const {
-    lenders, lender, setLender, basket, setBasket, stock, stockLoading,
+    myFarm, setMyFarm, myFarms, lenders, lender, setLender, basket, setBasket, stock, stockLoading,
     overHalfRows, shortRows, reason, setReason, canSubmit, submitting, onAdd, onSubmit,
   } = props;
 
@@ -436,6 +449,23 @@ function BorrowForm(props: {
     <Card className="p-4">
       <CardContent className="flex flex-col gap-4 p-0">
         <div className="flex flex-wrap items-end gap-3">
+          {myFarms.length > 1 && (
+            <div className="flex min-w-56 flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Borrow for</label>
+              <Select value={myFarm} onValueChange={setMyFarm}>
+                <SelectTrigger className="h-9 text-xs" aria-label="Borrow for">
+                  <SelectValue placeholder="Pick your farm" />
+                </SelectTrigger>
+                <SelectContent>
+                  {myFarms.map((f) => (
+                    <SelectItem key={f} value={f}>
+                      {f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="flex min-w-56 flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground">
               Borrow from

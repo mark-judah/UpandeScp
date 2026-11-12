@@ -16,7 +16,7 @@ import { MapPin } from "lucide-react";
 import { TreePicker } from "@/components/TreePicker";
 import { HEADER_PILL } from "@/components/header-controls";
 import {
-  ALL_FARMS_LABEL, EMPTY_PLACE_SET, isEmptyPlaceSet, normalizePlaceSet, placeSetLabel,
+  EMPTY_PLACE_SET, isEmptyPlaceSet, normalizePlaceSet, placeSetLabel,
   placeSetLeaves, readPlaceSet, shortHouse, writePlaceSet, type FarmHouses, type PlaceSet,
 } from "@/lib/places";
 import { routeCrop } from "@/lib/router";
@@ -33,7 +33,13 @@ export interface PlaceMultiPickerProps {
   remember?: boolean;
   disabled?: boolean;
   label?: string;
+  /** pill text when set; by default the pill reads like Trends: "Farms" and the
+   *  number of places ticked */
   allLabel?: string;
+  /** figures shown at the end of rows: by greenhouse name (or by farm name for a
+   *  farm-only list); a farm without its own figure shows its houses' sum.
+   *  Omit where the page has no count. */
+  counts?: Record<string, number>;
   className?: string;
 }
 
@@ -45,7 +51,8 @@ export function PlaceMultiPicker({
   remember = true,
   disabled,
   label = "Farms and greenhouses",
-  allLabel = ALL_FARMS_LABEL,
+  allLabel,
+  counts,
   className,
 }: PlaceMultiPickerProps) {
   const crop = cropProp ?? routeCrop();
@@ -70,20 +77,27 @@ export function PlaceMultiPicker({
     () =>
       farmNames.map((f) => {
         const houses = farmMap[f] || [];
-        return houses.length
-          ? {
-              id: `f:${f}`,
-              label: f,
-              children: houses.map((h) => ({
-                id: `h:${h}`,
-                label: shortHouse(h, f),
-                search: `${f} ${h}`,
-                title: h,
-              })),
-            }
-          : { id: `f:${f}`, label: f };
+        if (!houses.length) {
+          return { id: `f:${f}`, label: f, count: counts?.[f] };
+        }
+        const figures = houses.map((h) => counts?.[h]);
+        const sum = counts && figures.some((n) => typeof n === "number")
+          ? figures.reduce<number>((t, n) => t + (n ?? 0), 0)
+          : undefined;
+        return {
+          id: `f:${f}`,
+          label: f,
+          count: counts?.[f] ?? sum,
+          children: houses.map((h, i) => ({
+            id: `h:${h}`,
+            label: shortHouse(h, f),
+            search: `${f} ${h}`,
+            title: h,
+            count: figures[i],
+          })),
+        };
       }),
-    [farmMap, farmNames],
+    [farmMap, farmNames, counts],
   );
 
   const commit = (next: PlaceSet) => {
@@ -128,9 +142,10 @@ export function PlaceMultiPicker({
 
   return (
     <TreePicker
-      label={label}
+      label="Farms"
       ariaLabel={label}
-      valueText={placeSetLabel(value, allLabel)}
+      valueText={allLabel ? placeSetLabel(value, allLabel) : undefined}
+      count={checked.size}
       icon={<MapPin className="h-3.5 w-3.5 shrink-0" />}
       disabled={disabled}
       className={className}

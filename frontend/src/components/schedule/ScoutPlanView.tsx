@@ -10,7 +10,8 @@
  * * Edits stay local until Save, which replaces the farm's week on the server.
  *   Only users who manage the farm see the editing controls.
  */
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { addDays, addWeeks, format, startOfWeek } from "date-fns";
 import { Check, ChevronLeft, ChevronRight, Copy, Eraser, Save, Undo2, X } from "lucide-react";
@@ -46,18 +47,27 @@ const ymd = (d: Date) => format(d, "yyyy-MM-dd");
 export const mondayOf = (s: string) => ymd(startOfWeek(day(s), { weekStartsOn: 1 }));
 const firstName = (n: string) => (n || "").split(/\s+/)[0] || n;
 
-export function ScoutPlanView({
+/** One farm's week: the plan editor. Saving replaces this farm's week, so a plan is
+ *  always one farm; several picked farms stack one of these each. */
+function ScoutPlanFarm({
   crop,
-  initialFarm,
-  initialWeek,
+  farm,
+  week,
+  onWeek,
+  picker,
+  onFarms,
 }: {
   crop?: string;
-  initialFarm?: string;
-  /** any day of the week to open on */
-  initialWeek: string;
+  /** "" lets the server choose the user's default farm */
+  farm: string;
+  week: string;
+  onWeek: (next: (w: string) => string) => void;
+  /** the farm picker, drawn in the first panel's toolbar */
+  picker?: React.ReactNode;
+  /** the farms the server offers, once known */
+  onFarms?: (farms: string[], farm: string) => void;
 }) {
-  const [week, setWeek] = useState(() => mondayOf(initialWeek));
-  const [farm, setFarm] = useState(initialFarm || "");
+  const setWeek = onWeek;
   const [data, setData] = useState<ScoutPlan | null>(null);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -72,9 +82,10 @@ export function ScoutPlanView({
 
   const adopt = useCallback((p: ScoutPlan) => {
     setData(p);
+    onFarms?.(p.farms || [], p.farm || "");
     setRows(p.assignments.map((a) => ({ date: a.date, scout: a.scout, greenhouse: a.greenhouse })));
     setDirty(false);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(() => {
     const id = ++requestId.current;
@@ -235,19 +246,7 @@ export function ScoutPlanView({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <PlacePicker
-          level="farm"
-          farms={data?.farms || (farm ? [farm] : [])}
-          crop={crop}
-          label="Scout plan farm"
-          allLabel={false}
-          value={{ farm: farm || data?.farm || "", greenhouse: "" }}
-          onChange={(p) => {
-            if (dirty && !window.confirm("Discard unsaved changes to this week?")) return;
-            setFarm(p.farm);
-          }}
-          disabled={skeleton}
-        />
+        {picker}
         <div role="group" aria-label="Scout rows" className="inline-flex rounded-lg bg-muted p-0.5">
           {(["greenhouse", "scout"] as const).map((v) => (
             <button
@@ -595,6 +594,66 @@ function ScoutGridSkeleton({ week, cols, rowsBy }: { week: string; cols: string;
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** The weekly plan for the picked farms: one stacked panel per farm (empty = every
+ *  farm the server offers). The week follows across the panels. */
+export function ScoutPlanView({
+  crop,
+  initialPlaces,
+  initialWeek,
+}: {
+  crop?: string;
+  initialPlaces?: PlaceSet;
+  /** any day of the week to open on */
+  initialWeek: string;
+}) {
+  const [week, setWeek] = useState(() => mondayOf(initialWeek));
+  const [places, setPlaces] = useState<PlaceSet>(initialPlaces ?? EMPTY_PLACE_SET);
+  const [offered, setOffered] = useState<string[]>([]);
+  const [defaultFarm, setDefaultFarm] = useState("");
+  // Untouched, the plan opens on the farm the server chose; once the picker is
+  // used the empty set means every farm (one panel each).
+  const [touched, setTouched] = useState(!!initialPlaces && !isEmptyPlaceSet(initialPlaces));
+  const farms = touched ? (places.farms.length ? places.farms : offered) : [];
+  const targets = farms.length ? farms : [""];
+  const shown: PlaceSet = touched ? places : { farms: defaultFarm ? [defaultFarm] : [], greenhouses: [] };
+  return (
+    <div className="flex min-w-0 flex-col gap-6" data-testid="scout-plan-stack">
+      {targets.map((f, i) => (
+        <ScoutPlanFarm
+          key={f || "__default"}
+          crop={crop}
+          farm={f}
+          week={week}
+          onWeek={setWeek}
+          onFarms={
+            i === 0
+              ? (all, farm) => {
+                  setOffered(all);
+                  setDefaultFarm(farm);
+                }
+              : undefined
+          }
+          picker={
+            i === 0 ? (
+              <PlaceMultiPicker
+                farms={offered}
+                crop={crop}
+                label="Scout plan farms"
+                value={shown}
+                onChange={(next) => {
+                  setTouched(true);
+                  setPlaces(next);
+                }}
+                disabled={!offered.length}
+              />
+            ) : undefined
+          }
+        />
+      ))}
     </div>
   );
 }

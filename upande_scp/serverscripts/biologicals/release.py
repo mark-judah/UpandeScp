@@ -280,12 +280,15 @@ def list_releases(from_date=None, to_date=None, greenhouse=None, predator=None, 
 	"""History for the Biologicals page: rows plus totals by predator and by greenhouse."""
 	sc = _scope()
 	filters = {"docstatus": 1}
-	if greenhouse:
-		filters["greenhouse"] = greenhouse
+	# greenhouse / farm each take one name or several (JSON list, comma names)
+	from upande_scp.serverscripts.common.place_filter import parse_names
+	houses, farms = parse_names(greenhouse), parse_names(farm)
+	if houses:
+		filters["greenhouse"] = houses[0] if len(houses) == 1 else ["in", houses]
 	if predator:
 		filters["predator"] = predator
-	if farm:
-		filters["farm"] = farm
+	if farms:
+		filters["farm"] = farms[0] if len(farms) == 1 else ["in", farms]
 	elif sc["farms"] is not None:
 		filters["farm"] = ["in", sorted(sc["farms"]) or [""]]
 	if from_date:

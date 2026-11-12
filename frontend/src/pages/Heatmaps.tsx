@@ -85,9 +85,9 @@ import {
   type ProjectedGeometry,
   type ZoneGeoLike,
 } from "./maps/bed-projection";
-import { PlacePicker } from "@/components/PlacePicker";
-import type { Place } from "@/lib/places";
-import { parseSelection, parseObs } from "./trends/aggregate";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
+import { parseObs } from "./trends/aggregate";
 import { WeatherCard } from "@/components/WeatherCard";
 import { ScoutRow, type Scout } from "@/components/ScoutAvatar";
 import { WeatherHistory, useWeatherHistory } from "@/components/WeatherHistory";
@@ -211,7 +211,11 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   const [farmsError, setFarmsError] = useState<"stale-session" | "failed" | null>(
     null,
   );
-  const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
+  void farmsError; // kept for the page's own error text below
+  // The place pick. Nothing loads until the operator has chosen (a pick, the
+  // remembered set, a deep link); once chosen, the empty set means every house.
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const [chosen, setChosen] = useState(false);
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<HeatmapCard | null>(null);
   const [pickedDetail, setPickedDetail] = useState<CardRecent[] | null>(null);
@@ -312,37 +316,20 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     const id = linkStationId(link, farmsByGh);
     if (!id) return;
     linkDone.current.station = true;
-    setStationChecks(new Set([id]));
+    setPlaces({ farms: [], greenhouses: [link.gh] });
+    setChosen(true);
   }, [link, farmsByGh]);
 
   // Server-side filter: only the crop, date range, and explicit greenhouse
   // selections (if any) go to the server. Obs filtering is purely
   // client-side from the returned card list.
-  const selections = useMemo(
-    () =>
-      Array.from(stationChecks)
-        .map(parseSelection)
-        .filter((s): s is NonNullable<typeof s> => !!s),
-    [stationChecks],
-  );
-
-  // Translate the tristate picker selections into a flat greenhouses
-  // list for the server. Empty list = no greenhouse filter (return all).
-  // We treat a "farm:Karen" check as "every greenhouse on Karen" by
-  // walking farmsByGh; "station:Karen|GH 01" passes the literal gh through.
+  // Flat greenhouse list for the server; empty = no greenhouse filter (every
+  // house). A whole farm stands for every greenhouse on it.
   const greenhouseFilter = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of selections) {
-      if (s.kind === "station") {
-        set.add(s.station);
-      } else {
-        for (const [gh, f] of Object.entries(farmsByGh)) {
-          if (f === s.farm) set.add(gh);
-        }
-      }
-    }
+    const set = new Set<string>(places.greenhouses);
+    for (const f of places.farms) for (const h of cropFarms[f] || []) set.add(h);
     return Array.from(set);
-  }, [selections, farmsByGh]);
+  }, [places, cropFarms]);
 
   const aggFilters = useMemo(
     () => ({
@@ -358,7 +345,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   // by at least one farm or greenhouse. Loading every greenhouse on page
   // open is hectic on a busy site and adds no value when the user
   // already knows which farm they're investigating.
-  const hasScope = greenhouseFilter.length > 0;
+  const hasScope = chosen;
   const gridState = useDashboardAggregate<HeatmapsGridPayload>(
     "heatmaps_grid",
     aggFilters as any,
@@ -464,36 +451,14 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     return ids.length === 1 ? ids[0] : null;
   }, [obsChecks]);
 
-  // The place pill drives the same selection set the deep link writes: one
-  // farm ("farm:<f>") or one greenhouse ("station:<f>|<gh>").
-  const place = useMemo<Place>(() => {
-    const s = selections[0];
-    if (!s) return { farm: "", greenhouse: "" };
-    return s.kind === "station"
-      ? { farm: s.farm, greenhouse: s.station }
-      : { farm: s.farm, greenhouse: "" };
-  }, [selections]);
-  const setPlace = (p: Place) =>
-    setStationChecks(
-      new Set(
-        p.greenhouse
-          ? [`station:${p.farm || farmsByGh[p.greenhouse] || ""}|${p.greenhouse}`]
-          : p.farm
-            ? [`farm:${p.farm}`]
-            : [],
-      ),
-    );
-
-  // Pick a farm for the weather card. Use the first farm-typed selection;
-  // otherwise infer from the first station-typed selection via farmsByGh.
+  // Pick a farm for the weather card: the first picked farm, else the farm of
+  // the first picked house, else the first farm in view.
   const weatherFarm = useMemo(() => {
-    for (const s of selections) {
-      if (s.kind === "farm") return s.farm;
-      const f = farmsByGh[s.station];
-      if (f) return f;
-    }
-    return "";
-  }, [selections, farmsByGh]);
+    if (places.farms[0]) return places.farms[0];
+    const f = places.greenhouses[0] ? farmsByGh[places.greenhouses[0]] : "";
+    if (f) return f;
+    return isEmptyPlaceSet(places) && chosen ? Object.keys(cropFarms)[0] || "" : "";
+  }, [places, farmsByGh, chosen, cropFarms]);
 
   // The grid ships only recent[0]; the modal reads the on-demand-fetched
   // 3-date detail once it lands, falling back to what the grid already
@@ -562,22 +527,15 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
       >
         <DateRangePicker label="Heatmap date range" value={{ from, to }} onChange={setRange} />
 
-        {/* One farm (every greenhouse on it) or one greenhouse. No "All farms":
-            nothing loads until the scope is narrowed. */}
-        <PlacePicker
+        <PlaceMultiPicker
           farms={cropFarms}
           crop={crop}
-          value={place}
-          onChange={setPlace}
-          allLabel={false}
-          placeholder={
-            farmsError === "stale-session"
-              ? "Reload to sign back in"
-              : farmsError === "failed"
-                ? "Couldn't load farms"
-                : "Pick a farm or greenhouse"
-          }
-          label="Heatmap farm or greenhouse"
+          value={places}
+          onChange={(next) => {
+            setPlaces(next);
+            setChosen(true);
+          }}
+          label="Heatmap farms and greenhouses"
           disabled={farmsLoading}
         />
 
@@ -627,9 +585,8 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               Pick farms or greenhouses to start
             </CardTitle>
             <CardDescription className="max-w-md">
-              Use the farm and greenhouse picker above. Pick a farm for every
-              greenhouse on it, or one greenhouse. Nothing loads until you
-              narrow the scope.
+              Use the farm and greenhouse picker above: tick farms or
+              greenhouses, or Select all. Nothing loads until you choose.
             </CardDescription>
           </Card>
         ) : firstGrid ? (

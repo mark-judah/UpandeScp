@@ -100,7 +100,7 @@ describe("spray pages draw their frame while the data loads", () => {
     expect(screen.getByText("Schedule")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Calendar" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "State" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Farm" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Schedule farms" })).toBeDisabled();
     expect(screen.getByText("Show unavailable only")).toBeInTheDocument();
     const cal = screen.getByTestId("schedule-calendar");
     expect(cal).toHaveAttribute("aria-busy", "true");
@@ -122,6 +122,6 @@ describe("spray pages draw their frame while the data loads", () => {
     expect(await screen.findByText("No spray plans in this range.")).toBeInTheDocument();
     expect(screen.queryByTestId("schedule-calendar")).toBeNull();
     // One farm: the place pill names it and stays put (place picker G5).
-    expect(screen.getByRole("group", { name: "Farm" })).toHaveTextContent("Chepsito");
+    expect(screen.getByRole("group", { name: "Schedule farms" })).toHaveTextContent("Chepsito");
   });
 });

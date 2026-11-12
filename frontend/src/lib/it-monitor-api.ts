@@ -5,6 +5,7 @@
  * the server leaves out reads as null / 0 / [] rather than crashing the page.
  */
 import { FrappeError } from "./frappe";
+import { parseNames } from "./places";
 
 const API = "upande_scp.serverscripts.it_monitor.dashboard";
 
@@ -579,7 +580,8 @@ export function queueRows(q: Record<string, QueueStat>) {
 export function filterDevices(rows: ItDevice[], f: DeviceFilters): ItDevice[] {
   const q = (f.search ?? "").trim().toLowerCase();
   return rows.filter((d) => {
-    if (f.farm && d.farm !== f.farm) return false;
+    const farms = parseNames(f.farm);
+    if (farms.length && !farms.includes(d.farm ?? "")) return false;
     if (f.status && d.status !== f.status) return false;
     if (f.stuck_only && d.stuck_total <= 0) return false;
     if (q) {

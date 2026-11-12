@@ -6,7 +6,8 @@
  * Self-contained (its own load and Save) so the section works the same whether
  * or not Upande Asset is installed; without it the card says so and offers nothing.
  */
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import { useCallback, useEffect, useState } from "react";
 import { ClipboardCheck, Plus, Trash2 } from "lucide-react";
 import {
@@ -52,6 +53,25 @@ export function AssetChecksCard() {
 
   const update = (i: number, patch: Partial<AssetCheckRow>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  // A row is one farm x category. Picking several farms on a row keeps the first
+  // on it and adds a row (same category and switch) for each other farm, skipping
+  // a farm that already has that category.
+  const fanOut = (i: number, next: PlaceSet) => {
+    const names = isEmptyPlaceSet(next) ? data.farms : next.farms;
+    if (!names.length) return;
+    setRows((rs) => {
+      const row = rs[i];
+      const first = names.includes(row.farm) ? row.farm : names[0];
+      const taken = new Set(rs.filter((_, j) => j !== i && j >= 0).map((r) => `${r.farm}|${r.asset_category}`));
+      const extra = names
+        .filter((f) => f !== first && !taken.has(`${f}|${row.asset_category}`))
+        .map((f) => ({ ...row, farm: f }));
+      const out = rs.map((r, j) => (j === i ? { ...r, farm: first } : r));
+      out.splice(i + 1, 0, ...extra);
+      return out;
+    });
+  };
 
   const incomplete = rows.some((r) => !r.farm || !r.asset_category);
 
@@ -112,15 +132,12 @@ export function AssetChecksCard() {
                 )}
                 {rows.map((r, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-                    <PlacePicker
-                      level="farm"
+                    <PlaceMultiPicker
                       remember={false}
-                      allLabel={false}
                       farms={data.farms}
                       label="Farm"
-                      placeholder="Pick a farm"
-                      value={{ farm: r.farm || "", greenhouse: "" }}
-                      onChange={(p) => update(i, { farm: p.farm })}
+                      value={{ farms: r.farm ? [r.farm] : [], greenhouses: [] }}
+                      onChange={(next) => fanOut(i, next)}
                     />
                     <FilterSelect
                       label="Asset category"

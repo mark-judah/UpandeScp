@@ -15,7 +15,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { FilterSelect } from "@/components/FilterSelect";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, encodeNames, type PlaceSet } from "@/lib/places";
 import { HeaderIconButton } from "@/components/header-controls";
 import { ScheduleCalendar } from "@/components/schedule/ScheduleCalendar";
 import { ScheduleGantt, type GanttRowsBy } from "@/components/schedule/ScheduleGantt";
@@ -118,7 +119,9 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
   );
   const [span, setSpan] = useState<Span>("month");
   const [range, setRange] = useState(() => monthRange(new Date()));
-  const [farm, setFarm] = useState("");
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  // Farm-only page: whole farms; one name stays a string, several a JSON list.
+  const farm = encodeNames(places.farms);
   const [team, setTeam] = useState("");
   const [state, setState] = useState("");
   const [data, setData] = useState<ScheduleData | null>(null);
@@ -224,12 +227,12 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
       >
         {view !== "scouts" && (
           <>
-            <PlacePicker
-              level="farm"
+            <PlaceMultiPicker
               farms={data?.farms || []}
               crop={initialCrop}
-              value={{ farm, greenhouse: "" }}
-              onChange={(p) => setFarm(p.farm)}
+              label="Schedule farms"
+              value={places}
+              onChange={setPlaces}
               disabled={skeleton}
             />
             <FilterSelect
@@ -256,7 +259,7 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
 
       {view === "scouts" ? (
         <div className="flex min-w-0 flex-col gap-3 px-4 pb-6 md:px-6">
-          <ScoutPlanView crop={initialCrop} initialFarm={farm} initialWeek={range.from} />
+          <ScoutPlanView crop={initialCrop} initialPlaces={places} initialWeek={range.from} />
         </div>
       ) : (
       <div className="flex min-w-0 flex-col gap-3 px-4 pb-6 md:px-6">

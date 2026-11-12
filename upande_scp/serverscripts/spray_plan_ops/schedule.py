@@ -19,6 +19,7 @@ import frappe
 from frappe.utils import add_days, getdate
 
 from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.common import crew_availability as CA
 
 AFP_TYPE = "Application Floor Plan"
@@ -46,10 +47,14 @@ def _greenhouses(crop: str | None, farm: str | None) -> tuple[dict[str, str], li
 	"""(greenhouse → farm, farms offered) under the user's scope."""
 	farms = crop_scope.visible_farms(None, crop or None)
 	offered = sorted(farms) if farms is not None else sorted(frappe.get_all("Farm", pluck="name"))
-	if farm:
-		if farms is not None and farm not in farms:
-			return {}, offered
-		wanted = [farm]
+	# `farm` takes one name or several (JSON list / comma names).
+	picked = parse_names(farm)
+	if picked:
+		if farms is not None:
+			picked = [f for f in picked if f in farms]
+			if not picked:
+				return {}, offered
+		wanted = picked
 	else:
 		wanted = offered
 	if not wanted:

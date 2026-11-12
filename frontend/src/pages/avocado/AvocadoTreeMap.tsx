@@ -1,4 +1,5 @@
 import { captureStamp } from "@/lib/capture-time";
+import { parseNames } from "@/lib/places";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FilterSelect } from "@/components/FilterSelect";
 import maplibregl from "maplibre-gl";
@@ -127,10 +128,12 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     // long default window is cheap — default to the last 10 months.
     ...lastMonthsRange(10),
   }));
+  const selFarms = useMemo(() => parseNames(filters.farm), [filters.farm]);
+  const ghList = useMemo(() => parseNames(filters.greenhouse), [filters.greenhouse]);
   const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
-    greenhouse: filters.greenhouse === ALL ? undefined : filters.greenhouse,
+    greenhouses: ghList.length ? ghList : undefined,
     crop: filters.crop,
   });
 
@@ -262,12 +265,12 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
       [
         ...new Set(
           (blocks?.features ?? [])
-            .filter((f) => filters.farm === ALL || f.properties?.farm === filters.farm)
+            .filter((f) => !selFarms.length || selFarms.includes(String(f.properties?.farm ?? "")))
             .map((f) => String(f.properties?.block ?? ""))
             .filter(Boolean),
         ),
       ].sort(),
-    [blocks, filters.farm],
+    [blocks, selFarms],
   );
   const saveArea = async (title: string, shared: boolean) => {
     if (!pendingArea || !block || !obs) return;
@@ -685,7 +688,7 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !blocks) return;
-    if (filters.farm === ALL) {
+    if (!selFarms.length) {
       // Fit to all blocks present.
       let minX = Infinity,
         minY = Infinity,
@@ -710,11 +713,17 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
       }
       return;
     }
+    // One farm → its bounds; several → the union of theirs.
     const farmBounds = farmBoundsFromBlocks(blocks);
-    const b = farmBounds[filters.farm];
-    if (b)
+    const bs = selFarms.map((f) => farmBounds[f]).filter(Boolean);
+    if (bs.length) {
+      const b: [[number, number], [number, number]] = [
+        [Math.min(...bs.map((x) => x[0][0])), Math.min(...bs.map((x) => x[0][1]))],
+        [Math.max(...bs.map((x) => x[1][0])), Math.max(...bs.map((x) => x[1][1]))],
+      ];
       map.fitBounds(b, { padding: 80, pitch: topViewRef.current ? 0 : 60, duration: 1000, bearing: 0 });
-  }, [filters.farm, blocks, mapReady]);
+    }
+  }, [selFarms, blocks, mapReady]);
 
   // Click a block → fly into it.
   const onMapReady = (map: maplibregl.Map) => {

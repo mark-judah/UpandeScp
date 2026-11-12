@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { PlacePicker } from "@/components/PlacePicker";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, encodeNames, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import { Download, AlertCircle, Layers, Mail } from "lucide-react";
 import {
   Card,
@@ -65,9 +66,17 @@ interface WeekOption {
  */
 export function BlockWeeklyReport({ crop }: { crop: string }) {
   const [avail, setAvail] = useState<Availability | null>(null);
-  const [farm, setFarm] = useState<string>("");
+  // A workbook (and a weekly email) is one farm's, so several farms give one each.
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  const picked = useRef(false);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [week, setWeek] = useState<string>("");
+  const readyNames = useMemo(() => (avail?.ready ?? []).map((f) => f.farm), [avail]);
+  const selFarms = useMemo(
+    () => (isEmptyPlaceSet(places) ? readyNames : readyNames.filter((f) => places.farms.includes(f))),
+    [places, readyNames],
+  );
+  const farm = encodeNames(selFarms);
   const [loading, setLoading] = useState(true);
   const [weeksLoading, setWeeksLoading] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -83,7 +92,8 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
     call<Availability>(`${NS}.availability`, { crop })
       .then((r) => {
         setAvail(r);
-        if (r?.ready?.length) setFarm(r.ready[0].farm);
+        // Open on the first farm; Select all picks every one.
+        if (r?.ready?.length && !picked.current) setPlaces({ farms: [r.ready[0].farm], greenhouses: [] });
       })
       .catch(() => setAvail({ crop, ready: [], blocked: [] }))
       .finally(() => setLoading(false));
@@ -108,17 +118,34 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
 
   const download = () => {
     const [year, wk] = week.split("-");
-    window.location.href =
+    const url = (f: string) =>
       `/api/method/${NS}.download_block_weekly_xlsx` +
-      `?crop=${encodeURIComponent(crop)}&farm=${encodeURIComponent(farm)}` +
+      `?crop=${encodeURIComponent(crop)}&farm=${encodeURIComponent(f)}` +
       `&year=${encodeURIComponent(year)}&week=${encodeURIComponent(wk)}`;
+    if (selFarms.length === 1) {
+      window.location.href = url(selFarms[0]);
+      return;
+    }
+    // One workbook per farm: each through its own link, a moment apart.
+    selFarms.forEach((f, i) =>
+      window.setTimeout(() => {
+        const a = document.createElement("a");
+        a.href = url(f);
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, i * 700),
+    );
   };
 
   const previewWeekly = async () => {
     setWkBusy("preview");
     setWkNote(null);
     try {
-      setWkHtml(await previewWeeklyBlockEmail(crop, farm || undefined));
+      const parts: string[] = [];
+      for (const f of selFarms.length ? selFarms : [undefined]) parts.push(await previewWeeklyBlockEmail(crop, f));
+      setWkHtml(parts.join("<hr/>"));
     } catch (e) {
       setWkNote({ ok: false, text: errorText(e, "Could not build the preview.") });
     } finally {
@@ -129,11 +156,16 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
     setWkBusy("test");
     setWkNote(null);
     try {
-      const r = await sendTestWeeklyBlockEmail(crop, farm || undefined);
+      const results: { f?: string; r: Awaited<ReturnType<typeof sendTestWeeklyBlockEmail>> }[] = [];
+      for (const f of selFarms.length ? selFarms : [undefined]) {
+        results.push({ f, r: await sendTestWeeklyBlockEmail(crop, f) });
+      }
+      const sent = results.filter((x) => x.r.sent);
+      const failed = results.filter((x) => !x.r.sent);
       setWkNote(
-        r.sent
-          ? { ok: true, text: `Test email sent to ${r.to}.` }
-          : { ok: false, text: r.reason || "Test email was not sent." },
+        failed.length
+          ? { ok: false, text: failed.map((x) => `${x.f ? x.f + ": " : ""}${x.r.reason || "Test email was not sent."}`).join(" ") }
+          : { ok: true, text: `Test email sent to ${sent.map((x) => x.r.to).join(", ")}.` },
       );
     } catch (e) {
       setWkNote({ ok: false, text: errorText(e, "Test email failed.") });
@@ -203,20 +235,20 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
                 <Label>Farm</Label>
-                <PlacePicker
-                  level="farm"
-                  variant="field"
-                  allLabel={false}
-                  className="w-56"
+                <PlaceMultiPicker
+                  remember={false}
                   farms={ready.map((f) => f.farm)}
+                  counts={Object.fromEntries(ready.map((f) => [f.farm, f.blocks]))}
                   label="Block report farm"
-                  placeholder={loading ? "Loading farms…" : "Pick a farm"}
-                  value={{ farm, greenhouse: "" }}
-                  onChange={(p) => setFarm(p.farm)}
+                  value={places}
+                  onChange={(p) => {
+                    picked.current = true;
+                    setPlaces(p);
+                  }}
                   disabled={loading}
                 />
                 {(() => {
-                  const n = ready.find((f) => f.farm === farm)?.blocks;
+                  const n = selFarms.length ? selFarms.reduce((t, f) => t + (ready.find((r) => r.farm === f)?.blocks ?? 0), 0) : undefined;
                   return n !== undefined ? (
                     <span className="block text-xs text-muted-foreground">{n} blocks</span>
                   ) : null;

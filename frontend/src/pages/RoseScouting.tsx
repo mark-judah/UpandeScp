@@ -17,6 +17,7 @@
  * + filter popovers always paint above the map.
  */
 
+import { focusFarm, nameOnFarms, nameOnHouses, parseNames } from "@/lib/places";
 import { captureStamp, padTime } from "@/lib/capture-time";
 import { FilterSelect } from "@/components/FilterSelect";
 import { TogglePill } from "@/components/TogglePill";
@@ -167,13 +168,12 @@ export function RoseScouting() {
   const [stationDay, setStationDay] = useState("");
   const [openStationId, setOpenStationId] = useState<string | null>(null);
 
-  const ghForCall =
-    filters.greenhouse === ALL ? undefined : filters.greenhouse;
+  const ghList = useMemo(() => parseNames(filters.greenhouse), [filters.greenhouse]);
   // Single-day query: from === to. Cache is day-precise.
   const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
-    greenhouse: ghForCall,
+    greenhouses: ghList.length ? ghList : undefined,
     crop: filters.crop || "Rose",
   });
 
@@ -202,13 +202,8 @@ export function RoseScouting() {
     [scoutNames],
   );
 
-  const farmNeedle = filters.farm === ALL ? "" : filters.farm.toLowerCase();
-  const inFarm = (e: ScoutingEntry): boolean => {
-    if (!farmNeedle) return true;
-    return (e.greenhouse || e.block || "")
-      .toLowerCase()
-      .includes(farmNeedle);
-  };
+  const farmNeedle = filters.farm;
+  const inFarm = (e: ScoutingEntry): boolean => nameOnFarms(e.greenhouse || e.block || "", farmNeedle);
 
   // Entries in the selected range with zone, narrowed by farm + greenhouse.
   // Trap-check entries are excluded — a trap visit is a fixed-point check, not
@@ -224,8 +219,7 @@ export function RoseScouting() {
         e.zone &&
         !(e.trap_scouting_entry && e.trap_scouting_entry.length > 0) &&
         inFarm(e) &&
-        (filters.greenhouse === ALL ||
-          e.zone.startsWith(filters.greenhouse)),
+        nameOnHouses(e.zone, filters.greenhouse),
     );
   }, [data, filters.from, filters.to, farmNeedle, filters.greenhouse]);
 
@@ -541,7 +535,7 @@ export function RoseScouting() {
       flyToFarm(
         m,
         mapSettings,
-        filters.farm === ALL ? null : filters.farm,
+        focusFarm(filters.farm) || null,
         { animate: false },
       );
     }
@@ -598,7 +592,7 @@ export function RoseScouting() {
         flyToFarm(
           mapRef.current,
           mapSettings,
-          filters.farm === ALL ? null : filters.farm,
+          focusFarm(filters.farm) || null,
           { animate: false },
         );
       }, 60);
@@ -607,7 +601,7 @@ export function RoseScouting() {
     flyToFarm(
       mapRef.current,
       mapSettings,
-      filters.farm === ALL ? null : filters.farm,
+      focusFarm(filters.farm) || null,
       { animate: true },
     );
   }, [filters.farm, mapSettings]);

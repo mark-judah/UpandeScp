@@ -618,12 +618,15 @@ export interface SprayerGpsLog {
 export async function fetchSprayerGpsLogs(
   fromDate: string,
   toDate: string,
-  greenhouse?: string,
+  greenhouse?: string | string[],
 ): Promise<SprayerGpsLog[]> {
   const filters: unknown[] = [
     ["captured_at", "between", [`${fromDate} 00:00:00`, `${toDate} 23:59:59`]],
   ];
-  if (greenhouse) filters.push(["greenhouse", "=", greenhouse]);
+  // One house or several: the list API takes "in" for the latter.
+  const houses = (Array.isArray(greenhouse) ? greenhouse : greenhouse ? [greenhouse] : []).filter(Boolean);
+  if (houses.length === 1) filters.push(["greenhouse", "=", houses[0]]);
+  else if (houses.length > 1) filters.push(["greenhouse", "in", houses]);
   try {
     const r = await call<SprayerGpsLog[]>("frappe.client.get_list", {
       doctype: "Sprayer GPS Log",

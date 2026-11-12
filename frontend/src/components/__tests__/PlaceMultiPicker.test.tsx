@@ -42,9 +42,9 @@ const dot = (name: string) => screen.getByRole("checkbox", { name });
 const tick = (name: string) => userEvent.click(screen.getByText(name));
 
 describe("PlaceMultiPicker", () => {
-  it("reads All farms when nothing is picked and lists farms with houses beneath, all ticked", async () => {
+  it("reads Farms 3 (every house) when nothing is picked and lists farms with houses beneath, all ticked", async () => {
     render(<Harness />);
-    expect(pill().textContent).toBe("All farms");
+    expect(pill().textContent).toBe("Farms3");
     await userEvent.click(pill());
     expect(rowNames()).toEqual(["Chepsito", "Chepsito GH 16", "Chepsito GH 02", "Torongo", "Torongo GH 17"]);
     expect(dot("Chepsito")).toHaveAttribute("aria-checked", "true");
@@ -57,7 +57,7 @@ describe("PlaceMultiPicker", () => {
     await tick("Chepsito GH 16");
     expect(val()).toEqual({ farms: ["Torongo"], greenhouses: ["Chepsito GH 02 - KR"] });
     expect(dot("Chepsito")).toHaveAttribute("aria-checked", "mixed");
-    expect(pill().textContent).toBe("1 farm · 1 greenhouse");
+    expect(pill().textContent).toBe("Farms2");
   });
 
   it("ticking the last house folds the houses back into a farm", async () => {
@@ -65,7 +65,7 @@ describe("PlaceMultiPicker", () => {
     await userEvent.click(pill());
     await tick("Chepsito GH 02");
     expect(val()).toEqual({ farms: ["Chepsito"], greenhouses: [] });
-    expect(pill().textContent).toBe("Chepsito");
+    expect(pill().textContent).toBe("Farms2");
   });
 
   it("a farm row toggles all its houses", async () => {
@@ -138,5 +138,19 @@ describe("PlaceSet helpers", () => {
     expect(normalizePlaceSet(leaves, FARMS)).toEqual({ farms: ["Torongo"], greenhouses: ["Chepsito GH 02 - KR"] });
     expect(placeSetLabel({ farms: ["A", "B"], greenhouses: [] })).toBe("2 farms");
     expect(placeSetLabel({ farms: [], greenhouses: ["Chepsito GH 16 - KR"] })).toBe("Chepsito GH 16");
+  });
+
+  it("shows per-row figures when the page gives them, a farm summing its houses", async () => {
+    render(
+      <PlaceMultiPicker
+        farms={FARMS}
+        crop="Rose"
+        value={EMPTY_PLACE_SET}
+        onChange={() => {}}
+        counts={{ "Chepsito GH 16 - KR": 5, "Chepsito GH 02 - KR": 7, "Torongo GH 17 - KR": 3 }}
+      />,
+    );
+    await userEvent.click(pill());
+    expect(rowNames()).toEqual(["Chepsito12", "Chepsito GH 165", "Chepsito GH 027", "Torongo3", "Torongo GH 173"]);
   });
 });

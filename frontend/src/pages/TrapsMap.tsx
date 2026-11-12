@@ -1,4 +1,5 @@
 import { captureStamp } from "@/lib/capture-time";
+import { focusFarm, parseNames } from "@/lib/places";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ChevronDown } from "lucide-react";
@@ -305,11 +306,11 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     };
   }, [filters.crop]);
 
-  const ghForCall = filters.greenhouse === ALL ? undefined : filters.greenhouse;
+  const ghList = useMemo(() => parseNames(filters.greenhouse), [filters.greenhouse]);
   const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
-    greenhouse: ghForCall,
+    greenhouses: ghList.length ? ghList : undefined,
     crop: filters.crop,
   });
 
@@ -398,10 +399,11 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   // Farm dropdown — picking a farm at the top narrows the multi-select to
   // just that farm; switching back to "All farms" restores everything.
   useEffect(() => {
-    if (filters.farm === ALL) {
+    const picked = parseNames(filters.farm);
+    if (!picked.length) {
       if (farmOptions.length) setFarmSel(new Set(farmOptions));
     } else {
-      setFarmSel(new Set([filters.farm]));
+      setFarmSel(new Set(picked));
     }
   }, [filters.farm, farmOptions]);
 
@@ -550,7 +552,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
       flyToFarm(
         m,
         mapSettings,
-        filters.farm === ALL ? null : filters.farm,
+        focusFarm(filters.farm) || null,
         { animate: false },
       );
     }
@@ -598,7 +600,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         flyToFarm(
           mapRef.current,
           mapSettings,
-          filters.farm === ALL ? null : filters.farm,
+          focusFarm(filters.farm) || null,
           { animate: false },
         );
       }, 60);
@@ -607,7 +609,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     flyToFarm(
       mapRef.current,
       mapSettings,
-      filters.farm === ALL ? null : filters.farm,
+      focusFarm(filters.farm) || null,
       { animate: true },
     );
   }, [filters.farm, mapSettings]);

@@ -56,10 +56,21 @@ describe("Procurement — scoped to the route crop", () => {
     render(<Procurement initialCrop="Rose" />);
     await waitFor(() => expect(calls.listCycles).toHaveBeenCalledWith(undefined, "Rose"));
     await waitFor(() => expect(calls.procurementFarms).toHaveBeenCalledWith("Rose", "CPC-1"));
-    await user.click(await screen.findByRole("button", { name: "Farm" }));
-    await screen.findByPlaceholderText("Search farms");
+    await user.click(await screen.findByRole("button", { name: "Farms" }));
+    await screen.findByPlaceholderText("Search farm or greenhouse");
     const opts = Array.from(document.querySelectorAll("[data-row]")).map((o) => o.textContent);
     expect(opts).toEqual(["Chepsito", "Kapkolia"]);
+    // The tree picker has the multi-select header.
+    expect(screen.queryByText("Select all") ?? screen.queryByText("Deselect all")).toBeTruthy();
+  });
+
+  it("stacks one requirement per picked farm", async () => {
+    const user = userEvent.setup();
+    render(<Procurement initialCrop="Rose" />);
+    await user.click(await screen.findByRole("button", { name: "Farms" }));
+    await user.click(await screen.findByText("Kapkolia"));
+    // one farm left ticked -> a single requirement card
+    await waitFor(() => expect(document.body.textContent).toContain("R1"));
   });
 });
 
@@ -188,7 +199,7 @@ describe("Procurement — header alignment", () => {
     // Filters share the tabs' row inside the header toolbar, not a second row.
     const toolbar = screen.getByTestId("page-toolbar");
     expect(toolbar).toContainElement(screen.getByRole("tab", { name: "Review" }));
-    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Farm" }));
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Farms" }));
     expect(toolbar).toContainElement(screen.getByRole("button", { name: "Refresh" }));
     expect(header).toContainElement(toolbar);
   });

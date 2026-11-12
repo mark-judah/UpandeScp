@@ -40,6 +40,7 @@ from collections import defaultdict
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
 from upande_scp.serverscripts.common import crop_scope
 from upande_scp.serverscripts.common import threshold_bands as B
 from upande_scp.serverscripts.dashboard_aggregates import _common
@@ -97,13 +98,14 @@ def availability(crop: str) -> dict:
 
 
 @frappe.whitelist()
-def report_weeks(crop: str, farm: str, limit: int = 26) -> list[dict]:
-	"""ISO weeks that actually have scouting on this farm, newest first.
+def report_weeks(crop: str, farm, limit: int = 26) -> list[dict]:
+	"""ISO weeks that actually have scouting on this farm, newest first. ``farm`` is
+	one name or several (JSON list / comma names): the weeks any of them was scouted.
 
 	Offered instead of a free week picker so nobody downloads a blank sheet for a week
 	nobody walked — the same reason `availability` exists one level up.
 	"""
-	blocks = _blocks_for_farm(farm)
+	blocks = [b for f in parse_names(farm) for b in _blocks_for_farm(f)]
 	if not blocks:
 		return []
 	rows = frappe.db.sql(

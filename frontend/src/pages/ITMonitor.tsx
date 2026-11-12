@@ -11,7 +11,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FilterSelect } from "@/components/FilterSelect";
 import { TogglePill } from "@/components/TogglePill";
 import { ClearFiltersPill } from "@/components/ClearFiltersPill";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, encodeNames, isEmptyPlaceSet, type PlaceSet } from "@/lib/places";
 import { SearchInput } from "@/components/SearchInput";
 import { HeaderIconButton } from "@/components/header-controls";
 import { LoadProgress } from "@/components/Loading";
@@ -44,13 +45,14 @@ export function ITMonitor() {
   const allowed = canSeeItMonitor(roles);
   const [tab, setTab] = useState<Tab>("overview");
   const [period, setPeriod] = useState("7 days");
-  const [place, setPlace] = useState({ farm: "", greenhouse: "" });
+  const [place, setPlace] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [status, setStatus] = useState("");
   const [stuckOnly, setStuckOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const days = periodDays(period);
-  const farm = place.farm;
+  // Farm-only page: every farm in the set travels as one name or a JSON list.
+  const farm = encodeNames(place.farms);
   const { farms } = useCropFarms("");
   const farmNames = useMemo(() => Object.keys(farms).sort(), [farms]);
 
@@ -66,7 +68,7 @@ export function ITMonitor() {
   const flow = useLoad(() => (allowed && tab === "dataflow" ? fetchDataFlow(days, farm) : Promise.resolve(null)), `df:${tab === "dataflow"}:${days}:${farm}`);
 
   const shown = useMemo(() => (devices.data ? filterDevices(devices.data, { search }) : null), [devices.data, search]);
-  const filtersOn = !!(farm || status || stuckOnly || search);
+  const filtersOn = !!(!isEmptyPlaceSet(place) || status || stuckOnly || search);
   const reload = () => {
     overview.reload();
     if (tab === "devices") devices.reload();
@@ -87,7 +89,7 @@ export function ITMonitor() {
 
   const latest = overview.data?.latest_app_version ?? null;
   const placeFilter = (
-    <PlacePicker farms={farmNames} level="farm" value={place} onChange={(p) => setPlace({ farm: p.farm, greenhouse: "" })} remember={false} label="Farm" />
+    <PlaceMultiPicker farms={farmNames} value={place} onChange={setPlace} remember={false} label="Farm" />
   );
   const periodFilter = <FilterSelect label="Period" value={period} onChange={(v) => setPeriod(v || "7 days")} options={PERIODS} />;
 
@@ -121,7 +123,7 @@ export function ITMonitor() {
       >
         <ClearFiltersPill
           active={filtersOn && tab === "devices"}
-          onClear={() => { setPlace({ farm: "", greenhouse: "" }); setStatus(""); setStuckOnly(false); setSearch(""); }}
+          onClear={() => { setPlace(EMPTY_PLACE_SET); setStatus(""); setStuckOnly(false); setSearch(""); }}
         />
         <HeaderIconButton aria-label="Refresh" tooltip="Reload this tab" onClick={reload}><RefreshCw className="h-4 w-4" /></HeaderIconButton>
       </PageHeader>

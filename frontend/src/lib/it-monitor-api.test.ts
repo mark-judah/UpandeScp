@@ -85,6 +85,8 @@ describe("device filtering", () => {
   ];
   it("filters by farm, status, stuck and free text", () => {
     expect(filterDevices(rows, { farm: "Chepsito" }).map((d) => d.install_id)).toEqual(["b"]);
+    expect(filterDevices(rows, { farm: JSON.stringify(["Chepsito", "Nowhere"]) }).map((d) => d.install_id)).toEqual(["b"]);
+    expect(filterDevices(rows, { farm: JSON.stringify(["Chepsito", rows[0].farm ?? ""]) })).toHaveLength(2);
     expect(filterDevices(rows, { status: "Current" }).map((d) => d.install_id)).toEqual(["a"]);
     expect(filterDevices(rows, { stuck_only: true }).map((d) => d.install_id)).toEqual(["b"]);
     expect(filterDevices(rows, { search: "galaxy" }).map((d) => d.install_id)).toEqual(["b"]);

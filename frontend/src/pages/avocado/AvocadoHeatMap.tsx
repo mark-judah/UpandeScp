@@ -18,6 +18,7 @@
  * Application Floor Plans: same draft path, same approval, same transfer, with the block in
  * `custom_greenhouse`.
  */
+import { parseNames } from "@/lib/places";
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { ChevronDown, Layers } from "lucide-react";
@@ -122,10 +123,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     // Sparse crop, crop-scoped fetch → default to a long 10-month window.
     ...lastMonthsRange(10),
   }));
+  const ghList = useMemo(() => parseNames(filters.greenhouse), [filters.greenhouse]);
   const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
-    greenhouse: filters.greenhouse === ALL ? undefined : filters.greenhouse,
+    greenhouses: ghList.length ? ghList : undefined,
     crop: filters.crop,
   });
 

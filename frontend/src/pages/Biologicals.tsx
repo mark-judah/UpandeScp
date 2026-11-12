@@ -8,6 +8,9 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FilterSelect } from "@/components/FilterSelect";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { useCropFarms } from "@/hooks/use-crop-farms";
+import { EMPTY_PLACE_SET, placeSetParams, type PlaceSet } from "@/lib/places";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadProgress, TableRowsSkeleton } from "@/components/Loading";
@@ -30,10 +33,14 @@ function lastNinetyDays() {
   return { from: ymd(from), to: ymd(to) };
 }
 
-export function Biologicals({ initialCrop: _crop }: { initialCrop?: string } = {}) {
+export function Biologicals({ initialCrop }: { initialCrop?: string } = {}) {
   const [tab, setTab] = useState<TabKey>("releases");
   const [{ from, to }, setRange] = useState(lastNinetyDays);
-  const [greenhouse, setGreenhouse] = useState("");
+  const crop = initialCrop ?? "Rose";
+  const { farms, loading: farmsLoading } = useCropFarms(crop);
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
+  // One name travels as a string, several as a JSON list (the server reads both).
+  const { farm, greenhouse } = useMemo(() => placeSetParams(places, farms), [places, farms]);
   const [predator, setPredator] = useState("");
   const [releases, setReleases] = useState<ReleasesPayload | null>(null);
   const [mortality, setMortality] = useState<MortalityPayload | null>(null);
@@ -44,7 +51,7 @@ export function Biologicals({ initialCrop: _crop }: { initialCrop?: string } = {
     setLoading(true);
     setError(null);
     try {
-      const base = { from_date: from, to_date: to, greenhouse: greenhouse || undefined };
+      const base = { from_date: from, to_date: to, greenhouse: greenhouse || undefined, farm: farm || undefined };
       const [r, m] = await Promise.all([
         fetchReleases({ ...base, predator: predator || undefined }),
         fetchMortality(base),
@@ -56,16 +63,12 @@ export function Biologicals({ initialCrop: _crop }: { initialCrop?: string } = {
     } finally {
       setLoading(false);
     }
-  }, [from, to, greenhouse, predator]);
+  }, [from, to, greenhouse, farm, predator]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const houses = useMemo(
-    () => [...new Set([...(releases?.filters.greenhouses ?? []), ...(greenhouse ? [greenhouse] : [])])].sort(),
-    [releases, greenhouse],
-  );
   const first = loading && !releases;
 
   return (
@@ -83,7 +86,7 @@ export function Biologicals({ initialCrop: _crop }: { initialCrop?: string } = {
           </Tabs>
         }
       >
-        <FilterSelect label="Greenhouse" value={greenhouse} onChange={setGreenhouse} options={houses} allLabel="All greenhouses" />
+        <PlaceMultiPicker farms={farms} crop={crop} label="Biologicals farms and greenhouses" value={places} onChange={setPlaces} disabled={farmsLoading} />
         {tab === "releases" ? (
           <FilterSelect label="Predator" value={predator} onChange={setPredator}
             options={releases?.filters.predators ?? []} allLabel="All predators" />

@@ -189,6 +189,71 @@ export function placeSetParams(set: PlaceSet, farms: FarmHouses): { farm: string
   return { farm: "", greenhouse: encodeNames([...houses]) };
 }
 
+/** The map headers' value ("" = all) as a set. A farm list alone is whole farms;
+ *  with houses named, those houses (folded back to whole farms when all of a
+ *  farm's houses are in). */
+export function placeSetFromFilter(farm: string, greenhouse: string, farms: FarmHouses): PlaceSet {
+  const fs = parseNames(farm);
+  const hs = parseNames(greenhouse);
+  if (!hs.length) return { farms: fs.filter((f) => f in farms), greenhouses: [] };
+  const leaves = new Set<string>(hs.map((h) => `h:${h}`));
+  for (const f of fs) if (f in farms && !farms[f].length) leaves.add(`f:${f}`);
+  return normalizePlaceSet(leaves, farms);
+}
+
+/** A set as the map headers carry it: `farm` always names the farms touched (so
+ *  fly-to and per-farm fetches keep working), `greenhouse` only when houses are
+ *  singled out. "" = all. */
+export function placeSetToFilter(set: PlaceSet, farms: FarmHouses): { farm: string; greenhouse: string } {
+  if (isEmptyPlaceSet(set)) return { farm: "", greenhouse: "" };
+  const p = placeSetParams(set, farms);
+  if (!set.greenhouses.length) return p;
+  const touched: string[] = [];
+  for (const h of parseNames(p.greenhouse)) {
+    const f = farmOf(h, farms);
+    if (f && !touched.includes(f)) touched.push(f);
+  }
+  for (const f of set.farms) if (!touched.includes(f)) touched.push(f);
+  return { farm: encodeNames(touched), greenhouse: p.greenhouse };
+}
+
+/** The farm a map should centre on: the only farm named, else the first. "" = none. */
+export function focusFarm(farm: string): string {
+  return parseNames(farm)[0] || "";
+}
+
+/** Whether a greenhouse or block name lies on one of the farms (the maps' name-prefix rule). */
+export function nameOnFarms(name: string | null | undefined, farm: string): boolean {
+  const fs = parseNames(farm);
+  if (!fs.length) return true;
+  const n = (name || "").toLowerCase();
+  return fs.some((f) => n.includes(f.toLowerCase()));
+}
+
+/** Whether a greenhouse/zone/bed name is one of the greenhouses, or starts with one
+ *  (zones and beds are named "<house> ..."). Empty list = everything. */
+export function nameOnHouses(name: string | null | undefined, greenhouse: string): boolean {
+  const hs = parseNames(greenhouse);
+  if (!hs.length) return true;
+  const n = name || "";
+  return hs.some((h) => n === h || n.startsWith(h));
+}
+
+/** Whether a house (of a farm) falls inside a set; the empty set holds everything. */
+export function inPlaceSet(set: PlaceSet, farm: string | null | undefined, house?: string | null): boolean {
+  if (isEmptyPlaceSet(set)) return true;
+  if (farm && set.farms.includes(farm)) return true;
+  return !!house && set.greenhouses.includes(house);
+}
+
+/** The single place a set stands for, when it is exactly one farm or one house
+ *  (for a view that can only draw one); null for the empty set or several. */
+export function singlePlace(set: PlaceSet): Place | null {
+  if (set.farms.length === 1 && !set.greenhouses.length) return { farm: set.farms[0], greenhouse: "" };
+  if (!set.farms.length && set.greenhouses.length === 1) return { farm: "", greenhouse: set.greenhouses[0] };
+  return null;
+}
+
 /** Pill text: "All farms", "Chepsito", "Chepsito GH 16", "2 farms · 1 greenhouse". */
 export function placeSetLabel(set: PlaceSet, allLabel = ALL_FARMS_LABEL): string {
   const nf = set.farms.length;
@@ -205,11 +270,11 @@ export function placeSetLabel(set: PlaceSet, allLabel = ALL_FARMS_LABEL): string
 /** Inverse of `encodeNames`: "" → [], "A" → ["A"], '["A","B"]' → ["A","B"]. */
 export function parseNames(v: string | null | undefined): string[] {
   const t = (v || "").trim();
-  if (!t) return [];
+  if (!t || t === "__all__") return [];
   if (t.startsWith("[")) {
     try {
       const a = JSON.parse(t);
-      if (Array.isArray(a)) return a.filter((x): x is string => typeof x === "string" && !!x);
+      if (Array.isArray(a)) return a.filter((x): x is string => typeof x === "string" && !!x && x !== "__all__");
     } catch {
       /* a name that merely starts with "[" */
     }

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { HeaderIconButton } from "@/components/header-controls";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { placeSetFromFilter, placeSetToFilter } from "@/lib/places";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 
@@ -67,15 +68,27 @@ export function MapHeader({
   }, [farmList.length]);
 
 
+  // The pill is the multi-select tree; the page value keeps ALL as "all" and
+  // carries several names as a JSON list (lib/places encodeNames).
+  const pickerFarms = useMemo(
+    () => (showGreenhouse ? farms : Object.fromEntries(Object.keys(farms).map((f) => [f, [] as string[]]))),
+    [farms, showGreenhouse],
+  );
+  const places = useMemo(
+    () => placeSetFromFilter(fromAll(value.farm), showGreenhouse ? fromAll(value.greenhouse) : "", pickerFarms),
+    [value.farm, value.greenhouse, pickerFarms, showGreenhouse],
+  );
+
   return (
     <PageHeader title={title} eyebrow={subtitle}>
-      {/* One place pill (place picker spec G1); the page keeps ALL as "all". */}
-      <PlacePicker
-        farms={farms}
+      <PlaceMultiPicker
+        farms={pickerFarms}
         crop={value.crop}
-        level={showGreenhouse ? "both" : "farm"}
-        value={{ farm: fromAll(value.farm), greenhouse: showGreenhouse ? fromAll(value.greenhouse) : "" }}
-        onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
+        value={places}
+        onChange={(set) => {
+          const p = placeSetToFilter(set, pickerFarms);
+          onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL });
+        }}
         disabled={loading}
       />
 

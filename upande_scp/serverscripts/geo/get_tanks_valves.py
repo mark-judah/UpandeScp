@@ -8,6 +8,8 @@ import json
 
 import frappe
 
+from upande_scp.serverscripts.common.place_filter import parse_names
+
 from upande_scp.serverscripts.common.cache_utils import (
 	K_TANKS_VALVES_PREFIX,
 	TTL_LONG,
@@ -73,5 +75,13 @@ def _build_for_farm(farm):
 @frappe.whitelist()
 def get_tanks_valves_geojson(farm=None):
 	farm = farm or frappe.form_dict.get("farm") or ""
+	farms = parse_names(farm)  # one farm or several (JSON list / comma names)
+	if len(farms) > 1:
+		features = []
+		for f in farms:
+			got = get_or_set(f"{K_TANKS_VALVES_PREFIX}:{f}", lambda f=f: _build_for_farm(f), ttl=TTL_LONG)
+			features.extend((got or {}).get("features") or [])
+		return {"type": "FeatureCollection", "features": features}
+	farm = farms[0] if farms else ""
 	key = f"{K_TANKS_VALVES_PREFIX}:{farm or '__all__'}"
 	return get_or_set(key, lambda: _build_for_farm(farm), ttl=TTL_LONG)

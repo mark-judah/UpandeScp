@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Gauge, RefreshCw } from "lucide-react";
 import {
   fetchScoutLookup, fetchZonesByGreenhouse, DEFAULT_CROP,
@@ -7,7 +7,8 @@ import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { PageToolbar } from "@/components/PageToolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { EMPTY_PLACE_SET, placeSetParams, type PlaceSet } from "@/lib/places";
 import { HeaderIconButton } from "@/components/header-controls";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { OverviewTab }  from "./dashboard/OverviewTab";
@@ -52,10 +53,11 @@ export function Dashboard({ initialCrop, initialTab }: { initialCrop?: string; i
   // The crop is the route's (spec D1); the page carries no crop picker.
   const crop = initialCrop ?? DEFAULT_CROP;
   // "" is "all" at each level (the place picker's value).
-  const [farm, setFarm] = useState("");
-  const [greenhouse, setGreenhouse] = useState("");
+  const [places, setPlaces] = useState<PlaceSet>(EMPTY_PLACE_SET);
   const [{ from, to }, setRange] = useState(defaultRange);
   const { farms, loading: farmsLoading } = useCropFarms(crop);
+  // One name travels as a string, several as a JSON list (the server reads both).
+  const { farm, greenhouse } = useMemo(() => placeSetParams(places, farms), [places, farms]);
   const [scoutLookup, setScoutLookup] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -144,14 +146,11 @@ export function Dashboard({ initialCrop, initialTab }: { initialCrop?: string; i
               </>
             }
           >
-              <PlacePicker
+              <PlaceMultiPicker
                 farms={farms}
                 crop={crop}
-                value={{ farm, greenhouse }}
-                onChange={(p) => {
-                  setFarm(p.farm);
-                  setGreenhouse(p.greenhouse);
-                }}
+                value={places}
+                onChange={setPlaces}
                 disabled={farmsLoading}
               />
 

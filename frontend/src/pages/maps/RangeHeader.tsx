@@ -8,9 +8,10 @@
  * the data loads off the per-ISO-week Redis cache, so one or two weeks is cheap.
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
+import { placeSetFromFilter, placeSetToFilter } from "@/lib/places";
 import { WeekPicker } from "@/components/WeekPicker";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 
@@ -89,16 +90,28 @@ export function RangeHeader({
   // Farms for the route crop only, narrowed on the server (spec D3).
   const { farms, loading } = useCropFarms(value.crop);
 
+  // The pill is the multi-select tree; the page value keeps ALL as "all" and
+  // carries several names as a JSON list (lib/places encodeNames).
+  const pickerFarms = useMemo(
+    () => (showGreenhouse ? farms : Object.fromEntries(Object.keys(farms).map((f) => [f, [] as string[]]))),
+    [farms, showGreenhouse],
+  );
+  const places = useMemo(
+    () => placeSetFromFilter(fromAll(value.farm), showGreenhouse ? fromAll(value.greenhouse) : "", pickerFarms),
+    [value.farm, value.greenhouse, pickerFarms, showGreenhouse],
+  );
+
   return (
     <PageHeader title={title} eyebrow={subtitle} switcher={switcher}>
-      {/* One place pill (place picker spec G1); the page keeps ALL as "all". */}
       {showFarm && (
-        <PlacePicker
-          farms={farms}
+        <PlaceMultiPicker
+          farms={pickerFarms}
           crop={value.crop}
-          level={showGreenhouse ? "both" : "farm"}
-          value={{ farm: fromAll(value.farm), greenhouse: showGreenhouse ? fromAll(value.greenhouse) : "" }}
-          onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
+          value={places}
+          onChange={(set) => {
+            const p = placeSetToFilter(set, pickerFarms);
+            onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL });
+          }}
           disabled={loading}
         />
       )}

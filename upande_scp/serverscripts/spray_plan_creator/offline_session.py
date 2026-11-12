@@ -234,17 +234,28 @@ def min_spray_minutes() -> int:
 	return int(flt(value))
 
 
-def assess_session(payload: dict) -> dict:
+#: The plan's lifecycle, in order; a step the plan has already passed needs no moment.
+_STATE_RANK = {"Chemical Issued": 0, "Tank Mix Manufactured": 1,
+	"Spraying In Progress": 2, "Completed": 3}
+
+
+def assess_session(payload: dict, server_state: str | None = None) -> dict:
 	"""What the token actually says, judged on the moments the user really tapped.
 
 	Works on the RAW payload, never on `resolve_moments`, which fills in absent moments
 	(start = mix, end = start + 1s) so the postings can be ordered. Those synthetic
 	moments once made a scan-only token look like a completed spray.
 
+	`server_state` is the plan's state now. A step the plan has already passed (done
+	online, or on another phone) is not missing from the token: a session whose mix was
+	confirmed online and whose end was journalled offline carries no `mix_at` worth
+	replaying, and holding it as "incomplete" stranded the end on the phone for good.
+
 	Returns `{"steps": [...], "hold": None | (status, reason), "skew_warning": str | None}`
 	where `steps` is the longest honest prefix of mix, start, end.
 	"""
 	shift = zone_skew_correction(payload)
+	reached = _STATE_RANK.get(server_state or "", -1)
 
 	def raw(key):
 		value = _moment(payload.get(key))
@@ -253,6 +264,8 @@ def assess_session(payload: dict) -> dict:
 	mix = raw("mix_at")
 	started = raw("started_at")
 	ended = raw("ended_at")
+	mix_known = bool(mix) or reached >= 1
+	start_known = bool(started) or reached >= 2
 
 	out = {"steps": [], "hold": None, "skew_warning": None}
 	skew = int(flt(payload.get("device_skew_seconds")))
@@ -266,29 +279,29 @@ def assess_session(payload: dict) -> dict:
 	if not (mix or started or ended):
 		return out  # nothing was performed: nothing to replay
 
-	if not mix:
+	if not mix_known:
 		out["hold"] = (STATUS_INCOMPLETE,
 			"The session has a start or end but no tank-mix time, so it cannot be put in order.")
 		return out
 	out["steps"].append("mix")
-	if ended and not started:
+	if ended and not start_known:
 		out["hold"] = (STATUS_INCOMPLETE,
 			"The session has an end time but no start time; the spray was never started.")
 		return out
-	if started:
-		if started < mix:
+	if started or start_known:
+		if started and mix and started < mix:
 			out["hold"] = (STATUS_INCOMPLETE,
 				"The spray is recorded as starting before the tank mix was made.")
 			return out
 		out["steps"].append("start")
 	if ended:
-		if ended < started:
+		if started and ended < started:
 			out["hold"] = (STATUS_INCOMPLETE,
 				"The spray is recorded as finishing before it started.")
 			return out
 		minimum = min_spray_minutes()
-		minutes = (ended - started).total_seconds() / 60
-		if minimum and minutes < minimum:
+		minutes = (ended - started).total_seconds() / 60 if started else None
+		if minimum and minutes is not None and minutes < minimum:
 			out["hold"] = (STATUS_TOO_SHORT,
 				f"The recorded spray lasted {minutes:.1f} minutes, below the minimum of "
 				f"{minimum}. It was not completed automatically; a person needs to review it.")
@@ -341,6 +354,11 @@ def preflight(payload) -> dict:
 	}
 	missing = sorted(required - scanned)
 	extra = sorted(scanned - required)
+	# Scans only feed the manufacture. Once the plan is past it (the mix was confirmed
+	# online, or on another phone) a token without them is a later step, not a different
+	# plan, and refusing it stranded an offline end on the phone.
+	if (wo.workflow_state or "") != "Chemical Issued" and not scanned:
+		missing = []
 	if missing:
 		problems.append(f"not scanned: {', '.join(missing)}")
 	if extra:
@@ -376,6 +394,8 @@ def preflight(payload) -> dict:
 						f"{moments['mix_at']:%Y-%m-%d %H:%M} but only "
 						f"{flt(plan['available_total']):g} can be taken without a later "
 						"entry going negative"
+						+ (f". {TB.negative_total_note(row.item_code, plan['blocked_by_total'])}"
+						   if plan.get("blocked_by_total") else "")
 					)
 				else:
 					notes.extend(TB.notes_for(row.item_code, plan))
@@ -476,7 +496,17 @@ def sync_spray_session(payload) -> dict:
 	if existing == "Synced":
 		return _result(token, already=True)
 
-	verdict = assess_session(payload)
+	# A session that began offline travels as one unit, once it is finished. The phone
+	# holds it until then; a half-finished one arriving anyway (an older build, a retry
+	# racing the last tap) is not applied in parts, or the plan would move under a
+	# supervisor who is still out in the greenhouse with no signal.
+	if (payload.get("channel") == "offline") and not _moment(payload.get("ended_at")):
+		return {"token": token, "work_order": work_order, "status": "Pending",
+			"already_synced": False, "refusal": None,
+			"note": "This session began offline; it is applied once the spray is finished."}
+
+	plan_state = frappe.db.get_value("Work Order", work_order, "workflow_state") or ""
+	verdict = assess_session(payload, plan_state)
 	if not verdict["steps"] and not verdict["hold"]:
 		# A scan alone. Scans are registered by their own endpoint; this token performed
 		# no step, so nothing is replayed and nothing is completed.
@@ -574,7 +604,11 @@ def sync_spray_session(payload) -> dict:
 	frappe.flags.scp_replay_work_order = None
 	if verdict["skew_warning"]:
 		produced["skew_warning"] = verdict["skew_warning"]
-	_stamp_result(token, work_order, produced, complete="end" in verdict["steps"])
+	# Complete when the token's end was applied, or when the plan is finished anyway (its
+	# end went through online after earlier steps were replayed): a token left "Partial"
+	# under a Completed plan reads as a spray the office never closed.
+	finished = frappe.db.get_value("Work Order", work_order, "workflow_state") == SS.STATE_COMPLETED
+	_stamp_result(token, work_order, produced, complete=("end" in verdict["steps"]) or finished)
 	frappe.db.commit()
 	return _result(token)
 

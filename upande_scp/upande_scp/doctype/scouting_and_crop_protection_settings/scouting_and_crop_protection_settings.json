@@ -65,6 +65,9 @@
   "crew_leave_check",
   "cb_crew_availability",
   "crew_require_checkin",
+  "spray_plan_requires_team",
+  "spray_supervisor_role_check",
+  "spray_checkin_check",
   "loaning_section",
   "loaning_enabled",
   "loaning_depletion_pct",
@@ -116,7 +119,10 @@
   "trap_photo_rules",
   "asset_checks_section",
   "asset_checks_enabled",
-  "asset_check_farms"
+  "asset_check_farms",
+  "it_monitor_section",
+  "it_latest_app_version",
+  "it_event_retention_days"
  ],
  "fields": [
   {
@@ -510,6 +516,27 @@
    "label": "Require a check-in on the spray date"
   },
   {
+   "description": "Plans saved with no spray team at all. Off: allowed (e.g. open-field work done without a team). Warn: the plan saves with a message. Block (also when blank): the plan cannot be saved until a team is chosen.",
+   "fieldname": "spray_plan_requires_team",
+   "fieldtype": "Select",
+   "label": "Plans without a spray team",
+   "options": "\nOff\nWarn\nBlock"
+  },
+  {
+   "description": "Checks that each spray supervisor named on a plan has a user account holding the SCP Spray Supervisor role, so they can run the spray on the phone. Off: no check. Warn (also when blank): the plan saves with a message. Block: the plan cannot be saved. A plan with no members, no supervisor or more than two supervisors is always refused.",
+   "fieldname": "spray_supervisor_role_check",
+   "fieldtype": "Select",
+   "label": "Spray supervisor role check",
+   "options": "\nOff\nWarn\nBlock"
+  },
+  {
+   "description": "Prevent a spray from starting while a team member has no check-in today",
+   "fieldname": "spray_checkin_check",
+   "fieldtype": "Select",
+   "label": "Members who have not checked in (Time & Attendance)",
+   "options": "\nOff\nWarn\nBlock"
+  },
+  {
    "fieldname": "loaning_section",
    "fieldtype": "Section Break",
    "label": "Farm-to-Farm Chemical Loaning"
@@ -846,6 +873,25 @@
    "fieldtype": "Table",
    "label": "Asset check farms and categories",
    "options": "SCP Asset Check Farm"
+  },
+  {
+   "fieldname": "it_monitor_section",
+   "fieldtype": "Section Break",
+   "label": "IT monitor"
+  },
+  {
+   "description": "The newest published scout app version, for example 1.0.12. Phones on an older version show as Behind on the IT monitor. Blank: the highest version any phone on the same runtime reported in the last 14 days.",
+   "fieldname": "it_latest_app_version",
+   "fieldtype": "Data",
+   "label": "Latest app version"
+  },
+  {
+   "default": "60",
+   "description": "A daily job deletes phone crash, error and login events older than this many days (1-365).",
+   "fieldname": "it_event_retention_days",
+   "fieldtype": "Int",
+   "label": "IT event retention (days)",
+   "non_negative": 1
   }
  ],
  "index_web_pages_for_search": 0,

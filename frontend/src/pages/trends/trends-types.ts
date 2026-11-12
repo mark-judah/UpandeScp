@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export type TreeNode = {
   id: string;
   label: string;
@@ -6,6 +8,13 @@ export type TreeNode = {
   search?: string;
   count?: number;
   children?: TreeNode[];
+  /** tooltip when it differs from `search` */
+  title?: string;
+  /** false: a plain header that only expands (single-mode pickers) */
+  selectable?: boolean;
+  /** drawn after the dot (a colour swatch) and at the end of the row (a badge) */
+  lead?: ReactNode;
+  extra?: ReactNode;
 };
 
 /** Picked items from the Stations tree. A farm selection means "aggregate

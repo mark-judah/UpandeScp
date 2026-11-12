@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TreePickerPanel } from "@/components/TreePicker";
 import type { TreeNode } from "@/pages/trends/trends-types";
 
@@ -83,6 +83,76 @@ describe("TreePicker", () => {
     expect(dot("Chepsito GH 01")).toHaveAttribute("aria-checked", "true");
     expect(dot("Chepsito GH 02")).toHaveAttribute("aria-checked", "true");
     fireEvent.click(screen.getByRole("button", { name: "Clear Chepsito" }));
+    expect(screen.getByText("0 selected")).toBeTruthy();
+  });
+});
+
+describe("TreePicker single mode", () => {
+  function Single({ onPick }: { onPick?: () => void }) {
+    const [c, setC] = useState(new Set(["s:GH1"]));
+    const tree: TreeNode[] = [{ id: "all", label: "All farms" }, ...nodes];
+    return (
+      <>
+        <TreePickerPanel single nodes={tree} checked={c} onChange={setC} onPick={onPick} searchPlaceholder="Search farms" />
+        <output data-testid="picked">{[...c].join(",")}</output>
+      </>
+    );
+  }
+  const radio = (name: string) => screen.getByRole("radio", { name });
+
+  it("shows radio dots, no Select all and no count header", () => {
+    render(<Single />);
+    expect(radio("Chepsito GH 01")).toHaveAttribute("aria-checked", "true");
+    expect(radio("Chepsito")).toHaveAttribute("aria-checked", "false"); // no half state
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Select all" })).toBeNull();
+    expect(screen.queryByText(/selected/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Select every/ })).toBeNull();
+  });
+
+  it("a pick replaces the selection and reports it", () => {
+    const onPick = vi.fn();
+    render(<Single onPick={onPick} />);
+    fireEvent.click(screen.getByText("Karen GH 01"));
+    expect(screen.getByTestId("picked")).toHaveTextContent(/^s:K1$/);
+    fireEvent.click(screen.getByText("Chepsito"));
+    expect(screen.getByTestId("picked")).toHaveTextContent(/^f:Chepsito$/);
+    expect(onPick).toHaveBeenCalledTimes(2);
+  });
+
+  it("a non-selectable header only expands", () => {
+    const tree: TreeNode[] = [{ id: "f:A", label: "Farm A", selectable: false, children: [{ id: "h:1", label: "A1" }] }];
+    const onChange = vi.fn();
+    render(<TreePickerPanel single nodes={tree} checked={new Set()} onChange={onChange} />);
+    expect(screen.queryByRole("radio", { name: "Farm A" })).toBeNull();
+    fireEvent.click(screen.getByText("Farm A"));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText("A1")).toBeNull(); // collapsed by the click
+    fireEvent.click(screen.getByText("Farm A"));
+    expect(screen.getByText("A1")).toBeTruthy();
+  });
+
+  it("Enter in search picks the best match", () => {
+    render(<Single />);
+    fireEvent.change(screen.getByPlaceholderText("Search farms"), { target: { value: "karen" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("Search farms"), { key: "Enter" });
+    expect(screen.getByTestId("picked")).toHaveTextContent(/^f:Karen$/);
+  });
+});
+
+describe("TreePicker cascade mode", () => {
+  function Casc() {
+    const [c, setC] = useState(new Set<string>());
+    return <TreePickerPanel cascade nodes={nodes} checked={c} onChange={setC} />;
+  }
+  it("a group follows its leaves and toggles them all; the count is leaves", () => {
+    render(<Casc />);
+    fireEvent.click(screen.getByText("Chepsito GH 01"));
+    expect(dot("Chepsito")).toHaveAttribute("aria-checked", "mixed");
+    fireEvent.click(screen.getByText("Chepsito"));
+    expect(dot("Chepsito")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    fireEvent.click(screen.getByText("Chepsito"));
     expect(screen.getByText("0 selected")).toBeTruthy();
   });
 });

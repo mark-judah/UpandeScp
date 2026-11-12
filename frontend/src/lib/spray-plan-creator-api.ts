@@ -280,6 +280,50 @@ export async function searchEmployees(
   );
 }
 
+// ---------- Spray team rules ----------
+
+export type SupervisorRoleStatus = "ok" | "missing_role" | "no_user";
+
+export interface SupervisorCheckRow {
+  employee: string;
+  employee_name: string;
+  status: SupervisorRoleStatus;
+  message: string;
+}
+
+export interface SprayTeamCheck {
+  mode: "Off" | "Warn" | "Block";
+  ok: boolean;
+  /** refuse the save (no members, no/too many supervisors, Block-mode role miss) */
+  errors: string[];
+  warnings: string[];
+  supervisors: SupervisorCheckRow[];
+}
+
+/** Live check of the team's supervisors; called when the team or a role changes. */
+export async function checkSprayTeam(
+  team: string,
+  members: { employee: string; role: string }[],
+): Promise<SprayTeamCheck> {
+  return call<SprayTeamCheck>(
+    "upande_scp.serverscripts.spray_plan_creator.team_rules.check_spray_team",
+    { team: team || null, members: JSON.stringify(members) },
+  );
+}
+
+/** The hard rules, checked in the browser before submit (the server repeats them). */
+export function teamRuleError(members: { employee: string; role: string }[]): string | null {
+  const people = members.filter((m) => m.employee);
+  if (!people.length)
+    return "This spray team has no members. Add at least one person, including a supervisor, before submitting.";
+  const sups = people.filter((m) => m.role === "Supervisor").length;
+  if (!sups)
+    return "This plan has no spray supervisor. Mark one team member as Supervisor so that someone is in charge.";
+  if (sups > 2)
+    return `A plan can have at most 2 spray supervisors, and this one has ${sups}. Change the extra people to Sprayer or Pump Operator.`;
+  return null;
+}
+
 // ---------- Bulk ----------
 
 export interface BulkSubmitResult {

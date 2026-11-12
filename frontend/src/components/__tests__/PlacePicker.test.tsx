@@ -45,7 +45,11 @@ function Harness({
 }
 
 const pill = (name = "Farm and greenhouse") => screen.getByRole("button", { name });
-const options = () => within(screen.getByRole("listbox")).queryAllByRole("option").map((o) => o.textContent);
+const rowEls = () => Array.from(document.querySelectorAll<HTMLElement>("[data-row]"));
+const options = () => rowEls().map((o) => o.textContent);
+/** click a row by its visible name (the row, not the dot, takes the click) */
+const choose = (name: string) => userEvent.click(rowEls().map((r) => r.querySelector<HTMLElement>("span.flex-1")!).find((e) => e.textContent === name)!);
+const isChosen = (name: string) => screen.getByRole("radio", { name }).getAttribute("aria-checked") === "true";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -55,11 +59,11 @@ describe("PlacePicker", () => {
     expect(pill()).toHaveTextContent("All farms");
     await userEvent.click(pill());
     expect(options()).toEqual(["All farms", "Chepsito", "Chepsito GH 02", "Chepsito GH 16", "Torongo", "Torongo GH 17"]);
-    await userEvent.click(screen.getByRole("option", { name: "Chepsito" }));
+    await choose("Chepsito");
     expect(pill()).toHaveTextContent(/^Chepsito$/);
     expect(screen.getByTestId("value")).toHaveTextContent("Chepsito|");
     await userEvent.click(pill());
-    await userEvent.click(screen.getByRole("option", { name: "Torongo GH 17" }));
+    await choose("Torongo GH 17");
     expect(pill()).toHaveTextContent("Torongo GH 17");
     expect(screen.getByTestId("value")).toHaveTextContent("Torongo|Torongo GH 17 - KR");
   });
@@ -67,45 +71,39 @@ describe("PlacePicker", () => {
   it("searches ignoring case and spaces, keeping the farm as a header", async () => {
     render(<Harness />);
     await userEvent.click(pill());
-    const search = screen.getByRole("combobox");
-    expect(search).toHaveFocus();
+    const search = screen.getByPlaceholderText("Search farm or greenhouse");
     await userEvent.type(search, "gh16");
     expect(options()).toEqual(["Chepsito", "Chepsito GH 16"]);
-    expect(screen.getByRole("option", { name: "Chepsito GH 16" })).toHaveAttribute("title", "Chepsito GH 16 - KR");
+    expect(screen.getByText("Chepsito GH 16")).toHaveAttribute("title", "Chepsito GH 16 - KR");
     await userEvent.clear(search);
     await userEvent.type(search, "chep 16");
     expect(options()).toEqual(["Chepsito", "Chepsito GH 16"]);
     await userEvent.clear(search);
     await userEvent.type(search, "zzz");
     expect(options()).toEqual([]);
-    expect(screen.getByText("No match")).toBeInTheDocument();
   });
 
-  it("moves with the arrows, picks with Enter and closes with Esc", async () => {
+  it("is single-select: radio dots, no Select all, a pick replaces the choice and closes", async () => {
     render(<Harness />);
     await userEvent.click(pill());
-    expect(screen.getByRole("option", { name: "All farms" })).toHaveAttribute("aria-selected", "true");
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
-    const search = screen.getByRole("combobox");
-    const activeId = search.getAttribute("aria-activedescendant");
-    expect(document.getElementById(activeId!)).toHaveTextContent("Chepsito GH 02");
-    await userEvent.keyboard("{Enter}");
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(screen.getByTestId("value")).toHaveTextContent("Chepsito|Chepsito GH 02 - KR");
+    expect(screen.queryByRole("button", { name: "Select all" })).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(isChosen("All farms")).toBe(true);
+    await choose("Chepsito GH 16");
+    expect(screen.queryByPlaceholderText("Search farm or greenhouse")).toBeNull();
     await userEvent.click(pill());
-    await userEvent.keyboard("{ArrowUp}");
-    expect(document.getElementById(screen.getByRole("combobox").getAttribute("aria-activedescendant")!))
-      .toHaveTextContent("Chepsito");
-    await userEvent.keyboard("{Escape}");
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(screen.getByTestId("value")).toHaveTextContent("Chepsito|Chepsito GH 02 - KR");
+    expect(isChosen("Chepsito GH 16")).toBe(true);
+    expect(isChosen("All farms")).toBe(false);
+    await choose("Torongo");
+    expect(screen.getByTestId("value")).toHaveTextContent(/^Torongo\|$/);
   });
 
-  it("Enter after a search picks the best match, not the farm shown as its context", async () => {
+  it("Enter after a search picks the best match, not the farm shown as its context, and closes", async () => {
     render(<Harness />);
     await userEvent.click(pill());
     await userEvent.keyboard("chep 16{Enter}");
     expect(screen.getByTestId("value")).toHaveTextContent("Chepsito|Chepsito GH 16 - KR");
+    expect(screen.queryByPlaceholderText("Search farm or greenhouse")).toBeNull();
     await userEvent.click(pill());
     await userEvent.keyboard("toron{Enter}");
     expect(screen.getByTestId("value")).toHaveTextContent(/^Torongo\|$/);
@@ -118,7 +116,7 @@ describe("PlacePicker", () => {
     }
     render(<Refusing />);
     await userEvent.click(pill());
-    await userEvent.click(screen.getByRole("option", { name: "Torongo" }));
+    await choose("Torongo");
     expect(readPlace("Rose")).toBeNull();
   });
 
@@ -126,19 +124,28 @@ describe("PlacePicker", () => {
     render(<Harness level="farm" />);
     await userEvent.click(pill("Farm"));
     expect(options()).toEqual(["All farms", "Chepsito", "Torongo"]);
-    await userEvent.click(screen.getByRole("option", { name: "Torongo" }));
+    await choose("Torongo");
     expect(pill("Farm")).toHaveTextContent("Torongo");
   });
 
-  it("level greenhouse needs a house and shows farms as headers", async () => {
+  it("the floor plan's boxed greenhouse field keeps its own list: farms as headers, houses to pick", async () => {
     render(<Harness level="greenhouse" variant="field" houseExtra={(h) => (h.includes("16") ? <span>Spray advised</span> : null)} />);
     expect(pill("Greenhouse")).toHaveTextContent("Pick a greenhouse");
     await userEvent.click(pill("Greenhouse"));
-    expect(options()).toEqual(["Chepsito GH 02", "Chepsito GH 16Spray advised", "Torongo GH 17"]);
+    expect(within(screen.getByRole("listbox")).getAllByRole("option").map((o) => o.textContent)).toEqual(["Chepsito GH 02", "Chepsito GH 16Spray advised", "Torongo GH 17"]);
     expect(within(screen.getByRole("listbox")).getByText("Chepsito")).not.toHaveAttribute("role", "option");
     await userEvent.keyboard("{ArrowDown}{Enter}");
     expect(screen.getByTestId("value")).toHaveTextContent("Chepsito|Chepsito GH 02 - KR");
     expect(pill("Greenhouse")).toHaveTextContent("Chepsito GH 02");
+  });
+
+  it("level greenhouse in the pill look: farms are plain headers, houses are the choices", async () => {
+    render(<Harness level="greenhouse" houseExtra={(h) => (h.includes("16") ? <span>Spray advised</span> : null)} />);
+    await userEvent.click(pill("Greenhouse"));
+    expect(options()).toEqual(["Chepsito", "Chepsito GH 02", "Chepsito GH 16Spray advised", "Torongo", "Torongo GH 17"]);
+    expect(screen.queryByRole("radio", { name: "Chepsito" })).toBeNull();
+    await choose("Chepsito GH 02");
+    expect(screen.getByTestId("value")).toHaveTextContent("Chepsito|Chepsito GH 02 - KR");
   });
 
   it("a single farm shows the farm: fixed at farm level, still opens for houses", async () => {
@@ -156,7 +163,7 @@ describe("PlacePicker", () => {
   it("remembers the pick per crop and restores it on the next page", async () => {
     const { unmount } = render(<Harness />);
     await userEvent.click(pill());
-    await userEvent.click(screen.getByRole("option", { name: "Chepsito GH 16" }));
+    await choose("Chepsito GH 16");
     expect(readPlace("Rose")).toEqual({ farm: "Chepsito", greenhouse: "Chepsito GH 16 - KR" });
     expect(readPlace("Avocado")).toBeNull();
     unmount();
@@ -169,7 +176,7 @@ describe("PlacePicker", () => {
     render(<Harness level="farm" />);
     await waitFor(() => expect(screen.getByTestId("value")).toHaveTextContent("Chepsito|"));
     await userEvent.click(pill("Farm"));
-    await userEvent.click(screen.getByRole("option", { name: "Chepsito" }));
+    await choose("Chepsito");
     expect(readPlace("Rose")).toEqual({ farm: "Chepsito", greenhouse: "Chepsito GH 16 - KR" });
   });
 
@@ -207,7 +214,7 @@ describe("PlacePicker", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(onPick).not.toHaveBeenCalled();
     await userEvent.click(pill());
-    await userEvent.click(screen.getByRole("option", { name: "Chepsito" }));
+    await choose("Chepsito");
     expect(readPlace("Rose")).toEqual({ farm: "Torongo", greenhouse: "" });
   });
 
@@ -220,7 +227,7 @@ describe("PlacePicker", () => {
     });
     render(<Harness />);
     await userEvent.click(pill());
-    await userEvent.click(screen.getByRole("option", { name: "Torongo" }));
+    await choose("Torongo");
     expect(screen.getByTestId("value")).toHaveTextContent("Torongo|");
   });
 });

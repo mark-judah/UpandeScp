@@ -18,7 +18,8 @@ export type Endpoint =
   | "application_plan_diagnose"
   | "trends"
   | "quality"
-  | "scouts";
+  | "scouts"
+  | "supervisors";
 
 export interface AggregateFilters {
   from_date: string;
@@ -69,6 +70,8 @@ export const METHOD: Record<Endpoint, string> = {
   quality:            "upande_scp.serverscripts.dashboard_aggregates.quality",
   // Personnel ▸ Scouts: the quality aggregate's scout rows, ranked and scoped.
   scouts:             "upande_scp.serverscripts.scouts.api.get_scouts",
+  // Personnel ▸ Supervisors: plan outcomes and the extensive KPIs per supervisor.
+  supervisors:        "upande_scp.serverscripts.sprayers.supervisors.get_supervisors",
 };
 
 function newJobId(): string {

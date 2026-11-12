@@ -218,6 +218,53 @@ def batch_movements(item_code: str, warehouse: str) -> list[dict]:
     )
 
 
+def global_batch_totals(batches: list[str]) -> dict[str, float]:
+    """batch -> its total across every warehouse, from submitted, uncancelled bundles.
+
+    ERPNext v16 refuses any posting that leaves a batch's total negative, whatever one
+    warehouse holds. A batch moved out of stores that never held it (live, Sept 2026) can
+    show stock in a CSU while its total is negative; consuming it then fails the tank mix.
+    """
+    if not batches:
+        return {}
+    rows = frappe.db.sql(
+        """SELECT sbe.batch_no, SUM(sbe.qty) AS qty
+           FROM `tabSerial and Batch Entry` sbe
+           JOIN `tabSerial and Batch Bundle` sbb ON sbb.name = sbe.parent
+           WHERE sbb.docstatus = 1 AND sbb.is_cancelled = 0 AND sbe.batch_no IN %(b)s
+           GROUP BY sbe.batch_no""",
+        {"b": tuple(batches)},
+    )
+    return {r[0]: flt(r[1]) for r in rows}
+
+
+def cap_by_totals(available: dict[str, float], totals: dict[str, float]) -> tuple[dict, dict]:
+    """``(capped, blocked)``: each batch limited to its total across all stores.
+
+    ``blocked`` lists batches that hold stock here but whose total is too low to use
+    (batch -> total), for the fix-it message. A batch with no total row is left as is.
+    """
+    capped, blocked = {}, {}
+    for b, q in (available or {}).items():
+        if b in totals:
+            usable = max(min(flt(q), flt(totals[b])), 0.0)
+            if flt(q) > EPS and usable < flt(q) - EPS:
+                blocked[b] = flt(totals[b])
+            capped[b] = usable
+        else:
+            capped[b] = flt(q)
+    return capped, blocked
+
+
+def negative_total_note(item_code: str, blocked: dict[str, float]) -> str:
+    parts = ", ".join(f"{b} (total {flt(t):g})" for b, t in sorted(blocked.items()))
+    return (
+        f"{item_code}: batch {parts} has stock in this CSU but its total across all "
+        "stores is too low, because it was issued from stores that never held it. Ask "
+        "the store to correct the batch on those transfers"
+    )
+
+
 def qty_precision() -> int:
     """The precision a Manufacture row's qty is stored at."""
     from frappe.model.meta import get_field_precision
@@ -235,7 +282,10 @@ def resolve_item(
     """The batches one chemical of one plan is consumed from, read off the ledger."""
     if lots is None:
         lots = [l for l in transferred_lots(work_order, wip) if l["item_code"] == item_code]
-    available = balance_floor(batch_movements(item_code, wip), moment)
+    local = balance_floor(batch_movements(item_code, wip), moment)
+    available, blocked = cap_by_totals(
+        local, global_batch_totals([b for b, q in local.items() if q > EPS])
+    )
     with_stock = [b for b, q in available.items() if q > EPS]
     meta = {}
     if with_stock:
@@ -255,6 +305,7 @@ def resolve_item(
     plan = plan_item(need, lots, available, order, placeholder)
     plan["pieces"] = round_pieces(plan["pieces"], need, qty_precision())
     plan["available_total"] = sum(available[b] for b in with_stock)
+    plan["blocked_by_total"] = blocked
     plan["expiry"] = {b: (meta[b].expiry_date if b in meta else None) for b in with_stock}
     return plan
 

@@ -81,6 +81,7 @@ import { fmtQty, fromStockQty } from "@/lib/uom";
 import {
   createDraftSprayPlan,
   fetchCreatorBootstrap,
+  teamRuleError,
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
@@ -1545,6 +1546,11 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     }
     if (classification === "Preventive" && preventiveReason.trim().length < 20) {
       pushToast("err", "Preventive plans need a reason of at least 20 characters.");
+      return;
+    }
+    const teamErr = sprayTeam || teamMembers.length ? teamRuleError(teamMembers) : null;
+    if (teamErr) {
+      pushToast("err", teamErr);
       return;
     }
     if (!chemRows.length) {

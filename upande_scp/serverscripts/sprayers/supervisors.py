@@ -10,7 +10,8 @@ nobody did. The lifecycle, the Chemical Progress page and the progress email
 show both, so a missed spray names the person assigned and the person who acted.
 
 ``get_supervisors`` ranks supervisors over a date range (Personnel ▸
-Supervisors). A plan belongs to its day (the scheduled application time) and to
+Supervisors); ``supervisor_kpis.py`` adds the extensive per-supervisor KPIs, farm
+medians, weekly trend and plan events that page shows. A plan belongs to its day (the scheduled application time) and to
 each supervisor on its team. Each plan that was due by now ends in exactly one
 of four outcomes:
 
@@ -24,12 +25,17 @@ A plan still ahead of its time, and a stopped plan, are not counted as due.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 import frappe
 from frappe.utils import get_datetime, getdate, now_datetime
 
+from upande_scp.serverscripts.common.place_filter import parse_names
+from upande_scp.serverscripts.scouts import api as scouts_api
+from upande_scp.serverscripts.spray_plan_creator import lateness
 from upande_scp.serverscripts.sprayers import api as personnel_api
+from upande_scp.serverscripts.sprayers import supervisor_kpis as K
 
 AFP = "Application Floor Plan"
 GRACE_HOURS = 2
@@ -202,6 +208,7 @@ def _plans_in(start, end, farms) -> list:
     rows = frappe.db.sql(
         """SELECT wo.name, wo.custom_greenhouse AS greenhouse, wo.status, wo.workflow_state,
                   wo.custom_scheduled_application_time AS scheduled, wo.actual_start_date,
+                  wo.custom_area AS area, wo.custom_compliance_status AS compliance,
                   (SELECT MIN(s.started_at) FROM `tabSprayer Movement Session` s
                     WHERE s.work_order = wo.name AND IFNULL(s.status, '') != 'Aborted') AS session_start,
                   wh.custom_farm AS farm
@@ -215,11 +222,49 @@ def _plans_in(start, end, farms) -> list:
     if farms is not None:
         rows = [r for r in rows if r.farm in farms]
     return [{
-        "name": r.name, "scheduled": r.scheduled,
+        "name": r.name, "scheduled": r.scheduled, "greenhouse": r.greenhouse, "area": r.area,
+        "compliance": r.compliance,
         "start": r.session_start or r.actual_start_date,
         "completed": (r.workflow_state == "Completed") or (r.status in ("Completed", "Closed")),
         "stopped": r.status == "Stopped", "farm": r.farm,
     } for r in rows]
+
+
+def _cutoff_cache():
+    cache: dict = {}
+
+    def cutoff_of(greenhouse):
+        crop = lateness.crop_of_greenhouse(greenhouse)
+        if crop not in cache:
+            cache[crop] = lateness.cutoff_for(crop)
+        return cache[crop]
+
+    return cutoff_of
+
+
+def enrich(rows, plans, sup, scan, ctx, now, names, cutoff_of=None) -> dict:
+    """Add the KPI fields, radar, weekly trend and plan events to each row and
+    return ``{"rows", "medians"}``. Pure given its inputs (``ctx`` is
+    ``supervisor_kpis.load_context`` with ``checkins``)."""
+    cutoff_of = cutoff_of or (lambda gh: lateness.DEFAULT_CUTOFF)
+    facts = {p["name"]: K.plan_facts(p, ctx, now, classify, cutoff_of) for p in plans}
+    actors = {n: [names.get(e) or e for e in scan.get(n, {})] for n in facts}
+    mine: dict = {}
+    for p in plans:
+        for e in dict.fromkeys(sup.get(p["name"], [])):
+            mine.setdefault(e, []).append(facts[p["name"]])
+    for r in rows:
+        fs = mine.get(r["employee"], [])
+        r.update(K.summarise(fs, {"acted": r["acted"], "by_other": r["by_other"], "nobody": r["nobody"]}))
+        r["farm"] = K.primary_farm(fs)
+        r["farms"] = sorted({f["farm"] for f in fs if f["farm"]})
+        r["weeks"] = K.weeks_of(fs)
+        r["events"] = K.events_of(fs, actors)
+    pace_ref = K.median([r["median_spray_min"] for r in rows])
+    for r in rows:
+        r["radar"] = {k: (None if v is None else round(v, 3)) for k, v in K.radar_of(r, pace_ref).items()}
+        r["score"] = K.score_of(r["radar"])
+    return {"rows": rows, "medians": K.farm_medians(rows), "pace_ref_min": pace_ref}
 
 
 def supervisor_kpis(start, end, farms=None, now=None) -> dict:
@@ -229,31 +274,42 @@ def supervisor_kpis(start, end, farms=None, now=None) -> dict:
     sup = _supervisors_by_plan(names_of_plans)
     scan = _scanners_by_plan(names_of_plans)
     emps = [e for v in sup.values() for e in v] + [e for v in scan.values() for e in v]
-    rows = build_rows(plans, sup, {k: v for k, v in scan.items()}, now, _names(emps))
-    return {
+    names = _names(emps)
+    rows = build_rows(plans, sup, {k: v for k, v in scan.items()}, now, names)
+    ctx = K.load_context(plans)
+    ctx["checkins"] = K.load_checkins(
+        plans, ctx, {p["name"]: getdate(p["start"]) for p in plans if p["start"]})
+    out = enrich(rows, plans, sup, scan, ctx, now, names, _cutoff_cache())
+    out.update({
         "from_date": str(getdate(start)), "to_date": str(getdate(end)), "grace_hours": GRACE_HOURS,
         "plans": len(plans), "no_supervisor": sum(1 for p in plans if not sup.get(p["name"])),
-        "rows": rows,
-    }
+    })
+    return out
 
 
 @frappe.whitelist()
 def get_supervisors(crop=None, farm=None, from_date=None, to_date=None) -> dict:
-    """Personnel ▸ Supervisors: the ranking over the range (default: last four
-    complete weeks). Same farm scope as the Teams page."""
+    """Personnel ▸ Supervisors: the ranking and each supervisor's KPIs over the
+    range (default: last four complete weeks). Same farm scope as the Teams page;
+    ``farm`` may name several (JSON list), ``__all__`` or blank means every farm
+    the user may see."""
     sc = personnel_api.scope(crop)
     visible = sc["farms"]
-    farm = (farm or "").strip()
-    if farm:
-        personnel_api._assert_farm(sc, farm)
-        farms = {farm}
-    else:
-        farms = visible
+    names = parse_names(farm)
+    for n in names:
+        personnel_api._assert_farm(sc, n)
+    farms = set(names) if names else visible
     today = getdate(frappe.utils.nowdate())
     sunday = today - timedelta(days=today.isoweekday() % 7 or 7)
     start = getdate(from_date) if from_date else sunday - timedelta(days=27)
     end = getdate(to_date) if to_date else sunday
     out = supervisor_kpis(start, end, farms)
+    ids = [r["employee"] for r in out["rows"]]
+    leave = scouts_api.approved_leave_days(ids, start, end) if ids else {}
+    images = scouts_api._images(ids)
+    for r in out["rows"]:
+        r["leave_days"] = leave.get(r["employee"], 0)
+        r["image"] = images.get(r["employee"], "")
     out["farms"] = sorted(visible) if visible is not None else sorted(frappe.get_all("Farm", pluck="name"))
-    out["farm"] = farm
+    out["farm"] = names[0] if len(names) == 1 else (json.dumps(names) if names else "")
     return out

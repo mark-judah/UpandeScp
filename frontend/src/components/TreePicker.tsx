@@ -9,8 +9,13 @@
  *   a single Select all ↔ Deselect all toggle.
  * - Selecting a group row selects the group's own id only (an aggregate);
  *   the compact icons on a group row select / clear every child.
+ * - `cascade`: a group is derived from its leaves (all = checked, some = half)
+ *   and toggling it toggles every leaf; `checked` then holds leaf ids only.
+ * - `single`: radio-like. Picking a row replaces the selection and closes the
+ *   popover; no Select all, no group icons, radio dots. A node with
+ *   `selectable: false` is a plain header that only expands.
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, CircleCheck, CircleX, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -27,6 +32,14 @@ export type TreePickerPanelProps = {
   onChange: (next: Set<string>) => void;
   emptyHint?: string;
   searchPlaceholder?: string;
+  /** one choice at a time (see the header comment) */
+  single?: boolean;
+  /** groups follow their leaves; `checked` holds leaf ids only */
+  cascade?: boolean;
+  /** what a group's children are called, in the group icons' tooltips */
+  childNoun?: string;
+  /** called after a single-mode pick (the popover closes on it) */
+  onPick?: () => void;
 };
 
 function collectLeafIds(node: TreeNode): string[] {
@@ -34,20 +47,25 @@ function collectLeafIds(node: TreeNode): string[] {
   return node.children.flatMap(collectLeafIds);
 }
 
-function nodeState(node: TreeNode, checked: Set<string>): CheckState {
+function nodeState(node: TreeNode, checked: Set<string>, cascade = false): CheckState {
+  if (cascade && node.children?.length) {
+    const leaves = collectLeafIds(node);
+    const n = leaves.filter((id) => checked.has(id)).length;
+    return n === 0 ? "unchecked" : n === leaves.length ? "checked" : "indeterminate";
+  }
   if (checked.has(node.id)) return "checked";
   // Surface a hint when a parent isn't itself selected but some descendants are.
-  if (node.children?.some((c) => nodeState(c, checked) !== "unchecked")) return "indeterminate";
+  if (node.children?.some((c) => nodeState(c, checked, cascade) !== "unchecked")) return "indeterminate";
   return "unchecked";
 }
 
 /** The circular checkbox. Rendered inside a clickable row, so a click or
  *  Space/Enter on it bubbles to the row's toggle. */
-export function Dot({ state, label }: { state: CheckState; label: string }) {
+export function Dot({ state, label, radio }: { state: CheckState; label: string; radio?: boolean }) {
   return (
     <button
       type="button"
-      role="checkbox"
+      role={radio ? "radio" : "checkbox"}
       aria-checked={state === "checked" ? true : state === "indeterminate" ? "mixed" : false}
       aria-label={label}
       data-state={state}
@@ -58,7 +76,7 @@ export function Dot({ state, label }: { state: CheckState; label: string }) {
         state === "indeterminate" && "border-primary bg-background",
       )}
     >
-      {state === "checked" && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+      {state === "checked" && (radio ? <span className="h-1.5 w-1.5 rounded-full bg-current" /> : <Check className="h-2.5 w-2.5" strokeWidth={3} />)}
       {state === "indeterminate" && <span className="absolute inset-y-0 left-0 w-1/2 bg-primary" />}
     </button>
   );
@@ -96,6 +114,10 @@ export function TreePickerPanel({
   onChange,
   emptyHint = "No items in range.",
   searchPlaceholder = "Search…",
+  single = false,
+  cascade = false,
+  childNoun = "greenhouse",
+  onPick,
 }: TreePickerPanelProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(nodes.map((n) => n.id)));
@@ -119,6 +141,7 @@ export function TreePickerPanel({
 
   const allLeafIds = useMemo(() => nodes.flatMap(collectLeafIds), [nodes]);
   const allSelected = allLeafIds.length > 0 && allLeafIds.every((id) => checked.has(id));
+  const selectedCount = cascade ? allLeafIds.filter((id) => checked.has(id)).length : checked.size;
 
   const groupIds = useMemo(() => {
     const out: string[] = [];
@@ -133,7 +156,28 @@ export function TreePickerPanel({
   }, [nodes]);
   const allExpanded = groupIds.length > 0 && groupIds.every((id) => expanded.has(id));
 
+  const toggleOpen = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const toggleNode = (n: TreeNode) => {
+    if (n.selectable === false) return toggleOpen(n.id);
+    if (single) {
+      onChange(new Set([n.id]));
+      onPick?.();
+      return;
+    }
+    if (cascade && n.children?.length) {
+      const leaves = collectLeafIds(n);
+      const all = leaves.every((id) => checked.has(id));
+      const next = new Set(checked);
+      leaves.forEach((id) => (all ? next.delete(id) : next.add(id)));
+      onChange(next);
+      return;
+    }
     // Non-cascading: a parent toggles its own id only (an aggregate selection).
     const next = new Set(checked);
     if (next.has(n.id)) next.delete(n.id);
@@ -167,7 +211,8 @@ export function TreePickerPanel({
 
   const renderNode = (n: TreeNode, depth: number): ReactNode => {
     if (filteredIds && !filteredIds.has(n.id)) return null;
-    const state = nodeState(n, checked);
+    const selectable = n.selectable !== false;
+    const state = single ? (checked.has(n.id) ? "checked" : "unchecked") : nodeState(n, checked, cascade);
     const open = expanded.has(n.id);
     const hasChildren = !!n.children?.length;
     const leafIds = hasChildren ? collectLeafIds(n) : [];
@@ -189,12 +234,7 @@ export function TreePickerPanel({
               aria-expanded={open}
               onClick={(e) => {
                 e.stopPropagation();
-                setExpanded((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(n.id)) next.delete(n.id);
-                  else next.add(n.id);
-                  return next;
-                });
+                toggleOpen(n.id);
               }}
               className="flex h-4 w-4 items-center justify-center text-muted-foreground"
             >
@@ -203,11 +243,18 @@ export function TreePickerPanel({
           ) : (
             <span className="w-4" />
           )}
-          <Dot state={state} label={n.label} />
-          <span className="flex-1 truncate text-sm" title={n.search}>{n.label}</span>
-          {hasChildren && (
+          {selectable && <Dot state={state} label={n.label} radio={single} />}
+          {n.lead}
+          <span
+            className={cn("flex-1 truncate text-sm", !selectable && "text-[11px] font-semibold text-muted-foreground")}
+            title={n.title ?? n.search}
+          >
+            {n.label}
+          </span>
+          {n.extra}
+          {hasChildren && !single && selectable && (
             <span className="flex items-center opacity-60 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-              <IconAction label={`Select every greenhouse in ${n.label}`} onClick={() => selectSubtree(n)}>
+              <IconAction label={`Select every ${childNoun} in ${n.label}`} onClick={() => selectSubtree(n)}>
                 <ListChecks className="h-3.5 w-3.5" />
               </IconAction>
               {(anyLeaf || checked.has(n.id)) && (
@@ -234,13 +281,40 @@ export function TreePickerPanel({
     return <div className="p-3 text-xs text-muted-foreground">{emptyHint}</div>;
   }
 
+  /** Enter in the search box acts on the best match: the first visible, selectable
+   *  row whose own text matches (a farm shown only as context of a matching house is skipped). */
+  const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter" || !query.trim()) return;
+    e.preventDefault();
+    let hit: TreeNode | undefined;
+    const walk = (n: TreeNode) => {
+      if (hit || (filteredIds && !filteredIds.has(n.id))) return;
+      if (n.selectable !== false && matchesQuery(n.search ?? n.label, query)) hit = n;
+      else n.children?.forEach(walk);
+    };
+    nodes.forEach(walk);
+    if (hit) toggleNode(hit);
+  };
+
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex flex-col gap-2">
-        <SearchInput value={query} onChange={setQuery} placeholder={searchPlaceholder} />
+        <SearchInput value={query} onChange={setQuery} onKeyDown={onSearchKey} placeholder={searchPlaceholder} />
+        {single ? (
+          groupIds.length > 0 && (
+            <div data-testid="tree-picker-header" className="flex flex-nowrap items-center justify-end px-0.5 text-xs">
+              <IconAction
+                label={allExpanded ? "Collapse all" : "Expand all"}
+                onClick={() => expandAll(!allExpanded)}
+              >
+                {allExpanded ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
+              </IconAction>
+            </div>
+          )
+        ) : (
         <div data-testid="tree-picker-header" className="flex flex-nowrap items-center gap-1 px-0.5 text-xs">
           <span className="mr-auto whitespace-nowrap text-muted-foreground tabular-nums">
-            {checked.size} selected
+            {selectedCount} selected
           </span>
           <IconAction
             label={allExpanded ? "Collapse all" : "Expand all"}
@@ -262,6 +336,7 @@ export function TreePickerPanel({
             {allSelected ? "Deselect all" : "Select all"}
           </Button>
         </div>
+        )}
         <div className="-mx-1 max-h-72 overflow-auto px-1">{nodes.map((n) => renderNode(n, 0))}</div>
       </div>
     </TooltipProvider>
@@ -269,29 +344,59 @@ export function TreePickerPanel({
 }
 
 export type TreePickerProps = TreePickerPanelProps & {
-  /** accessible name and pill text, e.g. "Farms" */
+  /** pill text and (unless `ariaLabel`) accessible name, e.g. "Farms" */
   label: string;
+  ariaLabel?: string;
+  /** replaces "label count" on the pill with a value, e.g. the picked farm */
+  valueText?: string;
   icon?: ReactNode;
   /** the figure on the pill; defaults to the number checked */
   count?: number;
   disabled?: boolean;
   className?: string;
+  /** "field" is the boxed look of form pages */
+  variant?: "pill" | "field";
+  onOpenChange?: (open: boolean) => void;
 };
 
-export function TreePicker({ label, icon, count, disabled, className, ...panel }: TreePickerProps) {
+const FIELD_TRIGGER =
+  "h-9 w-full justify-between gap-2 rounded-md border-input bg-background px-3 text-sm font-normal shadow-sm hover:shadow-sm";
+
+export function TreePicker({
+  label, ariaLabel, valueText, icon, count, disabled, className, variant = "pill", onOpenChange, ...panel
+}: TreePickerProps) {
+  const [open, setOpen] = useState(false);
   const n = count ?? panel.checked.size;
+  const change = (o: boolean) => {
+    setOpen(o);
+    onOpenChange?.(o);
+  };
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={change}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className={cn(HEADER_PILL, className)} disabled={disabled}>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={ariaLabel}
+          aria-haspopup="dialog"
+          title={valueText}
+          className={cn(variant === "field" ? FIELD_TRIGGER : HEADER_PILL, valueText !== undefined && "min-w-0 max-w-[16rem]", className)}
+          disabled={disabled}
+        >
           {icon}
-          {label}
-          <span className="tabular-nums text-muted-foreground">{n || "—"}</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+          {valueText !== undefined ? (
+            <span className="min-w-0 flex-1 truncate">{valueText}</span>
+          ) : (
+            <>
+              {label}
+              <span className="tabular-nums text-muted-foreground">{n || "—"}</span>
+            </>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-2">
-        <TreePickerPanel {...panel} />
+        <TreePickerPanel {...panel} onPick={() => change(false)} />
       </PopoverContent>
     </Popover>
   );

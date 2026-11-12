@@ -45,6 +45,7 @@ import {
 import { fetchSprayTeams, type SprayTeam } from "@/lib/teams-api";
 import { EditTeamDialog } from "@/components/teams/EditTeamDialog";
 import { CrewBadge } from "@/components/spray-plan/CrewBadge";
+import { SupervisorBanner } from "@/components/spray-plan/SupervisorBanner";
 import { AvatarSkeleton, Bar, TextSkeleton } from "@/components/Loading";
 import {
   fetchCrewAvailability,
@@ -303,6 +304,7 @@ export function SprayTeamEditor({
           this plan — the master team list is left untouched. Use Edit team to
           change the team itself.
         </p>
+        <SupervisorBanner team={team} members={members} />
         {updated && updated.name === team && (
           <div
             role="status"

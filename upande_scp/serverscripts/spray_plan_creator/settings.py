@@ -118,6 +118,22 @@ def get_settings_bundle() -> dict:
             # crew_availability.normalise_mode applies when enforcing.
             "crew_leave_check": crew_availability.normalise_mode(settings.get("crew_leave_check")),
             "crew_require_checkin": int(settings.get("crew_require_checkin") or 0),
+            # Blank reads back as Warn (role check) / Off (check-in check), the defaults
+            # each consumer applies, so the page never shows a blank that behaves otherwise.
+            "spray_supervisor_role_check": crew_availability.normalise_mode(
+                settings.get("spray_supervisor_role_check")
+            ),
+            # Blank reads back as Block, the default team_rules.team_mode applies.
+            "spray_plan_requires_team": (
+                crew_availability.normalise_mode(settings.get("spray_plan_requires_team"))
+                if (settings.get("spray_plan_requires_team") or "").strip()
+                else "Block"
+            ),
+            "spray_checkin_check": (
+                crew_availability.normalise_mode(settings.get("spray_checkin_check"))
+                if (settings.get("spray_checkin_check") or "").strip()
+                else "Off"
+            ),
             "loaning_enabled": int(settings.loaning_enabled or 0),
             "loaning_depletion_pct": settings.loaning_depletion_pct or 15,
             "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
@@ -207,6 +223,9 @@ def save_spray_plan_settings(payload) -> dict:
         "postponement_grace_minutes",
         "crew_leave_check",
         "crew_require_checkin",
+        "spray_supervisor_role_check",
+        "spray_plan_requires_team",
+        "spray_checkin_check",
         "loaning_enabled",
         "loaning_depletion_pct",
         "loaning_timeout_hours",
@@ -241,6 +260,16 @@ def save_spray_plan_settings(payload) -> dict:
     settings.flags.capture_explicit = {f for f in capture_settings.DEFAULTS if f in payload}
     if "crew_leave_check" in payload:
         payload["crew_leave_check"] = crew_availability.normalise_mode(payload["crew_leave_check"])
+    if "spray_supervisor_role_check" in payload:
+        payload["spray_supervisor_role_check"] = crew_availability.normalise_mode(
+            payload["spray_supervisor_role_check"]
+        )
+    if "spray_plan_requires_team" in payload:
+        raw = (payload["spray_plan_requires_team"] or "").strip()
+        payload["spray_plan_requires_team"] = crew_availability.normalise_mode(raw) if raw else "Block"
+    if "spray_checkin_check" in payload:
+        raw = (payload["spray_checkin_check"] or "").strip()
+        payload["spray_checkin_check"] = crew_availability.normalise_mode(raw) if raw else "Off"
     if "crew_require_checkin" in payload:
         payload["crew_require_checkin"] = 1 if frappe.utils.cint(payload["crew_require_checkin"]) else 0
     if "report_email_account" in payload:

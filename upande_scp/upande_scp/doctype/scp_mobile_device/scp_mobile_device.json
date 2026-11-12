@@ -1,0 +1,395 @@
+{
+ "actions": [],
+ "autoname": "field:install_id",
+ "creation": "2026-11-12 12:00:00.000000",
+ "description": "One row per installed copy of the SCP scout app. Written by it_monitor.ingest.register_device; read by the IT monitor.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "install_id",
+  "user",
+  "employee",
+  "farm",
+  "app_role",
+  "status",
+  "sec_hw",
+  "platform",
+  "device_brand",
+  "device_model",
+  "device_name",
+  "os_version",
+  "is_physical_device",
+  "sec_app",
+  "app_version",
+  "runtime_version",
+  "update_id",
+  "channel",
+  "build_type",
+  "previous_app_version",
+  "version_changed_at",
+  "sec_seen",
+  "first_seen",
+  "last_seen",
+  "last_login_at",
+  "launches",
+  "ip_address",
+  "sec_health",
+  "battery_level",
+  "battery_state",
+  "low_power",
+  "storage_free_bytes",
+  "storage_total_bytes",
+  "memory_total_bytes",
+  "network_type",
+  "connectivity",
+  "clock_skew_seconds",
+  "sec_sync",
+  "last_sync_at",
+  "last_sync_ok_at",
+  "last_sync_error",
+  "pending_total",
+  "stuck_total",
+  "oldest_pending_at",
+  "sec_json",
+  "queues",
+  "device_snapshot",
+  "it_notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "install_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Install ID",
+   "length": 64,
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Farm",
+   "options": "Farm",
+   "search_index": 1
+  },
+  {
+   "fieldname": "app_role",
+   "fieldtype": "Data",
+   "label": "App role",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "\nCurrent\nBehind\nDormant\nUnknown",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_hw",
+   "fieldtype": "Section Break",
+   "label": "Hardware"
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Data",
+   "label": "Platform",
+   "read_only": 1
+  },
+  {
+   "fieldname": "device_brand",
+   "fieldtype": "Data",
+   "label": "Device brand",
+   "read_only": 1
+  },
+  {
+   "fieldname": "device_model",
+   "fieldtype": "Data",
+   "label": "Device model",
+   "read_only": 1
+  },
+  {
+   "fieldname": "device_name",
+   "fieldtype": "Data",
+   "label": "Device name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "os_version",
+   "fieldtype": "Data",
+   "label": "OS version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_physical_device",
+   "fieldtype": "Check",
+   "label": "Physical device",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_app",
+   "fieldtype": "Section Break",
+   "label": "App"
+  },
+  {
+   "fieldname": "app_version",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "App version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "runtime_version",
+   "fieldtype": "Data",
+   "label": "Runtime version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "update_id",
+   "fieldtype": "Data",
+   "label": "Update ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "channel",
+   "fieldtype": "Data",
+   "label": "Channel",
+   "read_only": 1
+  },
+  {
+   "fieldname": "build_type",
+   "fieldtype": "Data",
+   "label": "Build type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "previous_app_version",
+   "fieldtype": "Data",
+   "label": "Previous app version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "version_changed_at",
+   "fieldtype": "Datetime",
+   "label": "Version changed at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_seen",
+   "fieldtype": "Section Break",
+   "label": "Activity"
+  },
+  {
+   "fieldname": "first_seen",
+   "fieldtype": "Datetime",
+   "label": "First seen",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_seen",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last seen",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "last_login_at",
+   "fieldtype": "Datetime",
+   "label": "Last login at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "launches",
+   "fieldtype": "Int",
+   "label": "Launches",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ip_address",
+   "fieldtype": "Data",
+   "label": "IP address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_health",
+   "fieldtype": "Section Break",
+   "label": "Health"
+  },
+  {
+   "description": "0 to 1",
+   "fieldname": "battery_level",
+   "fieldtype": "Float",
+   "label": "Battery level",
+   "read_only": 1
+  },
+  {
+   "fieldname": "battery_state",
+   "fieldtype": "Data",
+   "label": "Battery state",
+   "read_only": 1
+  },
+  {
+   "fieldname": "low_power",
+   "fieldtype": "Check",
+   "label": "Low power mode",
+   "read_only": 1
+  },
+  {
+   "fieldname": "storage_free_bytes",
+   "fieldtype": "Long Int",
+   "label": "Storage free (bytes)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "storage_total_bytes",
+   "fieldtype": "Long Int",
+   "label": "Storage total (bytes)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "memory_total_bytes",
+   "fieldtype": "Long Int",
+   "label": "Memory total (bytes)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "network_type",
+   "fieldtype": "Data",
+   "label": "Network type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "connectivity",
+   "fieldtype": "Data",
+   "label": "Connectivity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "clock_skew_seconds",
+   "fieldtype": "Int",
+   "label": "Clock skew (s)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_sync",
+   "fieldtype": "Section Break",
+   "label": "Sync"
+  },
+  {
+   "fieldname": "last_sync_at",
+   "fieldtype": "Datetime",
+   "label": "Last sync at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_sync_ok_at",
+   "fieldtype": "Datetime",
+   "label": "Last successful sync at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_sync_error",
+   "fieldtype": "Small Text",
+   "label": "Last sync error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pending_total",
+   "fieldtype": "Int",
+   "label": "Pending",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stuck_total",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Stuck",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "oldest_pending_at",
+   "fieldtype": "Datetime",
+   "label": "Oldest pending at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_json",
+   "fieldtype": "Section Break",
+   "label": "Detail"
+  },
+  {
+   "fieldname": "queues",
+   "fieldtype": "JSON",
+   "label": "Queues",
+   "read_only": 1
+  },
+  {
+   "fieldname": "device_snapshot",
+   "fieldtype": "JSON",
+   "label": "Device snapshot",
+   "read_only": 1
+  },
+  {
+   "fieldname": "it_notes",
+   "fieldtype": "Small Text",
+   "label": "IT notes"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-12 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "SCP Mobile Device",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP IT"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "install_id",
+ "track_changes": 0
+}

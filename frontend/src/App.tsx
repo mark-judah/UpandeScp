@@ -156,8 +156,14 @@ const Scouts = lazy(() =>
 const Biologicals = lazy(() =>
   import("@/pages/Biologicals").then((m) => ({ default: m.Biologicals })),
 );
+const DewPoint = lazy(() =>
+  import("@/pages/DewPoint").then((m) => ({ default: m.DewPoint })),
+);
 const Coverage = lazy(() =>
   import("@/pages/Coverage").then((m) => ({ default: m.Coverage })),
+);
+const ITMonitor = lazy(() =>
+  import("@/pages/ITMonitor").then((m) => ({ default: m.ITMonitor })),
 );
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
@@ -207,7 +213,10 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/Scouts"),
   () => import("@/pages/Supervisors"),
   () => import("@/pages/Coverage"),
+  () => import("@/pages/DewPoint"),
   () => import("@/pages/Biologicals"),
+  // Last: only IT staff ever open it.
+  () => import("@/pages/ITMonitor"),
 ];
 
 /**
@@ -349,9 +358,15 @@ function renderView(crop: string, view: View): ReactNode {
       return <Scouts initialCrop={cropName} />;
     case "supervisors":
       return <Supervisors initialCrop={cropName} />;
+    // Scouting ▸ Dew point: greenhouse sensors, condensation (downy mildew) risk.
+    case "dew-point":
+      return <DewPoint initialCrop={cropName} />;
     // Reports ▸ Coverage: the scouting data-quality view.
     case "coverage":
       return <Coverage initialCrop={cropName} />;
+    // Not crop-scoped: the phone fleet (#/it).
+    case "it":
+      return <ITMonitor />;
     // Not crop-scoped: reached from the header bell, not a crop sidebar.
     case "notifications":
       return <Notifications />;

@@ -255,7 +255,7 @@ describe("open-field Application Plan", () => {
       expect(within(screen.getByTestId("plan-column")).getAllByText("Anthracnose").length).toBeGreaterThan(0);
       // narrowing to one pest returns to the single-pest green/amber/red field
       await user.click(screen.getByRole("button", { name: "Pests and diseases" }));
-      await user.click(screen.getByRole("option", { name: "Diseases, select all" }));
+      await user.click(screen.getByText("Diseases")); // the group row clears all its diseases
       expect(screen.getByRole("button", { name: "Pests and diseases" })).toHaveTextContent("Thrips");
       expect(screen.getByTestId("heat-legend").textContent).toMatch(/Medium/);
       expect(screen.queryByText(/worst selected observation/)).toBeNull();

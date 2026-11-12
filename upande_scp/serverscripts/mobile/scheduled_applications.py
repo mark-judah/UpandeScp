@@ -154,6 +154,14 @@ def fetchScheduledApplications(start_date=None, end_date=None, on_date=None):
 		for wo in work_orders:
 			wo["required_items"] = by_wo.get(wo["name"], [])
 
+		# Who scanned each chemical and when, so a second phone (or a read-only viewer)
+		# shows "X scanned this at 07:12" with no signal.
+		from upande_scp.serverscripts.spray_plan_creator.spray_session import chemical_scans_of
+
+		scans = chemical_scans_of([wo["name"] for wo in work_orders])
+		for wo in work_orders:
+			wo["scan_log"] = scans.get(wo["name"], [])
+
 		# Plans moved by an approved postponement carry the mark, so the handset can
 		# show them on their new date ("Postponed from ...") and let them be scanned.
 		from upande_scp.serverscripts.spray_plan_creator import lateness
@@ -170,6 +178,16 @@ def fetchScheduledApplications(start_date=None, end_date=None, on_date=None):
 			if crop not in cutoffs:
 				cutoffs[crop] = lateness.cutoff_for(crop)
 			wo["late_cutoff"] = cutoffs[crop]
+
+		# Who may run each plan and who turned up today, so the handset can open a plan
+		# read-only for a non-supervisor and show the Time & Attendance dots with no
+		# signal. Additive fields; a failure here must not empty the spray tab.
+		try:
+			from upande_scp.serverscripts.spray_plan_creator import spray_supervision
+
+			spray_supervision.attach_to_plans(work_orders, on_date)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "fetchScheduledApplications: supervision")
 
 	# `frappe.response.data`, not the `message` envelope: the app reads `response.data`
 	# and this is the contract it was built against.

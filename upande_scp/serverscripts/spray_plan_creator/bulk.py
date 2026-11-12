@@ -57,6 +57,11 @@ def submit_drafts_for_approval(wo_names) -> dict:
             if gh_farm not in scope["farms"]:
                 skipped.append({"name": name, "reason": "lost farm access"})
                 continue
+        from . import team_rules
+        team_problem = team_rules.refusal_for_submit(name)
+        if team_problem:
+            skipped.append({"name": name, "reason": team_problem})
+            continue
         # Bypass ERPNext's Work Order on_submit hook (which enforces wip_warehouse
         # and other manufacturing fields) since spray plans don't use those fields.
         # We only need to set docstatus=1 and workflow_state atomically.

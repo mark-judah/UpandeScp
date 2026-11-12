@@ -143,6 +143,41 @@ def _required_chemical_codes(wo) -> set[str]:
     }
 
 
+def chemical_scans_of(names) -> dict[str, list[dict]]:
+    """plan -> who scanned which chemical and when, oldest first.
+
+    So a second phone (or someone viewing read-only) can say "X scanned this at 07:12".
+    """
+    names = [n for n in (names or []) if n]
+    if not names:
+        return {}
+    rows = frappe.get_all(
+        "Work Order Chemical Scan",
+        filters={"parent": ["in", names], "parenttype": "Work Order"},
+        fields=["parent", "item_code", "item_name", "scanned_by", "scanned_at"],
+        order_by="scanned_at asc, idx asc",
+        limit_page_length=0,
+    )
+    # scanned_by holds an Employee id (older rows may hold a user id): name either.
+    who = list({r.scanned_by for r in rows if r.scanned_by})
+    full = {}
+    if who:
+        full.update({e.name: e.employee_name for e in frappe.get_all(
+            "Employee", filters={"name": ["in", who]}, fields=["name", "employee_name"])})
+        full.update({u.name: u.full_name for u in frappe.get_all(
+            "User", filters={"name": ["in", who]}, fields=["name", "full_name"])})
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r.parent, []).append({
+            "item_code": r.item_code,
+            "item_name": r.item_name,
+            "scanned_by": r.scanned_by,
+            "scanned_by_name": full.get(r.scanned_by) or r.scanned_by,
+            "scanned_at": str(r.scanned_at) if r.scanned_at else None,
+        })
+    return out
+
+
 def _scanned_codes(wo) -> set[str]:
     return {
         s.item_code
@@ -433,10 +468,12 @@ def _rebuild_manufacture_from_transfer(
             continue
         if plan["short"] > TB.EPS:
             when = f" as of {get_datetime(moment):%Y-%m-%d %H:%M}" if moment else ""
+            blocked = plan.get("blocked_by_total") or {}
+            why = f" {TB.negative_total_note(ic, blocked)}, then confirm the mix again." if blocked else ""
             frappe.throw(
                 f"Cannot manufacture {wo_name}: {ic} needs {qty:g} from the CSU "
-                f"{wip!r} but its batches there hold only "
-                f"{flt(plan['available_total']):g}{when}."
+                f"{wip!r} but its usable batches there hold only "
+                f"{flt(plan['available_total']):g}{when}.{why}"
             )
         notes.extend(TB.notes_for(ic, plan))
         for piece in plan["pieces"]:
@@ -646,7 +683,11 @@ def _promote_to_tank_mix_manufactured(
         make_stock_entry as _make_se,
     )
 
-    se_data = _make_se(work_order_id=wo.name, purpose="Manufacture")
+    # ERPNext's make_stock_entry reads the Work Order with check_permission="read"; the
+    # caller's access to confirm the mix was already checked, and a supervisor need not
+    # hold Work Order read, so build the draft elevated (the caller is restored on exit).
+    with _as_administrator():
+        se_data = _make_se(work_order_id=wo.name, purpose="Manufacture")
     if not se_data:
         frappe.throw(
             f"Could not generate Manufacture Stock Entry for {wo.name}."
@@ -698,6 +739,13 @@ def _promote_to_tank_mix_manufactured(
 
     se_doc.flags.ignore_permissions = True
     se_doc.flags.ignore_links = True
+    # Whatever was transferred into the CSU is in the tank, so it is what the mix
+    # consumed even if its batch has expired since. ERPNext now checks expiry on the
+    # outward bundle of a Manufacture too; keep its disabled-batch check, drop expiry.
+    _usable = se_doc.validate_batch_is_usable
+    se_doc.validate_batch_is_usable = lambda idx, batch_no, expiry_date, disabled: _usable(
+        idx, batch_no, None, disabled
+    )
     se_doc.insert()
     _patch_zero_rates(se_doc)
     # Re-stamp: ERPNext's validate can reset item cost_center on insert.
@@ -980,9 +1028,9 @@ def _replay_authorised(work_order: str) -> bool:
 def assert_can_operate(work_order: str, action: str) -> None:
     """Gate for the field steps of a plan.
 
-    ``scan`` / ``start``: whoever may manufacture (``can_manufacture``) or any member
-    of the plan's spray team. ``end`` posts the Material Issue and completes the plan,
-    so it is the manufacture rule only.
+    ``scan`` / ``start`` / ``end``: whoever may manufacture (``can_manufacture``) — the
+    plan's supervisor(s), a supervisor rostered on its farm, a General Manager / Stock
+    Manager. Team members who are not supervisors may not.
     """
     if _replay_authorised(work_order):
         return
@@ -990,15 +1038,13 @@ def assert_can_operate(work_order: str, action: str) -> None:
         frappe.throw(f"Work Order {work_order} not found.")
     wo = frappe.get_doc("Work Order", work_order)
     user = frappe.session.user
+    # Supervisors only, for every field step. A sprayer on the team used to be let
+    # scan and start; the spray is run by the plan's supervisor(s), and the phone opens
+    # the plan read-only for anyone else (spray_supervision.can_run).
     if can_manufacture(wo, user):
         return
-    if action in ("scan", "start") and user in _plan_team_users(wo):
-        return
     who = (
-        "a spray supervisor rostered on its farm, a member of its spray team, or a "
-        "General Manager / Stock Manager"
-        if action in ("scan", "start")
-        else "a spray supervisor rostered on its farm, the plan's own supervisor, or a "
+        "a spray supervisor rostered on its farm, the plan's own supervisor, or a "
         "General Manager / Stock Manager"
     )
     frappe.throw(
@@ -1008,15 +1054,30 @@ def assert_can_operate(work_order: str, action: str) -> None:
 
 
 @frappe.whitelist()
-def get_spray_state(work_order: str) -> dict[str, Any]:
+def get_spray_state(work_order: str, token: str | None = None) -> dict[str, Any]:
     """Where a plan stands on the server — what the mixing screen colours its steps from.
 
     Read-only. ``scanned`` / ``required`` are chemical item codes; ``manufactured`` is true
-    once the tank mix exists; ``started`` / ``ended`` follow the workflow state.
+    once the tank mix exists; ``started`` / ``ended`` follow the workflow state. With
+    ``token`` it also reports that session token's own status (``token_status``), the
+    read-back the phone confirms a replay against.
     """
     if not work_order or not frappe.db.exists("Work Order", work_order):
         frappe.throw(f"Work Order {work_order} not found.")
-    assert_can_operate(work_order, "scan")
+    # Reading where a plan stands is open to anyone who may read it or is on its team,
+    # so a read-only phone can follow the spray; acting stays supervisor-only.
+    can_operate = True
+    try:
+        assert_can_operate(work_order, "scan")
+    except frappe.PermissionError:
+        frappe.clear_last_message()
+        wo_check = frappe.get_doc("Work Order", work_order)
+        if not (
+            frappe.has_permission("Work Order", "read", wo_check)
+            or frappe.session.user in _plan_team_users(wo_check)
+        ):
+            raise
+        can_operate = False
     wo = frappe.get_doc("Work Order", work_order)
     _ensure_afp(wo)
     state = wo.get("workflow_state") or ""
@@ -1027,11 +1088,16 @@ def get_spray_state(work_order: str) -> dict[str, Any]:
         "workflow_state": state,
         "required": sorted(_required_chemical_codes(wo)),
         "scanned": sorted(_scanned_codes(wo)),
+        "scans": chemical_scans_of([wo.name]).get(wo.name, []),
+        "can_operate": can_operate,
         "manufactured": past_mix,
         "manufacture_se": _find_submitted_manufacture_se(wo.name) if past_mix else None,
         "sal": wo.get("custom_spray_application_logsheet"),
         "started": state in (STATE_SPRAYING_IN_PROGRESS, STATE_COMPLETED),
         "ended": state == STATE_COMPLETED,
+        "token_status": (
+            frappe.db.get_value("Spray Session Token", token, "status") if token else None
+        ),
     }
 
 
@@ -1373,6 +1439,14 @@ def _start_spray_session(
         can_block=enforce_cutoff,
     )
 
+    # Tier-two team check: anyone listed with no Time & Attendance check-in today.
+    # Block refuses a live start (removing them clears it); a replay only records.
+    from upande_scp.serverscripts.spray_plan_creator import spray_supervision
+
+    checkin_notes = spray_supervision.assert_start_allowed(
+        wo, crew_day, can_block=enforce_cutoff
+    )
+
     sal_name = wo.custom_spray_application_logsheet
     if not sal_name:
         frappe.throw(
@@ -1433,7 +1507,7 @@ def _start_spray_session(
         "sprayer_movement_session": sms.name,
         "sal": sal_name,
         "started_at": now.isoformat(),
-        "crew_warnings": crew_check["messages"],
+        "crew_warnings": crew_check["messages"] + checkin_notes,
     }
 
 
@@ -1582,6 +1656,9 @@ def _update_work_order_team(
     work_order = work_order or frappe.form_dict.get("work_order_name")
     if not work_order:
         frappe.throw("work_order_name is required.")
+    # Who is on the team is the supervisor's call. Online callers are checked here;
+    # the offline replay was checked once for the whole session already.
+    assert_can_operate(work_order, "start")
 
     if team is None:
         team = frappe.form_dict.get("team")
@@ -1790,6 +1867,14 @@ def _end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
             "actual_end_date": now,
         },
         update_modified=True,
+    )
+    # Tokens that replayed the earlier steps of this spray (signal lost mid-way) and left
+    # its end to this call are finished now too; left "Partial" they read as a spray the
+    # office never closed.
+    frappe.db.sql(
+        """UPDATE `tabSpray Session Token` SET status='Synced', synced_at=%s
+           WHERE work_order=%s AND status='Partial'""",
+        (now_datetime(), wo.name),
     )
     # The re-entry and pre-harvest clocks start now, at the real end of the spray
     # (``now`` is the offline session's recorded end when it is a replay). Tells

@@ -12,9 +12,11 @@ import {
   ClipboardList,
   Crosshair,
   Droplets,
+  Thermometer,
   FileText,
   Flame,
   Gauge,
+  Smartphone,
   History,
   Images,
   Layers,
@@ -28,7 +30,6 @@ import {
   Search,
   Settings,
   ShieldAlert,
-  SprayCan,
   Sprout,
   UserRoundSearch,
   ClipboardCheck,
@@ -36,6 +37,7 @@ import {
   Users,
   Warehouse,
 } from "lucide-react";
+import { SprayerIcon } from "@/components/SprayerIcon";
 import {
   Sidebar,
   SidebarContent,
@@ -129,7 +131,7 @@ const PERSONNEL_SECTION: NavSection = {
       kind: "view",
       view: "sprayers",
       label: "Sprayers",
-      icon: SprayCan,
+      icon: SprayerIcon,
       requireRoles: SPRAY_PERSONNEL_ROLES,
     },
     {
@@ -250,6 +252,7 @@ const ROSE_NAV: NavSection[] = [
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
+      { kind: "view", view: "dew-point", label: "Dew point", icon: Thermometer },
       { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
   },
@@ -505,11 +508,30 @@ const DEFAULT_CROP_NAV: NavSection[] = [
   PERSONNEL_SECTION,
 ];
 
+// IT monitor: the phone fleet. Not crop-scoped, so every crop's rail carries the
+// same section; the roles are the ones serverscripts/it_monitor/dashboard admits.
+export const IT_VIEW_ROLES = ["SCP IT", "System Manager", "SCP General Manager", "Administrator"];
+const IT_SECTION: NavSection = {
+  label: "IT",
+  hideForRoles: [STORE_KEEPER_ROLE],
+  items: [
+    {
+      kind: "view",
+      view: "it",
+      label: "IT monitor",
+      icon: Smartphone,
+      requireRoles: IT_VIEW_ROLES,
+    },
+  ],
+};
+
 function navForCrop(crop: string): NavSection[] {
-  if (crop === "rose") return ROSE_NAV;
-  if (crop === "avocado") return AVOCADO_NAV;
-  if (crop === "coffee") return COFFEE_NAV;
-  return DEFAULT_CROP_NAV;
+  const base =
+    crop === "rose" ? ROSE_NAV
+    : crop === "avocado" ? AVOCADO_NAV
+    : crop === "coffee" ? COFFEE_NAV
+    : DEFAULT_CROP_NAV;
+  return [...base, IT_SECTION];
 }
 
 function userHasAnyRole(required: string[] | undefined, userRoles: string[]): boolean {
@@ -580,7 +602,7 @@ export function canOpenView(view: View, crop: string, userRoles: string[]): bool
   //    without this `#/avocado/approvals` stayed open to everyone: the same
   //    hole, one URL along. A rule declared once should not have to be
   //    repeated per crop to keep working.
-  for (const nav of [ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV]) {
+  for (const nav of [ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV, [IT_SECTION]]) {
     for (const section of nav) {
       for (const item of section.items) {
         if (item.kind !== "view" || item.view !== view) continue;
@@ -604,7 +626,7 @@ export function viewNavMeta(
   view: View,
   crop: string,
 ): { label: string; section: string } | null {
-  for (const nav of [navForCrop(crop), ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV]) {
+  for (const nav of [navForCrop(crop), ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV, [IT_SECTION]]) {
     for (const section of nav) {
       for (const item of section.items) {
         if (item.kind === "view" && item.view === view) {

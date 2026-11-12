@@ -11,6 +11,8 @@ upande_scp.patches.v1_0.rename_spray_plan_settings_doctype
 # only — the data half is consolidate_spray_products, post_model_sync, because
 # the fields it writes do not exist until the sync in between creates them.
 upande_scp.patches.v1_0.rename_chemical_to_spray_product
+# Role for the SCP IT monitor; pre_model_sync so the new doctypes' permission rows find it.
+upande_scp.patches.v1_0.create_scp_it_role
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated

@@ -106,8 +106,10 @@ def _slot(ts: datetime) -> datetime:
 
 
 def house_slots(sensor_pairs: dict) -> dict:
-    """``{slot: {spread, rh, n}}`` for one greenhouse: the mean over its sensors
-    (a single faulty sensor does not raise the house) of temp - dew point."""
+    """``{slot: {spread, rh, n, temp, dew_point, rh_mean}}`` for one greenhouse:
+    the mean over its sensors (a single faulty sensor does not raise the house)
+    of temp - dew point. ``rh`` is the highest sensor humidity (the alert rule);
+    ``temp``/``dew_point``/``rh_mean`` are the sensor means (the dew point view)."""
     acc: dict = {}
     for pairs in sensor_pairs.values():
         per_sensor: dict = {}
@@ -115,12 +117,19 @@ def house_slots(sensor_pairs: dict) -> dict:
             dp = dew_point(t, rh)
             if dp is None:
                 continue
-            per_sensor.setdefault(_slot(ts), []).append((t - dp, rh))
+            per_sensor.setdefault(_slot(ts), []).append((t - dp, rh, t, dp))
         for slot, vals in per_sensor.items():
             a = acc.setdefault(slot, [])
-            a.append((sum(v[0] for v in vals) / len(vals), max(v[1] for v in vals)))
+            n = len(vals)
+            a.append((sum(v[0] for v in vals) / n, max(v[1] for v in vals),
+                      sum(v[2] for v in vals) / n, sum(v[3] for v in vals) / n,
+                      sum(v[1] for v in vals) / n))
     return {
-        s: {"spread": sum(v[0] for v in vals) / len(vals), "rh": max(v[1] for v in vals), "n": len(vals)}
+        s: {
+            "spread": sum(v[0] for v in vals) / len(vals), "rh": max(v[1] for v in vals), "n": len(vals),
+            "temp": sum(v[2] for v in vals) / len(vals), "dew_point": sum(v[3] for v in vals) / len(vals),
+            "rh_mean": sum(v[4] for v in vals) / len(vals),
+        }
         for s, vals in acc.items()
     }
 
@@ -289,7 +298,7 @@ def map_sensors(nearest_m: float | None = None) -> dict:
     houses = greenhouse_outlines()
     cols = {c.lower() for c in frappe.db.get_table_columns(SENSOR)}
     fields = ["deveui", "latitude", "longitude"] + (["sensor_site"] if "sensor_site" in cols else [])
-    for s in frappe.get_all(SENSOR, fields=fields, limit_page_length=0):
+    for s in _sensor_rows(fields):
         if not s.deveui:
             continue
         existing = frappe.db.get_value(MAP, s.deveui, ["source"], as_dict=True) if frappe.db.exists(MAP, s.deveui) else None
@@ -297,7 +306,7 @@ def map_sensors(nearest_m: float | None = None) -> dict:
             counts["manual"] += 1
             continue
         lat, lon = _num(s.latitude), _num(s.longitude)
-        if lat is None or lon is None:
+        if lat is None or lon is None or (lat == 0 and lon == 0):     # 0,0 is the sensor default, not a fix
             counts["no_gps"] += 1
             placed = {"greenhouse": None, "method": "no GPS", "distance_m": None}
         else:
@@ -315,6 +324,13 @@ def map_sensors(nearest_m: float | None = None) -> dict:
     return counts
 
 
+def _sensor_rows(fields: list) -> list:
+    """Sensor rows as dicts. Plain SQL: the ``Sensor`` doctype belongs to the
+    upande_sensors app, which a test site may not have installed."""
+    cols = ", ".join(f"`{f}`" for f in fields)
+    return frappe.db.sql(f"SELECT {cols} FROM `tab{SENSOR}`", as_dict=True)
+
+
 @frappe.whitelist()
 def remap_sensors() -> dict:
     """GM action: re-run the automatic GPS placement (Manual rows are kept)."""
@@ -327,12 +343,13 @@ def remap_sensors() -> dict:
 # ── readings -> alerts ──────────────────────────────────────────────────────
 
 
-def _load_readings(deveuis: list, since: datetime) -> list[tuple]:
+def _load_readings(deveuis: list, since: datetime, until: datetime | None = None) -> list[tuple]:
     """``[(deveui, 'Temperature'|'Humidity', datetime, value)]``. One seam for tests."""
     rows = frappe.db.sql(
         f"""SELECT deveui, sensor_type, `timestamp` AS ts, `value` AS v FROM `tab{READING}`
-            WHERE `timestamp` >= %s AND sensor_type IN ('Temperature', 'Humidity') AND deveui IN %s""",
-        (since, tuple(deveuis)), as_dict=True,
+            WHERE deveui IN %s AND `timestamp` >= %s {"AND `timestamp` < %s" if until else ""}
+            AND sensor_type IN ('Temperature', 'Humidity')""",
+        (tuple(deveuis), since) + ((until,) if until else ()), as_dict=True,
     )
     return [(r.deveui, r.sensor_type, frappe.utils.get_datetime(r.ts), _num(r.v)) for r in rows if _num(r.v) is not None]
 
@@ -341,7 +358,7 @@ def _cold_room_sensors() -> set:
     cols = {c.lower() for c in frappe.db.get_table_columns(SENSOR)}
     if "track_in_cold_room" not in cols:
         return set()
-    return set(frappe.get_all(SENSOR, filters={"track_in_cold_room": 1}, pluck="deveui", limit_page_length=0))
+    return {r[0] for r in frappe.db.sql(f"SELECT deveui FROM `tab{SENSOR}` WHERE track_in_cold_room = 1")}
 
 
 def evaluate_houses(now: datetime | None = None, cfg: dict | None = None) -> dict:
@@ -478,3 +495,109 @@ def get_condensation_alerts(farms=None, days: int = 1) -> list[dict]:
         ALERT, filters=filters, order_by="last_seen desc", limit_page_length=100,
         fields=["name", "greenhouse", "farm", "alert_date", "hours", "min_spread", "max_humidity", "first_seen", "last_seen"],
     )
+
+
+# ── dew point view ──────────────────────────────────────────────────────────
+
+MAX_RANGE_DAYS = 7
+
+
+def _as_list(v) -> list:
+    if not v:
+        return []
+    if isinstance(v, str):
+        v = frappe.parse_json(v) if v.strip().startswith("[") else [x.strip() for x in v.split(",")]
+    return [x for x in v if x]
+
+
+def _fmt(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _r(v, nd=1):
+    return None if v is None else round(v, nd)
+
+
+@frappe.whitelist()
+def dew_point_series(farms=None, greenhouses=None, from_dt=None, to_dt=None) -> dict:
+    """Per-greenhouse 30-minute slots of temperature, humidity, dew point and
+    spread, for the dew point page. Read-only. The range is capped at
+    ``MAX_RANGE_DAYS`` (the start moves up to the cap). Default: last 48 hours.
+
+    ``{from, to, spread_limit, slot_minutes, sensors_available, mapped_sensors,
+    greenhouses: [{greenhouse, farm, label, sensors, summary, slots}], alerts}``
+    where a slot is ``{ts, temp, rh, dew_point, spread, risk, sensors}`` and the
+    summary ``{min_spread, hours_at_risk, latest_reading, latest_spread, at_risk_now}``.
+    """
+    cfg = get_settings()
+    limit = float(cfg["condensation_spread_c"])
+    now = frappe.utils.now_datetime()
+    end = frappe.utils.get_datetime(to_dt) if to_dt else now
+    start = frappe.utils.get_datetime(from_dt) if from_dt else end - timedelta(hours=48)
+    start = max(start, end - timedelta(days=MAX_RANGE_DAYS))
+    out = {
+        "from": _fmt(start), "to": _fmt(end), "spread_limit": limit, "slot_minutes": SLOT_MIN,
+        "sensors_available": sensors_available(), "mapped_sensors": 0, "greenhouses": [], "alerts": [],
+    }
+    if not out["sensors_available"] or start >= end:
+        return out
+
+    farms, houses = _as_list(farms), _as_list(greenhouses)
+    filters: dict = {"greenhouse": ["is", "set"]}
+    if houses:
+        filters["greenhouse"] = ["in", houses]
+    mapping = {r.deveui: r.greenhouse for r in frappe.get_all(MAP, filters=filters, fields=["deveui", "greenhouse"], limit_page_length=0)}
+    farm_of = {
+        w.name: w.custom_farm
+        for w in frappe.get_all("Warehouse", filters={"name": ["in", sorted(set(mapping.values()))]}, fields=["name", "custom_farm"], limit_page_length=0)
+    } if mapping else {}
+    if farms:
+        mapping = {d: g for d, g in mapping.items() if farm_of.get(g) in farms}
+    for d in _cold_room_sensors():
+        mapping.pop(d, None)
+    out["mapped_sensors"] = len(mapping)
+    if not mapping:
+        return out
+
+    per: dict = {}
+    # Pad the start by the pairing gap so the first slot is not short of a partner.
+    pad = timedelta(minutes=int(cfg["sensor_pair_minutes"]))
+    for dev, kind, ts, v in _load_readings(list(mapping), start - pad, end + pad):
+        per.setdefault(dev, {"Temperature": [], "Humidity": []})[kind].append((ts, v))
+    by_house: dict = {h: {} for h in set(mapping.values())}
+    for dev, kinds in per.items():
+        pairs = pair_readings(kinds["Temperature"], kinds["Humidity"], int(cfg["sensor_pair_minutes"]))
+        if pairs:
+            by_house[mapping[dev]][dev] = pairs
+
+    for house in sorted(by_house):
+        slots = {s: v for s, v in house_slots(by_house[house]).items() if start <= s < end}
+        rows = [
+            {"ts": _fmt(s), "temp": _r(v["temp"]), "rh": _r(v["rh_mean"], 0), "dew_point": _r(v["dew_point"]),
+             "spread": _r(v["spread"]), "risk": v["spread"] <= limit, "sensors": v["n"]}
+            for s, v in sorted(slots.items())
+        ]
+        last = rows[-1] if rows else None
+        last_ts = frappe.utils.get_datetime(last["ts"]) if last else None
+        out["greenhouses"].append({
+            "greenhouse": house, "farm": farm_of.get(house), "label": house.rsplit(" - ", 1)[0],
+            "sensors": sum(1 for d, g in mapping.items() if g == house),
+            "sensors_reporting": len(by_house[house]),
+            "summary": {
+                "min_spread": _r(min((v["spread"] for v in slots.values()), default=None)),
+                "hours_at_risk": sum(1 for r in rows if r["risk"]) * SLOT_MIN / 60,
+                "latest_reading": last["ts"] if last else None,
+                "latest_spread": last["spread"] if last else None,
+                # "Now": the newest slot is at risk and recent (within 2 hours).
+                "at_risk_now": bool(last and last["risk"] and now - last_ts <= timedelta(hours=2)),
+            },
+            "slots": rows,
+        })
+    if frappe.db.table_exists(ALERT):
+        out["alerts"] = frappe.get_all(
+            ALERT, filters={"greenhouse": ["in", sorted(by_house)], "alert_date": ["between", [start.date(), end.date()]]},
+            fields=["name", "greenhouse", "farm", "alert_date", "hours", "min_spread", "max_humidity", "first_seen", "last_seen"],
+            order_by="last_seen desc", limit_page_length=200,
+        )
+    return out
+

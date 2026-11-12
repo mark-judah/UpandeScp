@@ -1,0 +1,253 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-12 12:00:00.000000",
+ "description": "A crash, error, failed API call, login or sync result reported by a scout phone. Deleted after the retention window set in Scouting and Crop Protection Settings.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "event_id",
+  "install_id",
+  "device",
+  "user",
+  "kind",
+  "level",
+  "ts",
+  "received_at",
+  "fatal",
+  "count",
+  "screen",
+  "sec_what",
+  "message",
+  "error_name",
+  "stack",
+  "fingerprint",
+  "sec_ver",
+  "app_version",
+  "runtime_version",
+  "update_id",
+  "sec_req",
+  "req_method",
+  "req_url",
+  "req_status",
+  "req_duration_ms",
+  "req_error",
+  "extra"
+ ],
+ "fields": [
+  {
+   "fieldname": "event_id",
+   "fieldtype": "Data",
+   "label": "Event ID",
+   "length": 64,
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "install_id",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Install ID",
+   "length": 64,
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "device",
+   "fieldtype": "Link",
+   "label": "Device",
+   "options": "SCP Mobile Device",
+   "read_only": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Kind",
+   "options": "crash\nerror\napi_error\nlogin\nlogout\nsync\nwarning",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "level",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Level",
+   "options": "fatal\nerror\nwarning\ninfo",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ts",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Time on device",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "received_at",
+   "fieldtype": "Datetime",
+   "label": "Received at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fatal",
+   "fieldtype": "Check",
+   "label": "Fatal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "count",
+   "fieldtype": "Int",
+   "label": "Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "screen",
+   "fieldtype": "Data",
+   "label": "Screen",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_what",
+   "fieldtype": "Section Break",
+   "label": "What happened"
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_name",
+   "fieldtype": "Data",
+   "label": "Error name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stack",
+   "fieldtype": "Long Text",
+   "label": "Stack",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fingerprint",
+   "fieldtype": "Data",
+   "label": "Fingerprint",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "sec_ver",
+   "fieldtype": "Section Break",
+   "label": "Build"
+  },
+  {
+   "fieldname": "app_version",
+   "fieldtype": "Data",
+   "label": "App version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "runtime_version",
+   "fieldtype": "Data",
+   "label": "Runtime version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "update_id",
+   "fieldtype": "Data",
+   "label": "Update ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_req",
+   "fieldtype": "Section Break",
+   "label": "API request (path only; no bodies, headers or tokens)"
+  },
+  {
+   "fieldname": "req_method",
+   "fieldtype": "Data",
+   "label": "Method",
+   "read_only": 1
+  },
+  {
+   "fieldname": "req_url",
+   "fieldtype": "Data",
+   "label": "URL path",
+   "length": 500,
+   "read_only": 1
+  },
+  {
+   "fieldname": "req_status",
+   "fieldtype": "Int",
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "req_duration_ms",
+   "fieldtype": "Int",
+   "label": "Duration (ms)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "req_error",
+   "fieldtype": "Small Text",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "extra",
+   "fieldtype": "JSON",
+   "label": "Extra",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-12 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "SCP Mobile Event",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP IT"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

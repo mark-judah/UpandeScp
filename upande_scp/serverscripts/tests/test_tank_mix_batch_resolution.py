@@ -109,6 +109,23 @@ class TestPlanItem(unittest.TestCase):
         self.assertEqual(plan["pieces"], [])
         self.assertAlmostEqual(plan["short"], 1.0)
 
+    def test_a_batch_whose_total_is_negative_is_skipped_for_the_next(self):
+        # Kapkolia GH 11, 12 Nov 2026: ROSE-2026-00001 held 4.715 in the CSU but -5.795
+        # across all stores, so ERPNext refused the mix. Skip it for the next batch.
+        local = {"OLD-NEG": 4.715, "NEXT": 7.57}
+        capped, blocked = TB.cap_by_totals(local, {"OLD-NEG": -5.795, "NEXT": 20.0})
+        self.assertEqual(capped, {"OLD-NEG": 0.0, "NEXT": 7.57})
+        self.assertEqual(blocked, {"OLD-NEG": -5.795})
+        plan = TB.plan_item(0.3, [{"batch_no": "OWN", "qty": 0.3}], capped, ["OLD-NEG", "NEXT"])
+        self.assertEqual([(p["batch_no"], p["qty"]) for p in plan["pieces"]], [("NEXT", 0.3)])
+        self.assertEqual(plan["short"], 0.0)
+
+    def test_total_caps_a_partly_usable_batch_and_missing_total_is_left_alone(self):
+        capped, blocked = TB.cap_by_totals({"A": 5.0, "B": 2.0}, {"A": 1.5})
+        self.assertEqual(capped, {"A": 1.5, "B": 2.0})
+        self.assertEqual(blocked, {"A": 1.5})
+        self.assertIn("A (total 1.5)", TB.negative_total_note("CHEM", blocked))
+
     def test_balance_floor_is_the_lowest_balance_from_the_moment_on(self):
         t = now_datetime()
         moves = [
@@ -189,7 +206,11 @@ class LedgerCase(unittest.TestCase):
             "purpose": purpose,
             "company": self.company,
             "work_order": work_order,
-            "fg_completed_qty": 1 if work_order else 0,
+            # ERPNext sums fg_completed_qty over a plan's transfers to get "transferred":
+            # only the first carries the plan's 1, or two part-transfers read as 2 > 1.
+            "fg_completed_qty": 1 if work_order and not frappe.db.exists(
+                "Stock Entry", {"work_order": work_order, "docstatus": 1, "purpose": MTM}
+            ) else 0,
             "set_posting_time": 1,
             "posting_date": add_to_date(self.t0, days=-days_ago).date(),
             "posting_time": add_to_date(self.t0, days=-days_ago).time(),
@@ -698,8 +719,9 @@ class TestWhoMayManufacture(GateCase):
 
 
 class TestFieldStepGates(GateCase):
-    """I3: scan / start / end are gated too. Scan and start admit the plan's spray
-    team; end (Material Issue + completion) is supervisor/manager only."""
+    """I3: scan / start / end are gated too, all supervisor/manager only: the plan's
+    supervisor(s), a farm-rostered supervisor, a General Manager / Stock Manager. A
+    sprayer on the team is refused every step."""
 
     def _team_member(self):
         email = self.user(["SCP Scout"])
@@ -740,9 +762,9 @@ class TestFieldStepGates(GateCase):
         frappe.set_user(self.user(["SCP Scout"]))
         self.assertEqual(self.steps(), {"scan": "refused", "start": "refused", "end": "refused"})
 
-    def test_a_spray_team_member_may_scan_and_start_but_not_end(self):
+    def test_a_spray_team_member_is_refused_scan_start_and_end(self):
         frappe.set_user(self._team_member())
-        self.assertEqual(self.steps(), {"scan": "passed", "start": "passed", "end": "refused"})
+        self.assertEqual(self.steps(), {"scan": "refused", "start": "refused", "end": "refused"})
 
     def test_a_rostered_supervisor_may_do_every_step(self):
         frappe.set_user(self.user(["SCP Spray Supervisor"], roster=True))

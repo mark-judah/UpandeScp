@@ -4,6 +4,7 @@
  */
 
 import { TimePicker } from "@/components/TimePicker";
+import { FilterSelect } from "@/components/FilterSelect";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -648,6 +649,71 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
                 (follows the mode above). Leave pending approval only ever warns.
               </p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle className="text-base">Spray team checks</CardTitle>
+          <CardDescription>
+            What happens when a plan has no spray team, its supervisor cannot run the spray
+            on the phone, or a team member has not checked in. A team with no members, no
+            supervisor or more than two supervisors is always refused.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <Label className="text-[0.7rem]">Plans without a spray team</Label>
+            <div className="mt-1">
+              <FilterSelect
+                label="Plans without a spray team"
+                value={draft.spray_plan_requires_team || "Block"}
+                onChange={(v) =>
+                  set("spray_plan_requires_team", v as SprayPlanSettings["spray_plan_requires_team"])
+                }
+                options={["Off", "Warn", "Block"]}
+              />
+            </div>
+            <ul className="mt-1 space-y-0.5 text-[0.65rem] leading-snug text-muted-foreground">
+              <li><strong>Off:</strong> a plan may be saved without a team, e.g. open-field work done without a spray team.</li>
+              <li><strong>Warn:</strong> the plan saves, with a reminder to choose a team.</li>
+              <li><strong>Block:</strong> the plan cannot be saved until a team is chosen.</li>
+            </ul>
+          </div>
+          <div>
+            <Label className="text-[0.7rem]">Spray supervisor role check</Label>
+            <div className="mt-1">
+              <FilterSelect
+                label="Spray supervisor role check"
+                value={draft.spray_supervisor_role_check || "Warn"}
+                onChange={(v) =>
+                  set("spray_supervisor_role_check", v as SprayPlanSettings["spray_supervisor_role_check"])
+                }
+                options={["Off", "Warn", "Block"]}
+              />
+            </div>
+            <ul className="mt-1 space-y-0.5 text-[0.65rem] leading-snug text-muted-foreground">
+              <li><strong>Off:</strong> no check.</li>
+              <li><strong>Warn:</strong> the plan saves, with a message naming a supervisor who lacks the SCP Spray Supervisor role or a user account.</li>
+              <li><strong>Block:</strong> the plan cannot be saved until the role is assigned.</li>
+            </ul>
+          </div>
+          <div>
+            <Label className="text-[0.7rem]">Members who have not checked in (Time &amp; Attendance)</Label>
+            <div className="mt-1">
+              <FilterSelect
+                label="Members who have not checked in"
+                value={draft.spray_checkin_check || "Off"}
+                onChange={(v) =>
+                  set("spray_checkin_check", v as SprayPlanSettings["spray_checkin_check"])
+                }
+                options={["Off", "Warn", "Block"]}
+              />
+            </div>
+            <p className="mt-1 text-[0.65rem] leading-snug text-muted-foreground">
+              Prevent a spray from starting while a team member has no check-in today.
+            </p>
           </div>
         </CardContent>
       </Card>

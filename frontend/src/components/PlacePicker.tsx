@@ -1,6 +1,10 @@
 /**
  * The one farm and greenhouse picker (place picker spec 2026-10-12 G1–G5).
  *
+ * Rendered by the shared TreePicker in `single` mode (radio dots; a pick replaces
+ * the selection and closes it). The Application Floor Plan's boxed greenhouse
+ * field (variant "field", level "greenhouse") keeps the original list below.
+ *
  * A single pill that opens a searchable list: "All farms", then each farm
  * with its greenhouses indented beneath it, written in full ("Chepsito GH 16"). Picking
  * a farm filters to the farm; picking a greenhouse filters to that house and
@@ -12,10 +16,12 @@
  * place this page doesn't offer is ignored and left in storage.
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, MapPin } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { TreePicker } from "@/components/TreePicker";
 import { HEADER_PILL } from "@/components/header-controls";
+import type { TreeNode } from "@/pages/trends/trends-types";
 import {
   ALL_FARMS_LABEL, farmOf, houseLabel, housesOf, matchesQuery, readPlace, shortHouse, writePlace,
   type FarmHouses, type Place,
@@ -246,6 +252,57 @@ export function PlacePicker({
     );
   }
 
+  // The tree look (shared with Trends). The one exception is the greenhouse
+  // form field of the Application Floor Plan, which keeps its own list.
+  if (!(variant === "field" && level === "greenhouse")) {
+    const nodes: TreeNode[] = [];
+    if (showAll) nodes.push({ id: "all", label: allLabel as string });
+    for (const f of farmNames) {
+      const houses = withHouses ? housesOf(farmMap, f) : [];
+      nodes.push({
+        id: `f:${f}`,
+        label: f,
+        selectable: level !== "greenhouse",
+        children: houses.length
+          ? houses.map((h) => ({
+              id: `h:${h}`,
+              label: shortHouse(h, f),
+              search: `${f} ${h}`,
+              title: h,
+              extra: houseExtra?.(h),
+            }))
+          : undefined,
+      });
+    }
+    const pickId = (next: Set<string>) => {
+      const id = [...next][0];
+      if (!id) return;
+      if (id === "all") pick({ id, kind: "all" });
+      else if (id.startsWith("f:")) pick({ id, kind: "farm", farm: id.slice(2), header: false });
+      else {
+        const house = id.slice(2);
+        pick({ id, kind: "house", farm: farmOf(house, farmMap), house });
+      }
+    };
+    return (
+      <TreePicker
+        single
+        label={label}
+        ariaLabel={label}
+        valueText={text}
+        icon={<MapPin className="h-3.5 w-3.5 shrink-0" />}
+        variant={variant}
+        disabled={disabled}
+        className={className}
+        nodes={nodes}
+        checked={new Set(selectedId ? [selectedId] : [])}
+        onChange={pickId}
+        emptyHint="No farms"
+        searchPlaceholder={level === "farm" ? "Search farms" : "Search farm or greenhouse"}
+      />
+    );
+  }
+
   const listId = `${baseId}-list`;
   const optionId = (id: string) => `${baseId}-${id.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
@@ -281,14 +338,14 @@ export function PlacePicker({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={active ? optionId(active) : undefined}
-            aria-label={`Search ${level === "farm" ? "farms" : "farms and greenhouses"}`}
+            aria-label={`Search ${(level as PlaceLevel) === "farm" ? "farms" : "farms and greenhouses"}`}
             value={query}
             onChange={(v) => {
               setQuery(v);
               setActive(null);
             }}
             onKeyDown={onKeyDown}
-            placeholder={level === "farm" ? "Search farms" : "Search farm or greenhouse"}
+            placeholder={(level as PlaceLevel) === "farm" ? "Search farms" : "Search farm or greenhouse"}
             className="mb-1.5"
           />
         <div ref={listRef} id={listId} role="listbox" aria-label={label} className="max-h-72 overflow-y-auto">

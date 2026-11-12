@@ -64,6 +64,15 @@ export interface SprayPlanSettings {
   crew_leave_check: "Off" | "Warn" | "Block";
   /** 1 = a crew member also needs an IN check-in on the spray date. */
   crew_require_checkin: number;
+  /**
+   * Does each spray supervisor on a plan hold the SCP Spray Supervisor role on their
+   * user? Off: no check. Warn (blank reads as Warn): saved with a message. Block: refused.
+   */
+  spray_supervisor_role_check: "Off" | "Warn" | "Block";
+  /** Plans saved with no spray team at all. Blank reads as Block. */
+  spray_plan_requires_team: "Off" | "Warn" | "Block";
+  /** A spray cannot start while a member has no check-in today. Blank reads as Off. */
+  spray_checkin_check: "Off" | "Warn" | "Block";
   loaning_enabled: number;
   /**
    * OFF (default): each farm's proportional share of a chemical purchase is

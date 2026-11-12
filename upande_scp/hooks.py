@@ -464,6 +464,9 @@ scheduler_events = {
         # Refresh the sprayer register from Employees / teams / logsheets and
         # roll each sprayer's 30-day exposure window forward.
         "upande_scp.serverscripts.sprayers.register.daily",
+        # IT monitor: expire phone events past the retention window (setting
+        # it_event_retention_days, default 60) and refresh stored device statuses.
+        "upande_scp.serverscripts.it_monitor.ingest.daily",
     ],
     "hourly": [
         # Greenhouse sensors: temperature minus dew point <= 2 C for 2 h raises

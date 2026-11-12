@@ -42,12 +42,14 @@ export type View =
   | "notifications"
   | "finances"
   | "coverage"
+  | "dew-point"
   | "scouts"
   | "sprayers"
   | "supervisors"
   | "teams"
   | "biologicals"
-  | "reentry";
+  | "reentry"
+  | "it";
 
 const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "notifications",
@@ -78,12 +80,14 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "chemical-loaning",
   "finances",
   "coverage",
+  "dew-point",
   "scouts",
   "sprayers",
   "supervisors",
   "teams",
   "biologicals",
   "reentry",
+  "it",
 ]);
 
 export const DEFAULT_CROP_SLUG = "rose";
@@ -144,7 +148,11 @@ export function routeCrop(): string {
   return cropDisplayName(parseHash().crop);
 }
 
+/** Views that are not crop-scoped: their hash carries no crop segment (#/it). */
+const CROPLESS_VIEWS: ReadonlySet<View> = new Set<View>(["it"]);
+
 export function routeHash(route: Route): string {
+  if (CROPLESS_VIEWS.has(route.view)) return `#/${route.view}`;
   return `#/${route.crop}/${route.view}`;
 }
 

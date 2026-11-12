@@ -57,7 +57,8 @@ describe("Procurement — scoped to the route crop", () => {
     await waitFor(() => expect(calls.listCycles).toHaveBeenCalledWith(undefined, "Rose"));
     await waitFor(() => expect(calls.procurementFarms).toHaveBeenCalledWith("Rose", "CPC-1"));
     await user.click(await screen.findByRole("button", { name: "Farm" }));
-    const opts = within(await screen.findByRole("listbox")).getAllByRole("option").map((o) => o.textContent);
+    await screen.findByPlaceholderText("Search farms");
+    const opts = Array.from(document.querySelectorAll("[data-row]")).map((o) => o.textContent);
     expect(opts).toEqual(["Chepsito", "Kapkolia"]);
   });
 });

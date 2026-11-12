@@ -92,10 +92,10 @@ describe("Scouting ▸ Gallery", () => {
     // The place picker (multi-select): everything starts ticked; unticking a
     // farm leaves the other, then unticking a house leaves just the other house.
     fireEvent.click(screen.getByRole("button", { name: "Visual findings place" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Kaptumbo" }));
+    fireEvent.click(await screen.findByText("Kaptumbo"));
     await waitFor(() => expect(fetchPhotoFeed).toHaveBeenLastCalledWith(expect.objectContaining({ farm: "Chepsito" }), 0));
     // (the list stays open while ticking)
-    fireEvent.click(await screen.findByRole("option", { name: "GH1" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "GH1" }));
     fireEvent.change(screen.getByLabelText("Gallery kind"), { target: { value: "pest" } });
     fireEvent.change(screen.getByLabelText("Gallery observation"), { target: { value: "Thrips" } });
     fireEvent.change(screen.getByLabelText("Gallery scout"), { target: { value: "EMP-1" } });

@@ -2,7 +2,7 @@
  * The multi-select farm and greenhouse picker, and the PlaceSet helpers.
  */
 import { useState } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlaceMultiPicker } from "@/components/PlaceMultiPicker";
@@ -37,39 +37,57 @@ function Harness({ initial = EMPTY_PLACE_SET }: { initial?: PlaceSet }) {
 }
 const val = () => JSON.parse(screen.getByTestId("value").textContent || "{}") as PlaceSet;
 const pill = () => screen.getByRole("button", { name: "Farms and greenhouses" });
-const option = (name: string) => within(screen.getByRole("listbox")).getByRole("option", { name });
+const rowNames = () => Array.from(document.querySelectorAll<HTMLElement>("[data-row]")).map((r) => r.textContent);
+const dot = (name: string) => screen.getByRole("checkbox", { name });
+const tick = (name: string) => userEvent.click(screen.getByText(name));
 
 describe("PlaceMultiPicker", () => {
-  it("reads All farms when nothing is picked and lists farms with houses beneath", async () => {
+  it("reads All farms when nothing is picked and lists farms with houses beneath, all ticked", async () => {
     render(<Harness />);
     expect(pill().textContent).toBe("All farms");
     await userEvent.click(pill());
-    const names = within(screen.getByRole("listbox")).getAllByRole("option").map((o) => o.getAttribute("aria-label"));
-    expect(names).toEqual(["Select all", "Chepsito", "Chepsito GH 16", "Chepsito GH 02", "Torongo", "Torongo GH 17"]);
+    expect(rowNames()).toEqual(["Chepsito", "Chepsito GH 16", "Chepsito GH 02", "Torongo", "Torongo GH 17"]);
+    expect(dot("Chepsito")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("3 selected")).toBeTruthy();
   });
 
-  it("unticking a house from 'all' leaves the other houses picked, farm header goes mixed", async () => {
+  it("unticking a house from 'all' leaves the other houses picked, farm goes mixed", async () => {
     render(<Harness />);
     await userEvent.click(pill());
-    await userEvent.click(option("Chepsito GH 16"));
+    await tick("Chepsito GH 16");
     expect(val()).toEqual({ farms: ["Torongo"], greenhouses: ["Chepsito GH 02 - KR"] });
-    expect(option("Chepsito").getAttribute("aria-checked")).toBe("mixed");
+    expect(dot("Chepsito")).toHaveAttribute("aria-checked", "mixed");
     expect(pill().textContent).toBe("1 farm · 1 greenhouse");
   });
 
-  it("ticking a farm header picks all its houses; ticking every house folds back to a farm", async () => {
+  it("ticking the last house folds the houses back into a farm", async () => {
     render(<Harness initial={{ farms: [], greenhouses: ["Chepsito GH 16 - KR"] }} />);
     await userEvent.click(pill());
-    await userEvent.click(option("Chepsito GH 02"));
+    await tick("Chepsito GH 02");
     expect(val()).toEqual({ farms: ["Chepsito"], greenhouses: [] });
     expect(pill().textContent).toBe("Chepsito");
   });
 
-  it("Select all clears back to every farm", async () => {
+  it("a farm row toggles all its houses", async () => {
     render(<Harness initial={{ farms: ["Torongo"], greenhouses: [] }} />);
     await userEvent.click(pill());
-    await userEvent.click(option("Select all"));
+    await tick("Chepsito");
+    expect(val()).toEqual(EMPTY_PLACE_SET); // every farm ticked = every farm
+    await tick("Chepsito");
+    expect(val()).toEqual({ farms: ["Torongo"], greenhouses: [] });
+  });
+
+  it("Deselect all empties the panel, then a pick starts a fresh set; every farm again after Select all", async () => {
+    render(<Harness />);
+    await userEvent.click(pill());
+    await userEvent.click(screen.getByRole("button", { name: "Deselect all" }));
+    expect(screen.getByText("0 selected")).toBeTruthy();
+    expect(dot("Torongo GH 17")).toHaveAttribute("aria-checked", "false");
+    await tick("Torongo GH 17");
+    expect(val()).toEqual({ farms: ["Torongo"], greenhouses: [] });
+    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
     expect(val()).toEqual(EMPTY_PLACE_SET);
+    expect(screen.getByText("3 selected")).toBeTruthy();
   });
 
   it("remembers the set per crop and restores it, reading an old single place as a one-item set", async () => {
@@ -77,16 +95,23 @@ describe("PlaceMultiPicker", () => {
     render(<Harness />);
     await vi.waitFor(() => expect(val()).toEqual({ farms: ["Torongo"], greenhouses: [] }));
     await userEvent.click(pill());
-    await userEvent.click(option("Chepsito"));
+    await tick("Chepsito");
     expect(readPlaceSet("Rose")).toEqual({ farms: [], greenhouses: [] }); // all picked
   });
 
-  it("filters by search", async () => {
+  it("filters by search, ignoring case and spaces", async () => {
     render(<Harness />);
     await userEvent.click(pill());
-    await userEvent.type(screen.getByRole("combobox"), "gh17");
-    const names = within(screen.getByRole("listbox")).getAllByRole("option").map((o) => o.getAttribute("aria-label"));
-    expect(names).toEqual(["Torongo", "Torongo GH 17"]);
+    await userEvent.type(screen.getByPlaceholderText("Search farm or greenhouse"), "gh17");
+    expect(rowNames()).toEqual(["Torongo", "Torongo GH 17"]);
+  });
+
+  it("is disabled while loading and shows a fixed label for one house-less farm", () => {
+    const { unmount } = render(<PlaceMultiPicker farms={FARMS} crop="Rose" value={EMPTY_PLACE_SET} onChange={() => {}} disabled />);
+    expect(pill()).toBeDisabled();
+    unmount();
+    render(<PlaceMultiPicker farms={["Solo"]} crop="Rose" value={EMPTY_PLACE_SET} onChange={() => {}} />);
+    expect(screen.getByRole("group", { name: "Farms and greenhouses" })).toHaveTextContent("Solo");
   });
 });
 

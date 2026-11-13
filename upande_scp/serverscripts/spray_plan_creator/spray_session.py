@@ -742,10 +742,13 @@ def _promote_to_tank_mix_manufactured(
     # Whatever was transferred into the CSU is in the tank, so it is what the mix
     # consumed even if its batch has expired since. ERPNext now checks expiry on the
     # outward bundle of a Manufacture too; keep its disabled-batch check, drop expiry.
-    _usable = se_doc.validate_batch_is_usable
-    se_doc.validate_batch_is_usable = lambda idx, batch_no, expiry_date, disabled: _usable(
-        idx, batch_no, None, disabled
-    )
+    # Only where this ERPNext has that check (newer v16 builds): older builds don't
+    # define it, and patching a missing attribute broke every tank mix on live.
+    _usable = getattr(se_doc, "validate_batch_is_usable", None)
+    if callable(_usable):
+        se_doc.validate_batch_is_usable = lambda idx, batch_no, expiry_date, disabled: _usable(
+            idx, batch_no, None, disabled
+        )
     se_doc.insert()
     _patch_zero_rates(se_doc)
     # Re-stamp: ERPNext's validate can reset item cost_center on insert.

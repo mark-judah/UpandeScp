@@ -183,3 +183,83 @@ def assert_not_in_past(scheduled, previous=None, now=None) -> None:
 			f"It is {now.strftime('%Y-%m-%d %H:%M')} now - pick a time from now on.",
 			frappe.ValidationError,
 		)
+
+
+# ───────────────────────── sessions that arrive after the cutoff ─────────────────────────
+
+CUT_OFF_MESSAGE = (
+	"This spray was sent after the {hhmm} cut-off for {day}, so the site no longer "
+	"takes it. Ask a manager to allow it if it really happened."
+)
+
+
+def spray_date_of(work_order: str):
+	"""The day a plan is to be sprayed: its planned date, or the new date of its
+	latest Approved postponement when that is later (a postponement moves the plan)."""
+	wo = frappe.db.get_value(
+		"Work Order", work_order,
+		["custom_scheduled_application_time", "planned_start_date", "custom_greenhouse"],
+		as_dict=True,
+	)
+	if not wo:
+		return None, None
+	value = wo.custom_scheduled_application_time or wo.planned_start_date
+	day = getdate(value) if value else None
+	if frappe.db.table_exists("Spray Plan Postponement"):
+		to = frappe.get_all(
+			"Spray Plan Postponement",
+			filters={"work_order": work_order, "status": "Approved"},
+			fields=["to_datetime"],
+			order_by="decided_on desc, creation desc",
+			limit_page_length=1,
+		)
+		if to and to[0].to_datetime:
+			moved = getdate(to[0].to_datetime)
+			if day is None or moved > day:
+				day = moved
+	return day, wo.custom_greenhouse
+
+
+def session_cutoff(work_order: str):
+	"""``(deadline_datetime, 'HH:MM', date)`` for the plan's spray day, or None."""
+	day, greenhouse = spray_date_of(work_order)
+	if not day:
+		return None
+	cutoff = cutoff_for(crop_of_greenhouse(greenhouse))
+	return get_datetime(f"{day} {cutoff}"), cutoff[:5], day
+
+
+def is_allowed_after_cutoff(token: str | None = None, work_order: str | None = None) -> bool:
+	"""A manager let this token (or, for an online step with no token, a session on
+	this plan) through after the cutoff."""
+	if not frappe.db.table_exists("Spray Session Token"):
+		return False
+	if token:
+		if frappe.db.get_value("Spray Session Token", token, "allow_after_cutoff"):
+			return True
+	elif work_order:
+		return bool(frappe.db.exists(
+			"Spray Session Token",
+			{"work_order": work_order, "allow_after_cutoff": 1, "status": ("!=", "Synced")},
+		))
+	return False
+
+
+def assert_session_in_time(work_order: str, token: str | None = None, now=None) -> None:
+	"""Refuse a spray session that reaches the server after its day's cutoff, unless
+	a manager allowed it. Site time. Skipped for a plan with no date, and under the test
+	runner (fixtures use fixed past dates) unless ``frappe.flags.enforce_session_cutoff``."""
+	if not work_order:
+		return
+	if frappe.flags.in_test and not frappe.flags.get("enforce_session_cutoff"):
+		return
+	info = session_cutoff(work_order)
+	if not info:
+		return
+	deadline, hhmm, day = info
+	now = get_datetime(now) if now else now_datetime()
+	if now <= deadline:
+		return
+	if is_allowed_after_cutoff(token, None if token else work_order):
+		return
+	frappe.throw(CUT_OFF_MESSAGE.format(hhmm=hhmm, day=day), frappe.ValidationError)

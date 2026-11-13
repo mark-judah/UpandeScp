@@ -245,6 +245,16 @@ def _verify_qr(qr_payload, work_order: str, item_code: str) -> dict[str, Any]:
         return {"verified": False, "why": "label check unavailable"}
 
 
+def _assert_in_time(work_order: str) -> None:
+    """Online steps are refused after the plan day's cut-off (offline replay checks the
+    same rule in ``sync_spray_session`` and calls the underscore functions directly)."""
+    if frappe.flags.get("scp_replay_work_order") == work_order:
+        return
+    from upande_scp.serverscripts.spray_plan_creator import lateness
+
+    lateness.assert_session_in_time(work_order)
+
+
 # ───────────────────────────── register_csu_scan ─────────────────────────────
 
 
@@ -276,6 +286,7 @@ def register_csu_scan(
     if not work_order or not item_code:
         frappe.throw("work_order and item_code are required.")
     assert_can_operate(work_order, "scan")
+    _assert_in_time(work_order)
 
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)
@@ -1101,6 +1112,11 @@ def get_spray_state(work_order: str, token: str | None = None) -> dict[str, Any]
         "token_status": (
             frappe.db.get_value("Spray Session Token", token, "status") if token else None
         ),
+        # A manager let this session through after its cut-off (see lateness).
+        "allowed_after_cutoff": bool(
+            token
+            and frappe.db.get_value("Spray Session Token", token, "allow_after_cutoff")
+        ),
     }
 
 
@@ -1124,6 +1140,7 @@ def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
         frappe.throw(f"Work Order {work_order} not found.")
     with wo_mutex(work_order):
         assert_can_manufacture(frappe.get_doc("Work Order", work_order))
+        _assert_in_time(work_order)
         return _manufacture_tank_mix(work_order)
 
 
@@ -1391,6 +1408,8 @@ def _start_spray_session(
         frappe.throw("work_order is required.")
 
     assert_can_operate(work_order, "start")
+    if enforce_cutoff:
+        _assert_in_time(work_order)
 
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)
@@ -1783,6 +1802,10 @@ def _end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
         frappe.throw("work_order is required.")
 
     assert_can_operate(work_order, "end")
+    # A spray already in progress started before the cut-off (Start is checked), so it
+    # may always be stopped: a spray begun at 18:50 and stopped at 19:05 is on time.
+    if frappe.db.get_value("Work Order", work_order, "workflow_state") != STATE_SPRAYING_IN_PROGRESS:
+        _assert_in_time(work_order)
 
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)

@@ -514,6 +514,12 @@ def sync_spray_session(payload) -> dict:
 			"already_synced": False, "refusal": None,
 			"note": "No step was performed on this session, so nothing was applied."}
 
+	# Past the day's cutoff the site no longer takes the session, unless a manager
+	# allowed this token. Idempotency above is untouched: a Synced token returned already.
+	from upande_scp.serverscripts.spray_plan_creator import lateness
+
+	lateness.assert_session_in_time(work_order, token)
+
 	_assert_replay_allowed(token, work_order)
 
 	check = preflight(payload)
@@ -700,6 +706,43 @@ def _supervisor_of(work_order: str) -> str | None:
 		return resolve_supervisor_employee(frappe.get_doc("Work Order", work_order))
 	except Exception:
 		return None
+
+
+@frappe.whitelist()
+def allow_after_cutoff(tokens) -> dict:
+	"""Let sessions through that arrived after their cut-off. General Manager only.
+
+	``tokens``: a list of token strings, or of ``{"token", "work_order"}`` dicts. A token
+	the server has not seen is created (it needs its ``work_order``) so the phone's next
+	send is accepted.
+	"""
+	roles = set(frappe.get_roles(frappe.session.user))
+	if not roles & {"SCP General Manager", "System Manager"}:
+		frappe.throw("Only a General Manager can allow a spray after the cut-off.", frappe.PermissionError)
+	if isinstance(tokens, str):
+		tokens = frappe.parse_json(tokens)
+	if isinstance(tokens, (str, dict)):
+		tokens = [tokens]
+	allowed: list[str] = []
+	for item in tokens or []:
+		name = (item.get("token") if isinstance(item, dict) else item) or ""
+		name = str(name).strip()
+		if not name:
+			continue
+		if frappe.db.exists(TOKEN, name):
+			frappe.db.set_value(TOKEN, name, "allow_after_cutoff", 1, update_modified=True)
+		else:
+			wo = item.get("work_order") if isinstance(item, dict) else None
+			if not wo or not frappe.db.exists("Work Order", wo):
+				frappe.throw(f"Token {name} is not on the server yet; give its spray plan (work_order) too.")
+			doc = frappe.new_doc(TOKEN)
+			doc.token = name
+			doc.work_order = wo
+			doc.allow_after_cutoff = 1
+			doc.status = "Pending"
+			doc.insert(ignore_permissions=True)
+		allowed.append(name)
+	return {"allowed": allowed}
 
 
 def _upsert_token(token: str, payload: dict, check: dict):

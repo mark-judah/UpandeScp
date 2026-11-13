@@ -18,6 +18,7 @@
   "ended_at",
   "device_skew_seconds",
   "past_cutoff",
+  "allow_after_cutoff",
   "crew_warnings",
   "sec_scans",
   "scans",
@@ -73,7 +74,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nSynced\nPartial\nRefused\nHeld \u2014 too short\nHeld \u2014 incomplete",
+   "options": "Pending\nSynced\nPartial\nRefused\nHeld — too short\nHeld — incomplete",
    "read_only": 1,
    "search_index": 1
   },
@@ -109,11 +110,19 @@
   },
   {
    "default": "0",
-   "description": "The spray began after its daily cutoff. Recorded, not refused \u2014 the session happened, and losing the record would be worse than flagging it.",
+   "description": "The spray began after its daily cutoff. Recorded, not refused — the session happened, and losing the record would be worse than flagging it.",
    "fieldname": "past_cutoff",
    "fieldtype": "Check",
    "label": "Started After Cutoff",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "A manager lets this session through although it reached the server after the cut-off.",
+   "fieldname": "allow_after_cutoff",
+   "fieldtype": "Check",
+   "label": "Allowed after cut-off",
+   "permlevel": 1
   },
   {
    "description": "Crew members who were on leave (or not clocked in), and a phone clock more than 2 hours out. Recorded, never refused: the spray already happened.",
@@ -186,7 +195,7 @@
  "index_web_pages_for_search": 0,
  "istable": 0,
  "links": [],
- "modified": "2026-10-15 09:00:00.000000",
+ "modified": "2026-11-13 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Spray Session Token",
@@ -227,6 +236,18 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "write": 1,
+   "role": "SCP General Manager"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
   }
  ],
  "row_format": "Dynamic",

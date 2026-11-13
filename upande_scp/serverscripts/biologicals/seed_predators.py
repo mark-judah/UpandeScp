@@ -63,17 +63,29 @@ def ensure_stages(report):
 			_log(report, "stages_created", name)
 
 
+def _bottle_uom(report) -> str:
+	"""The site's bottle unit. Live calls it "BOT" (its biologicals already use it);
+	a fresh site may have "Bottle" or neither, in which case "Bottle" is created."""
+	for name in ("BOT", "Bottle", "Bottles", "BTL"):
+		if frappe.db.exists("UOM", name):
+			return name
+	frappe.get_doc({"doctype": "UOM", "uom_name": "Bottle", "must_be_whole_number": 1}).insert(ignore_permissions=True)
+	_log(report, "uom_created", "Bottle")
+	return "Bottle"
+
+
 def ensure_group_and_items(report):
 	if not frappe.db.exists("Item Group", ITEM_GROUP):
 		frappe.get_doc({"doctype": "Item Group", "item_group_name": ITEM_GROUP, "parent_item_group": "All Item Groups",
 		                "is_group": 0}).insert(ignore_permissions=True)
 		_log(report, "item_group_created", ITEM_GROUP)
 	_copy_chemical_accounts(report)
+	uom = _bottle_uom(report)
 	for name, spec in PREDATORS.items():
 		code = spec["item"]
 		if not frappe.db.exists("Item", code):
 			frappe.get_doc({"doctype": "Item", "item_code": code, "item_name": code, "item_group": ITEM_GROUP,
-			                "stock_uom": "Bottle", "is_stock_item": 1, "include_item_in_manufacturing": 0,
+			                "stock_uom": uom, "is_stock_item": 1, "include_item_in_manufacturing": 0,
 			                "description": f"{spec['scientific_name']} biological control agent (released by spray supervisors)."}
 			               ).insert(ignore_permissions=True)
 			_log(report, "items_created", code)

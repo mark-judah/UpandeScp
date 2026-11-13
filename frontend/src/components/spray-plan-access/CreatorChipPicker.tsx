@@ -21,6 +21,7 @@ import {
   listCreatorCandidates,
   listProductionSupervisorCandidates,
   listStoreKeeperCandidates,
+  listSupervisorCandidates,
   type CreatorCandidate,
   type FarmCreatorRow,
 } from "@/lib/spray-plan-admin-api";
@@ -31,7 +32,7 @@ interface Props {
   disabled?: boolean;
   /** Which role's candidate list to search. Defaults to "creator" so the
    *  existing AccessTab callsites keep working unchanged. */
-  kind?: "creator" | "approver" | "storekeeper" | "production";
+  kind?: "creator" | "approver" | "storekeeper" | "production" | "supervisor";
 }
 
 export function CreatorChipPicker({
@@ -47,7 +48,9 @@ export function CreatorChipPicker({
         ? listStoreKeeperCandidates
         : kind === "production"
           ? listProductionSupervisorCandidates
-          : listCreatorCandidates;
+          : kind === "supervisor"
+            ? listSupervisorCandidates
+            : listCreatorCandidates;
   const roleLabel =
     kind === "approver"
       ? "SCP Spray Plan Approver"
@@ -55,7 +58,9 @@ export function CreatorChipPicker({
         ? "SCP Chemical Store Keeper"
         : kind === "production"
           ? "SCP Production Supervisor"
-          : "SCP Spray Plan Creator";
+          : kind === "supervisor"
+            ? "SCP Spray Supervisor"
+            : "SCP Spray Plan Creator";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CreatorCandidate[]>([]);

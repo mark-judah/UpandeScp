@@ -219,13 +219,24 @@ def _set_farm_roster(
     if isinstance(users, str):
         users = frappe.parse_json(users) or []
 
+    users = list(dict.fromkeys(users))
+    disabled: list[str] = []
     bad: list[str] = []
     for u in users:
+        enabled = frappe.db.get_value("User", u, "enabled")
+        if not enabled:
+            disabled.append(u)
+            continue
         roles = {r.role for r in frappe.get_all(
             "Has Role", filters={"parent": u}, fields=["role"]
         )}
         if role not in roles:
             bad.append(u)
+    if disabled:
+        frappe.throw(
+            f"These users are missing or disabled: {', '.join(disabled)}.",
+            title="User not enabled",
+        )
     if bad:
         frappe.throw(
             f"These users do not have the '{role}' role: {', '.join(bad)}.",

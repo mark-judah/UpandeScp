@@ -28,6 +28,7 @@ import { CreatorChipPicker } from "@/components/spray-plan-access/CreatorChipPic
 import {
   listFarmsWithCreators,
   setFarmCreators,
+  setFarmSupervisors,
   type FarmCreatorRow,
 } from "@/lib/spray-plan-admin-api";
 import { FrappeError } from "@/lib/frappe";
@@ -38,8 +39,14 @@ interface RowState {
   business_unit: string;
   saved: FarmCreatorRow[];
   draft: FarmCreatorRow[];
+  sup_saved: FarmCreatorRow[];
+  sup_draft: FarmCreatorRow[];
   saving: boolean;
   error: string | null;
+}
+
+function isDirty(r: RowState): boolean {
+  return !rosterEqual(r.saved, r.draft) || !rosterEqual(r.sup_saved, r.sup_draft);
 }
 
 function rosterEqual(a: FarmCreatorRow[], b: FarmCreatorRow[]): boolean {
@@ -69,6 +76,8 @@ export function SprayPlanAccess() {
             business_unit: f.business_unit,
             saved: f.creators,
             draft: f.creators,
+            sup_saved: f.supervisors,
+            sup_draft: f.supervisors,
             saving: false,
             error: null,
           })),
@@ -97,39 +106,48 @@ export function SprayPlanAccess() {
     const row = rows?.find((r) => r.farm === farm);
     if (!row) return;
     updateRow(farm, { saving: true, error: null });
+    // Each roster is saved only if it changed, and one that saved stays saved
+    // even when the other is refused, so the error shows against what is left.
+    const patch: Partial<RowState> = {};
     try {
-      const fresh = await setFarmCreators(
-        farm,
-        row.draft.map((d) => d.user),
-      );
-      updateRow(farm, {
-        saved: fresh.creators,
-        draft: fresh.creators,
-        saving: false,
-      });
+      if (!rosterEqual(row.saved, row.draft)) {
+        const fresh = await setFarmCreators(farm, row.draft.map((d) => d.user));
+        patch.saved = fresh.creators;
+        patch.draft = fresh.creators;
+        updateRow(farm, { saved: fresh.creators, draft: fresh.creators });
+      }
+      if (!rosterEqual(row.sup_saved, row.sup_draft)) {
+        const fresh = await setFarmSupervisors(farm, row.sup_draft.map((d) => d.user));
+        patch.sup_saved = fresh.supervisors;
+        patch.sup_draft = fresh.supervisors;
+      }
+      updateRow(farm, { ...patch, saving: false });
     } catch (e) {
-      const msg = errorText(e);
-      updateRow(farm, { saving: false, error: msg });
+      updateRow(farm, { ...patch, saving: false, error: errorText(e) });
     }
   };
 
   const revertRow = (farm: string) => {
     const row = rows?.find((r) => r.farm === farm);
     if (!row) return;
-    updateRow(farm, { draft: row.saved, error: null });
+    updateRow(farm, { draft: row.saved, sup_draft: row.sup_saved, error: null });
   };
 
   const dirtyCount = useMemo(
-    () => (rows ?? []).filter((r) => !rosterEqual(r.saved, r.draft)).length,
+    () => (rows ?? []).filter((r) => isDirty(r)).length,
     [rows],
   );
   const totalCreators = useMemo(
     () => (rows ?? []).reduce((s, r) => s + r.saved.length, 0),
     [rows],
   );
+  const totalSupervisors = useMemo(
+    () => (rows ?? []).reduce((s, r) => s + r.sup_saved.length, 0),
+    [rows],
+  );
 
   const saveAll = async () => {
-    const dirty = (rows ?? []).filter((r) => !rosterEqual(r.saved, r.draft));
+    const dirty = (rows ?? []).filter(isDirty);
     for (const r of dirty) await saveRow(r.farm);
   };
 
@@ -139,15 +157,15 @@ export function SprayPlanAccess() {
         title={
           <span className="inline-flex items-center gap-2">
             <ShieldCheck className="h-4 w-4" />
-            Spray Plan Access
+            Farm access
           </span>
         }
-        eyebrow="Assign Spray Plan Creators to farms"
+        eyebrow="Assign spray plan creators and spray supervisors to farms"
       >
         <div className="flex items-center gap-4">
           {rows ? (
             <span className="text-xs text-muted-foreground tabular-nums">
-              {rows.length} farms · {totalCreators} creators
+              {rows.length} farms · {totalCreators} creators · {totalSupervisors} supervisors
             </span>
           ) : loading ? (
             <TextSkeleton width="16ch" />
@@ -194,7 +212,7 @@ export function SprayPlanAccess() {
               <CardTitle className="text-base">No farms configured</CardTitle>
               <CardDescription>
                 Create at least one Farm in Frappe Desk to start assigning
-                Spray Plan Creators here.
+                spray plan creators and spray supervisors here.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -208,14 +226,15 @@ export function SprayPlanAccess() {
                   <TableRow>
                     <TableHead className="w-1/5">Farm</TableHead>
                     <TableHead className="w-1/6">Business Unit</TableHead>
-                    <TableHead>Spray Plan Creators</TableHead>
+                    <TableHead>Spray plan creators</TableHead>
+                    <TableHead>Spray supervisors</TableHead>
                     <TableHead className="w-40 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {!rows && <TableRowsSkeleton cols={4} rows={6} />}
+                  {!rows && <TableRowsSkeleton cols={5} rows={6} />}
                   {(rows || []).map((r) => {
-                    const dirty = !rosterEqual(r.saved, r.draft);
+                    const dirty = isDirty(r);
                     return (
                       <TableRow key={r.farm} className={dirty ? "bg-amber-50/30" : ""}>
                         <TableCell className="font-medium">{r.farm}</TableCell>
@@ -228,6 +247,17 @@ export function SprayPlanAccess() {
                             onChange={(next) => updateRow(r.farm, { draft: next })}
                             disabled={r.saving}
                           />
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <CreatorChipPicker
+                            kind="supervisor"
+                            value={r.sup_draft}
+                            onChange={(next) => updateRow(r.farm, { sup_draft: next })}
+                            disabled={r.saving}
+                          />
+                          <p className="text-[0.65rem] text-muted-foreground mt-1">
+                            Can confirm the tank mix and scan, start and stop sprays on this farm; their phones download this farm&apos;s plans.
+                          </p>
                           {r.error && (
                             <div className="text-[0.65rem] text-destructive mt-1 flex items-start gap-1">
                               <ShieldAlert className="h-3 w-3 mt-[1px] flex-shrink-0" />

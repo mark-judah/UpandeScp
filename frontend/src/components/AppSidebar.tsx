@@ -29,6 +29,7 @@ import {
   Scale,
   Search,
   Settings,
+  ShieldCheck,
   ShieldAlert,
   Sprout,
   UserRoundSearch,
@@ -525,13 +526,34 @@ const IT_SECTION: NavSection = {
   ],
 };
 
+// Farm access (who creates plans and who supervises sprays, per farm) is a
+// site-wide admin page. It sits right under Settings wherever a crop's rail has
+// one, and only the roles the backend admits ever see it.
+export const FARM_ACCESS_ITEM: NavItem = {
+  kind: "view",
+  view: "spray-plan-access",
+  label: "Farm access",
+  icon: ShieldCheck,
+  requireRoles: ["SCP General Manager", "System Manager", "Administrator"],
+};
+
+function withFarmAccess(sections: NavSection[]): NavSection[] {
+  return sections.map((sec) => {
+    const at = sec.items.findIndex((it) => it.kind === "view" && it.view === "settings");
+    if (at < 0) return sec;
+    const items = [...sec.items];
+    items.splice(at + 1, 0, FARM_ACCESS_ITEM);
+    return { ...sec, items };
+  });
+}
+
 function navForCrop(crop: string): NavSection[] {
   const base =
     crop === "rose" ? ROSE_NAV
     : crop === "avocado" ? AVOCADO_NAV
     : crop === "coffee" ? COFFEE_NAV
     : DEFAULT_CROP_NAV;
-  return [...base, IT_SECTION];
+  return [...withFarmAccess(base), IT_SECTION];
 }
 
 function userHasAnyRole(required: string[] | undefined, userRoles: string[]): boolean {

@@ -103,7 +103,7 @@ def get_settings_bundle() -> dict:
             "auto_cancel_enabled": int(settings.auto_cancel_enabled or 0),
             "auto_cancel_apply_to_backlog": int(settings.auto_cancel_apply_to_backlog or 0),
             "auto_cancel_dormant_days": settings.auto_cancel_dormant_days or 3,
-            "reservation_window_days": settings.reservation_window_days or 7,
+            "reservation_window_days": settings.reservation_window_days or 5,
             "auto_cancel_activated_on": str(settings.auto_cancel_activated_on or ""),
             # The deadline the whole postponement flow turns on, plus the two bounds
             # around it. Read back with the defaults the server itself falls back to,

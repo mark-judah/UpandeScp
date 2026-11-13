@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { DatePicker } from "@/components/DatePicker";
 import { TimePicker } from "@/components/TimePicker";
 import { clampNotPast } from "@/lib/schedule";
+import { usePlanningWindow } from "@/lib/planning-window-api";
 import { mergeDateTime, splitDateTime, ymd } from "@/lib/utils";
 
 export function SprayWhenPicker({
@@ -23,6 +24,7 @@ export function SprayWhenPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
+  const { days, maxDate } = usePlanningWindow();
   const { date, time } = splitDateTime(value);
   return (
     <>
@@ -30,12 +32,16 @@ export function SprayWhenPicker({
         variant="field"
         value={date}
         minDate={ymd(new Date())}
+        maxDate={maxDate}
         onChange={(d) => onChange(clampNotPast(mergeDateTime(d, time)))}
       />
       <TimePicker
         value={time}
         onChange={(t) => onChange(clampNotPast(mergeDateTime(date, t)))}
       />
+      <p className="basis-full text-[0.65rem] text-muted-foreground leading-snug">
+        Plans can be made up to {days} days ahead; chemicals are held for {days} days.
+      </p>
     </>
   );
 }

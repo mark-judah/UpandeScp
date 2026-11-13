@@ -84,17 +84,18 @@ export function eligibleBoms(args: {
 }
 
 /** How the Add-chemical list shows one search result (spec §3): products not
- *  registered for the targets are hidden unless "Show all" is on; any other
+ *  registered for the targets are shown greyed and NOT addable ("inactive")
+ *  until "Show all" is on; any other
  *  rule-breaker is greyed with its reason and stays pickable unless a rule
  *  hard-blocks it. A result the server has not ranked is shown as is. */
-export type PickerState = "ok" | "greyed" | "blocked" | "hidden";
+export type PickerState = "ok" | "greyed" | "blocked" | "inactive";
 export function pickerState(e: ProductEligibility | undefined, showAll: boolean): PickerState {
   if (!e) return "ok";
-  if (offTarget(e) && !showAll) return "hidden";
+  if (offTarget(e) && !showAll) return "inactive";
   if (e.worst_mode === "Block") return "blocked";
   return e.eligible ? "ok" : "greyed";
 }
-const offTarget = (e: ProductEligibility) => (e.rules ?? []).includes("target_match");
+export const offTarget = (e: ProductEligibility) => (e.rules ?? []).includes("target_match");
 
 /** Whether "Show all" changes anything for these results. */
 export const pickerFilters = (rows: ProductEligibility[]) => rows.some(offTarget);

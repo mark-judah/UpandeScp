@@ -133,7 +133,11 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   const reqRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("pending");
+  const [tab, setTab] = useState<Tab>(() =>
+    new URLSearchParams((window.location.hash.split("?")[1] ?? "")).get("tab") === "stale"
+      ? "stale"
+      : "pending",
+  );
   const [staleCount, setStaleCount] = useState<number | null>(null);
   // Which date the range filters on, and whether to break the list up by farm.
   // Both are the operator's call: an approver clearing a desk works by arrival,

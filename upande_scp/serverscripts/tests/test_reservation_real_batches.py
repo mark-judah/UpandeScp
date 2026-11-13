@@ -140,6 +140,9 @@ class RealBatchCase(unittest.TestCase):
 			doc.submit()
 		if state:
 			doc.db_set("workflow_state", state, update_modified=False)
+		if planned:
+			# The hold runs from planning (creation), not from the spray date.
+			doc.db_set("creation", planned, update_modified=False)
 		frappe.db.commit()
 		doc.reload()
 		return doc
@@ -279,12 +282,12 @@ class TestStale(RealBatchCase):
 	def test_plan_no_longer_stale_is_skipped(self):
 		p = self.plan(3, planned=self._old(), submit=True, state="Approved")
 		self.assertIn(p.name, {r["name"] for r in R.get_stale_plans()})
-		frappe.db.set_value("Work Order", p.name, "planned_start_date", now_datetime())
+		frappe.db.set_value("Work Order", p.name, "creation", now_datetime())
 		res = R.stop_stale_plans([p.name])
 		self.assertEqual(res["skipped"], [p.name])
 		self.assertNotEqual(frappe.db.get_value("Work Order", p.name, "status"), "Stopped")
 		# once issued it is skipped as well
-		frappe.db.set_value("Work Order", p.name, "planned_start_date", self._old())
+		frappe.db.set_value("Work Order", p.name, "creation", self._old())
 		frappe.db.set_value("Work Order", p.name, "workflow_state", "Chemical Issued")
 		self.assertEqual(R.stop_stale_plans([p.name])["skipped"], [p.name])
 		self.assertNotIn(p.name, {r["name"] for r in R.get_stale_plans()})

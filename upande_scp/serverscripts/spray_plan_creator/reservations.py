@@ -14,7 +14,7 @@ RESERVED_EXCLUDED_STATES = {
     "Completed",
 }
 DEAD_STATUSES = {"Stopped", "Closed", "Cancelled"}
-DEFAULT_WINDOW_DAYS = 7
+DEFAULT_WINDOW_DAYS = 5
 
 
 def is_reserved_state(workflow_state, status):
@@ -44,8 +44,19 @@ def aggregate_reservations(rows):
 
 
 
+def hold_started_date(row):
+    """ISO date the plan's hold began: the later of its creation and the approval of
+    its latest postponement (``postponed_on``), so a postponed plan gets a fresh
+    window. The hold runs from PLANNING, not from the spray date. Empty when the
+    row carries neither."""
+    return max(
+        str(row.get("creation") or "")[:10],
+        str(row.get("postponed_on") or "")[:10],
+    )
+
+
 def window_start(today, days):
-    """ISO date string: plans planned before this no longer reserve."""
+    """ISO date string: plans whose hold began before this no longer reserve."""
     from datetime import date, timedelta
 
     d = date.fromisoformat(str(today)[:10])
@@ -53,26 +64,26 @@ def window_start(today, days):
 
 
 def reserves(row, cutoff):
-    """True when a plan row (workflow_state, status, docstatus,
-    planned_start_date) still reserves stock: live, not issued, inside window."""
+    """True when a plan row (workflow_state, status, docstatus, creation,
+    postponed_on) still reserves stock: live, not issued, hold inside window."""
     if (row.get("docstatus") or 0) >= 2:
         return False
     if not is_reserved_state(row.get("workflow_state"), row.get("status")):
         return False
-    planned = str(row.get("planned_start_date") or "")[:10]
-    # An undated plan cannot be proven stale, so it keeps reserving.
-    return not planned or planned >= cutoff
+    held = hold_started_date(row)
+    # A plan with no known hold start cannot be proven stale, so it keeps reserving.
+    return not held or held >= cutoff
 
 
 def is_stale(row, cutoff):
-    """Live, not issued, but planned before the window: reserves nothing and
-    is only clutter the store keeper should clear."""
+    """Live, not issued, but its hold began before the window: it no longer holds
+    chemicals and is suggested for cancelling."""
     if (row.get("docstatus") or 0) >= 2:
         return False
     if not is_reserved_state(row.get("workflow_state"), row.get("status")):
         return False
-    planned = str(row.get("planned_start_date") or "")[:10]
-    return bool(planned) and planned < cutoff
+    held = hold_started_date(row)
+    return bool(held) and held < cutoff
 
 
 def compute_available(ledger, reserved_others, this_qty=0.0):
@@ -147,6 +158,13 @@ def _cutoff():
     return window_start(frappe.utils.today(), get_window_days())
 
 
+# Latest Approved postponement of the plan (NULL when none): it restarts the hold.
+_POSTPONED_ON = (
+    "(SELECT MAX(pp.decided_on) FROM `tabSpray Plan Postponement` pp "
+    "WHERE pp.work_order = wo.name AND pp.status = 'Approved')"
+)
+
+
 def _has_batch_col():
     return frappe.db.has_column("Work Order Item", "custom_batch_no")
 
@@ -159,13 +177,14 @@ def _reservation_rows(items, warehouse=None, exclude=None):
     rows = frappe.db.sql(
         f"""
         SELECT wo.name AS wo, wo.docstatus, wo.status, wo.workflow_state,
-               wo.planned_start_date, woi.item_code, woi.source_warehouse,
+               wo.planned_start_date, wo.creation, {_POSTPONED_ON} AS postponed_on,
+               woi.item_code, woi.source_warehouse,
                woi.required_qty, {batch_sel} AS batch_no
         FROM `tabWork Order Item` woi
         JOIN `tabWork Order` wo ON wo.name = woi.parent
         WHERE wo.custom_type = %(afp)s
           AND wo.docstatus < 2
-          AND DATE(COALESCE(wo.planned_start_date, wo.creation)) >= %(cutoff)s
+          AND DATE(GREATEST(wo.creation, COALESCE({_POSTPONED_ON}, wo.creation))) >= %(cutoff)s
           AND (wo.status IS NULL OR wo.status NOT IN ('Stopped','Closed','Cancelled'))
           AND COALESCE(wo.workflow_state, 'Pending Submission') NOT IN %(issued)s
           AND woi.item_code IN %(items)s
@@ -378,8 +397,10 @@ def _stale_filters_sql(farm):
 
 @frappe.whitelist()
 def get_stale_plans(farm=None):
-    """AFPs planned before the reservation window that are still live and not
-    issued: they no longer reserve stock but still clutter the approval queue."""
+    """AFPs whose hold (from planning, or the last approved postponement) is older
+    than the window, still live and not issued: they no longer hold chemicals and
+    are suggested for cancelling. Nothing here cancels them; ``stop_stale_plans``
+    does, when a person picks them."""
     _check_roles()
     farm_names = parse_names(farm)
     farm = tuple(farm_names) if farm_names else None
@@ -387,13 +408,13 @@ def get_stale_plans(farm=None):
         f"""
         SELECT wo.name, wo.docstatus, wo.status, wo.workflow_state,
                wo.planned_start_date, wo.creation, wo.owner, wo.custom_greenhouse,
-               wo.production_item, wo.custom_targets
+               wo.production_item, wo.custom_targets,
+               {_POSTPONED_ON} AS postponed_on
         FROM `tabWork Order` wo
         {_stale_filters_sql(farm)}
         WHERE wo.custom_type = %(afp)s
           AND wo.docstatus < 2
-          AND wo.planned_start_date IS NOT NULL
-          AND DATE(wo.planned_start_date) < %(cutoff)s
+          AND DATE(GREATEST(wo.creation, COALESCE({_POSTPONED_ON}, wo.creation))) < %(cutoff)s
           AND (wo.status IS NULL OR wo.status NOT IN ('Stopped','Closed','Cancelled'))
           AND COALESCE(wo.workflow_state, 'Pending Submission') NOT IN %(issued)s
           {"AND gh.custom_farm IN %(farm)s" if farm else ""}
@@ -406,16 +427,24 @@ def get_stale_plans(farm=None):
     rows = [r for r in rows if is_stale(r, _cutoff())]
     # Re-plan needs the chemicals too: one query for every stale plan's items.
     items: dict[str, list[str]] = {}
+    held: dict[str, list[dict]] = {}
     if rows:
         for it in frappe.get_all(
             "Work Order Item",
             filters={"parent": ("in", [r.name for r in rows]), "parenttype": "Work Order"},
-            fields=["parent", "item_code"],
+            fields=["parent", "item_code", "source_warehouse", "required_qty", "transferred_qty"],
             order_by="idx",
         ):
             items.setdefault(it.parent, []).append(it.item_code)
-    return [dict(r, planned_start_date=str(r.planned_start_date), creation=str(r.creation),
-                 items=items.get(r.name, []))
+            qty = (it.required_qty or 0) - (it.transferred_qty or 0)
+            if qty > 1e-9:
+                held.setdefault(it.parent, []).append(
+                    {"item": it.item_code, "warehouse": it.source_warehouse, "qty": round(qty, 6)})
+    return [dict(r, planned_start_date=str(r.planned_start_date or ""), creation=str(r.creation),
+                 postponed_on=str(r.postponed_on) if r.postponed_on else None,
+                 hold_started=hold_started_date(r),
+                 window_days=get_window_days(),
+                 items=items.get(r.name, []), held=held.get(r.name, []))
             for r in rows]
 
 
@@ -427,7 +456,10 @@ def stop_stale_plans(names):
     _check_roles()
     if isinstance(names, str):
         names = json.loads(names)
-    from upande_scp.serverscripts.spray_plan_creator.maintenance import _stop_submitted
+    from upande_scp.serverscripts.spray_plan_creator.maintenance import (
+        _notify_creator,
+        _stop_submitted,
+    )
 
     cutoff = _cutoff()
     stopped, deleted, skipped, failed = [], [], [], []
@@ -437,11 +469,32 @@ def stop_stale_plans(names):
             if wo.get("custom_type") != AFP or not is_stale(
                 {"docstatus": wo.docstatus, "status": wo.status,
                  "workflow_state": wo.get("workflow_state"),
-                 "planned_start_date": wo.planned_start_date}, cutoff):
+                 "creation": wo.creation,
+                 "postponed_on": frappe.db.sql(
+                     "SELECT MAX(decided_on) FROM `tabSpray Plan Postponement` "
+                     "WHERE work_order=%s AND status='Approved'", (n,))[0][0]}, cutoff):
                 skipped.append(n)
                 continue
             if wo.docstatus == 1:
-                _stop_submitted(wo)
+                days = get_window_days()
+                held = ", ".join(
+                    f"{(r.required_qty or 0) - (r.transferred_qty or 0):g} x {r.item_code}"
+                    for r in wo.get("required_items") or []
+                    if (r.required_qty or 0) > (r.transferred_qty or 0))
+                _stop_submitted(
+                    wo,
+                    comment=(f"Cancelled after holding chemicals for more than {days} days "
+                             f"(hold began {hold_started_date(wo.as_dict())})"
+                             + (f"; released: {held}." if held else ".")),
+                )
+                on = str(wo.planned_start_date or "")[:10]
+                _notify_creator(
+                    wo,
+                    f"Spray plan {n} cancelled after holding chemicals for {days} days",
+                    (f"Your plan {n} for {wo.custom_greenhouse or 'a greenhouse'} on {on} "
+                     f"was cancelled after holding chemicals for {days} days; its chemicals "
+                     "were released. Plan it again when you are ready to spray."),
+                )
                 stopped.append(n)
             else:
                 frappe.delete_doc("Work Order", n, ignore_permissions=True)

@@ -66,24 +66,29 @@ class TestWindow(unittest.TestCase):
     def test_reserves_inside_window_only(self):
         cut = "2026-10-07"
         base = {"docstatus": 1, "status": "Not Started", "workflow_state": "Approved"}
-        self.assertTrue(reserves(dict(base, planned_start_date="2026-10-07 06:00:00"), cut))
-        self.assertTrue(reserves(dict(base, planned_start_date="2026-10-20"), cut))
-        self.assertFalse(reserves(dict(base, planned_start_date="2026-10-06 23:00:00"), cut))
+        # The hold runs from PLANNING (creation), not from the spray date.
+        self.assertTrue(reserves(dict(base, creation="2026-10-07 06:00:00"), cut))
+        self.assertTrue(reserves(dict(base, creation="2026-10-07", planned_start_date="2026-09-01"), cut))
+        self.assertFalse(reserves(dict(base, creation="2026-10-06 23:00:00", planned_start_date="2026-10-20"), cut))
+        # A postponement approved inside the window gives a fresh hold.
+        self.assertTrue(reserves(dict(base, creation="2026-09-01", postponed_on="2026-10-08 09:00:00"), cut))
+        self.assertFalse(reserves(dict(base, creation="2026-09-01", postponed_on="2026-10-01 09:00:00"), cut))
 
     def test_issued_or_cancelled_never_reserve(self):
         cut = "2026-10-07"
-        d = {"planned_start_date": "2026-10-10", "status": None}
+        d = {"creation": "2026-10-10", "status": None}
         self.assertFalse(reserves(dict(d, docstatus=1, workflow_state="Chemical Issued"), cut))
         self.assertFalse(reserves(dict(d, docstatus=2, workflow_state="Approved"), cut))
 
     def test_stale_is_old_but_otherwise_live(self):
         cut = "2026-10-07"
         old = {"docstatus": 1, "status": None, "workflow_state": "Awaiting Approval",
-               "planned_start_date": "2026-09-01"}
+               "creation": "2026-09-01"}
         self.assertTrue(is_stale(old, cut))
         self.assertFalse(is_stale(dict(old, workflow_state="Completed"), cut))
         self.assertFalse(is_stale(dict(old, status="Stopped"), cut))
-        self.assertFalse(is_stale(dict(old, planned_start_date="2026-10-08"), cut))
+        self.assertFalse(is_stale(dict(old, creation="2026-10-08"), cut))
+        self.assertFalse(is_stale(dict(old, postponed_on="2026-10-08"), cut))
 
 
 class TestGateMath(unittest.TestCase):

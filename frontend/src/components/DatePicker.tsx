@@ -23,6 +23,8 @@ export interface DatePickerProps {
   variant?: "pill" | "field";
   /** YYYY-MM-DD; days before it are disabled (e.g. no planning in the past). */
   minDate?: string;
+  /** YYYY-MM-DD; days after it are disabled (e.g. the planning window). */
+  maxDate?: string;
 }
 
 /** Borderless soft-shadow chip — the app-wide default look. */
@@ -47,6 +49,7 @@ export function DatePicker({
   disabled,
   variant = "pill",
   minDate,
+  maxDate,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const date = useMemo(() => (value ? parseYmd(value) : undefined), [value]);
@@ -83,7 +86,14 @@ export function DatePicker({
         <Calendar
           mode="single"
           selected={date}
-          disabled={minDate ? { before: parseYmd(minDate) } : undefined}
+          disabled={
+            minDate || maxDate
+              ? [
+                  ...(minDate ? [{ before: parseYmd(minDate) }] : []),
+                  ...(maxDate ? [{ after: parseYmd(maxDate) }] : []),
+                ]
+              : undefined
+          }
           onSelect={(d) => {
             if (d) {
               onChange(ymd(d));

@@ -73,13 +73,13 @@ describe("pickerState", () => {
     expect(pickerState(p(["moa_rotation"]), false)).toBe("greyed");
     expect(pickerState(p(["same_moa_in_mix", "max_sprays"], "Block (GM override)"), false)).toBe("greyed");
   });
-  it("hides a product not registered for the targets unless Show all", () => {
-    expect(pickerState(p(["target_match"]), false)).toBe("hidden");
+  it("shows a product not registered for the targets inactive unless Show all", () => {
+    expect(pickerState(p(["target_match"]), false)).toBe("inactive");
     expect(pickerState(p(["target_match"]), true)).toBe("greyed");
   });
   it("disables a hard-blocked product", () => {
     expect(pickerState(p(["tank_mix_incompatible"], "Block"), false)).toBe("blocked");
-    expect(pickerState(p(["target_match"], "Block"), false)).toBe("hidden");
+    expect(pickerState(p(["target_match"], "Block"), false)).toBe("inactive");
     expect(pickerState(p(["target_match"], "Block"), true)).toBe("blocked");
   });
   it("offers Show all only when it would reveal something", () => {

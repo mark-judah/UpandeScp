@@ -1,7 +1,7 @@
 /**
- * Stale spray plans: planned before the reservation window, never issued and
- * never stopped. They no longer reserve stock but clutter the approval queue.
- * The GM can stop them, or "Re-plan" one: the floor plan opens pre-filled with
+ * Stale spray plans: their hold (from planning, or the last postponement) has run
+ * out, and they were never issued or stopped. They no longer hold chemicals and are
+ * suggested for cancelling. The GM cancels the selected ones, or "Re-plan" one: the floor plan opens pre-filled with
  * the same greenhouse, targets and chemicals for a new date.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -74,7 +74,7 @@ export function StalePlansTab({
       const r = await stopStalePlans(Array.from(sel));
       const done = r.stopped.length + r.deleted.length;
       toast.show(
-        `${done} stale plan${done === 1 ? "" : "s"} cleared.`,
+        `${done} plan${done === 1 ? "" : "s"} cancelled.`,
         r.failed.length || r.skipped.length ? "warn" : "ok",
         r.failed.length || r.skipped.length
           ? { hint: `${r.failed.length} failed, ${r.skipped.length} skipped (no longer stale).` }
@@ -82,7 +82,7 @@ export function StalePlansTab({
       );
       await load();
     } catch {
-      toast.show("Could not stop the selected plans.", "err");
+      toast.show("Could not cancel the selected plans.", "err");
       setBusy(false);
     }
   };
@@ -92,7 +92,8 @@ export function StalePlansTab({
   return (
     <div className="flex flex-col gap-2" data-testid="stale-tab">
       <p className="text-xs text-muted-foreground">
-        Planned before the reservation window and never issued. Stopping cancels a submitted plan and deletes an
+        These plans held chemicals for longer than the hold window and were never issued. Nothing is cancelled
+        automatically: cancelling stops a submitted plan (notifying its creator) and deletes an
         unsubmitted draft; re-planning opens the floor plan with the same house, targets and chemicals for a new date.
       </p>
       {busy && !rows ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -109,7 +110,7 @@ export function StalePlansTab({
             </label>
             <Button size="sm" variant="outline" className="h-8 rounded-xl" disabled={!sel.size || busy} onClick={stop}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              Stop selected{sel.size ? ` (${sel.size})` : ""}
+              Cancel selected{sel.size ? ` (${sel.size})` : ""}
             </Button>
           </div>
           <ul className="divide-y">
@@ -129,8 +130,14 @@ export function StalePlansTab({
                 />
                 <span className="font-medium">{r.name}</span>
                 <span className="text-muted-foreground">{r.custom_greenhouse || ""}</span>
-                <span className="ml-auto tabular-nums text-muted-foreground">
-                  {r.workflow_state || "Draft"} · planned {r.planned_start_date.slice(0, 10)}
+                <span className="ml-auto text-right tabular-nums text-muted-foreground">
+                  {r.workflow_state || "Draft"} · spray {r.planned_start_date.slice(0, 10) || "unset"} · planned{" "}
+                  {(r.hold_started || r.creation).slice(0, 10)} · by {r.owner}
+                  {r.held && r.held.length > 0 ? (
+                    <span className="block" data-testid="stale-held">
+                      held: {r.held.map((h) => `${h.qty} x ${h.item}`).join(", ")}
+                    </span>
+                  ) : null}
                 </span>
                 <a
                   href={replanHref(r, crop)}

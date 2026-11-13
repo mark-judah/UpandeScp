@@ -392,11 +392,11 @@
    "non_negative": 1
   },
   {
-   "default": "7",
-   "description": "A spray plan reserves chemical stock only while its planned start date is within this many days of today. Older plans that were never issued stop reserving and show up as stale.",
+   "default": "5",
+   "description": "A plan holds its chemicals in the store for this many days after it is planned. After that it no longer holds them, and it is suggested for cancelling.",
    "fieldname": "reservation_window_days",
    "fieldtype": "Int",
-   "label": "Reservation window (days)",
+   "label": "Hold chemicals for (days)",
    "non_negative": 1
   },
   {

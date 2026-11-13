@@ -145,7 +145,7 @@ def auto_cancel_dormant_plans(dry_run: bool = False) -> dict:
     return summary
 
 
-def _stop_submitted(wo) -> None:
+def _stop_submitted(wo, comment: str | None = None) -> None:
     """Submitted-but-unapproved WO → ERPNext Stopped (mirrors the manual
     'Stop' action approvers use), with an audit comment."""
     from erpnext.manufacturing.doctype.work_order.work_order import stop_unstop
@@ -155,14 +155,17 @@ def _stop_submitted(wo) -> None:
         doc = frappe.get_doc("Work Order", wo.name)
         doc.add_comment(
             "Workflow",
-            f"Auto-cancelled: unapproved for more than {_dormant_days()} days "
-            f"(created {wo.creation}).",
+            comment
+            or (
+                f"Auto-cancelled: unapproved for more than {_dormant_days()} days "
+                f"(created {wo.creation})."
+            ),
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "auto_cancel: add_comment failed")
 
 
-def _notify_creator(wo) -> None:
+def _notify_creator(wo, title: str | None = None, message: str | None = None) -> None:
     """Tell the plan's creator, through the one SCP notification path (category
     "plan", so it reaches the SCP bell). Best-effort: ``notify`` logs and swallows."""
     if not wo.owner or wo.owner in ("Administrator", "Guest"):
@@ -171,8 +174,9 @@ def _notify_creator(wo) -> None:
 
     notifications.notify(
         [wo.owner],
-        f"Spray plan {wo.name} auto-cancelled — unapproved for over {_dormant_days()} days",
-        (
+        title or f"Spray plan {wo.name} auto-cancelled — unapproved for over {_dormant_days()} days",
+        message
+        or (
             f"Your spray plan for {wo.custom_greenhouse or 'a greenhouse'} "
             f"(created {wo.creation}) was automatically cancelled because it "
             f"was not approved within {_dormant_days()} days."

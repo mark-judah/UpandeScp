@@ -952,6 +952,10 @@ export interface StalePlan {
   custom_targets?: string | null;
   /** Chemical item codes the plan carried. */
   items?: string[];
+  /** When the hold began: planning, or the latest approved postponement. */
+  hold_started?: string;
+  /** Still held (required minus transferred), per chemical and store. */
+  held?: { item: string; warehouse: string | null; qty: number }[];
 }
 
 export async function getStalePlans(farm?: string): Promise<StalePlan[]> {

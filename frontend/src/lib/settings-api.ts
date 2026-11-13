@@ -43,7 +43,7 @@ export interface SprayPlanSettings {
   auto_cancel_enabled: number;
   auto_cancel_apply_to_backlog: number;
   auto_cancel_dormant_days: number;
-  /** A plan reserves chemical stock only within this many days of its planned start. */
+  /** A plan holds its chemicals this many days after it is planned (also the planning window). */
   reservation_window_days: number;
   /** Read-only — stamped server-side when auto-cancel is first enabled. */
   auto_cancel_activated_on: string;

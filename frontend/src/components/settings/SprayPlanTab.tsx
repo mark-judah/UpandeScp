@@ -42,6 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { TrapPhotoCard } from "@/components/settings/TrapPhotoCard";
 import { ReportSenderCard } from "@/components/settings/ReportSenderCard";
 import { WeeklyEmailsCard } from "@/components/settings/WeeklyEmailsCard";
+import { StaleSuggestionsLink } from "@/components/settings/StaleSuggestionsLink";
 import { ScoutCaptureCard, maxCountError } from "@/components/settings/ScoutCaptureCard";
 import {
   saveSprayPlanSettings,
@@ -517,7 +518,7 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
           </div>
 
           <div>
-            <Label className="text-[0.7rem]">Reservation window (days)</Label>
+            <Label className="text-[0.7rem]">Hold chemicals for (days)</Label>
             <Input
               type="number"
               min={1}
@@ -528,10 +529,9 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
               className="h-9 w-32"
             />
             <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
-              A plan reserves chemical stock only while its planned start is
-              within this many days of today. Older, never-issued plans stop
-              reserving and are listed as stale.
+              A plan holds its chemicals in the store for this many days after it is planned. After that it no longer holds them, and it is suggested for cancelling. Plans also cannot be dated further ahead than this.
             </p>
+            <StaleSuggestionsLink />
           </div>
         </CardContent>
       </Card>

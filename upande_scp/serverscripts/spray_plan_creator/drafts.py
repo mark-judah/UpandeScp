@@ -8,7 +8,7 @@ from frappe.utils import flt, getdate
 
 from ..common import crop_catalog, crop_protection
 from ..spray_compliance import api as compliance
-from . import block_groups, lateness, team_rules
+from . import block_groups, lateness, planning_window, team_rules
 from .scope import _resolve_user_scope
 from .validation import (
     derive_cost_center, validate_preventive_reason, validate_rate_in_limits,
@@ -550,6 +550,7 @@ def create_draft_spray_plan(payload):
     if wip_warehouse:
         wo.wip_warehouse = wip_warehouse
     _apply_payload(wo, payload)
+    planning_window.enforce(payload.get("custom_scheduled_application_time"))
     team_warnings = team_rules.enforce(
         wo, rows_sent="custom_spray_plan_team_members" in payload
     )
@@ -706,6 +707,8 @@ def update_draft_plan(name: str, payload):
 
     prev_gh = wo.custom_greenhouse
     _apply_payload(wo, payload)
+    if payload.get("custom_scheduled_application_time"):
+        planning_window.enforce(payload["custom_scheduled_application_time"])
     team_warnings = team_rules.enforce(
         wo, rows_sent="custom_spray_plan_team_members" in payload
     )

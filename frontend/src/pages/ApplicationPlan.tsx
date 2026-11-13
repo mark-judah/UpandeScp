@@ -75,6 +75,7 @@ import {
   type VarietyNode,
 } from "@/lib/scouting-api";
 import { availableStock, itemNeedsBatch } from "@/lib/stock-availability";
+import { ChemicalPickerRow } from "@/components/spray-plan/ChemicalPickerRow";
 import { SuggestedPill, SuggestedProductsCard } from "@/components/spray-plan/SuggestedProducts";
 import { ActiveIngredients } from "@/components/spray-plan/ActiveIngredients";
 import { fmtQty, fromStockQty } from "@/lib/uom";
@@ -94,6 +95,7 @@ import {
   mixIngredients,
   pickerFilters,
   pickerState,
+  offTarget,
   saveGate,
   type BomEligibility,
   type CheckResult,
@@ -1120,9 +1122,9 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   }, [addOpen, greenhouse, targetsArr, mixItems, addResults, sprayDate]);
 
   /** Search results in the server's suitability order; products not registered
-   *  for the targets hidden unless "Show all" is on, other rule-breakers greyed
-   *  (see `pickerState`). Unranked results keep their search order after the
-   *  ranked ones. */
+   *  for the targets are listed last, greyed and inactive until "Show all" is on;
+   *  other rule-breakers greyed (see `pickerState`). Unranked results keep their
+   *  search order after the ranked ones. */
   const addElig = useMemo(
     () => Object.fromEntries(addEligRows.map((r) => [r.item, r])) as Record<string, ProductEligibility>,
     [addEligRows],
@@ -1130,10 +1132,9 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const addShown = useMemo(() => {
     const order = new Map(addEligRows.map((r, i) => [r.item, i]));
     const rank = (i: ChemicalItem) => order.get(i.item_code) ?? order.size;
-    return [...addResults]
-      .sort((a, b) => rank(a) - rank(b))
-      .filter((it) => pickerState(addElig[it.item_code], addShowAll) !== "hidden");
-  }, [addResults, addElig, addEligRows, addShowAll]);
+    const off = (i: ChemicalItem) => (addElig[i.item_code] && offTarget(addElig[i.item_code]) ? 1 : 0);
+    return [...addResults].sort((a, b) => off(a) - off(b) || rank(a) - rank(b));
+  }, [addResults, addElig, addEligRows]);
 
   const kitList = useMemo(
     () =>
@@ -3166,62 +3167,35 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <Checkbox
                 checked={addShowAll}
-                onCheckedChange={(v) => setAddShowAll(v === true)}
+                onCheckedChange={(v) => {
+                  setAddShowAll(v === true);
+                  setAddNotice("");
+                }}
               />
-              Show all (including products not registered for the targets)
+              Show all (make products not registered for the targets addable)
             </label>
           )}
           <div className="max-h-72 overflow-auto flex flex-col gap-1">
             {addShown.map((it) => {
               const e = addElig[it.item_code];
-              const state = pickerState(e, addShowAll);
-              const blocked = state === "blocked";
               return (
-              <button
-                key={it.item_code}
-                type="button"
-                disabled={blocked}
-                onClick={() => addChemical(it)}
-                className={
-                  "text-left px-3 py-2 rounded-md border bg-card transition-colors " +
-                  (blocked
-                    ? "opacity-60 cursor-not-allowed"
-                    : state === "greyed"
-                      ? "opacity-60 hover:opacity-100 hover:bg-muted"
-                      : "hover:bg-muted") +
-                  (suggestedCodes.includes(it.item_code) ? " border-primary/40 bg-primary/5" : "")
-                }
-              >
-                <div className="flex items-center gap-1.5 text-xs font-medium">
-                  {it.item_name || it.item_code}
-                  {suggestedCodes.includes(it.item_code) && <SuggestedPill />}
-                </div>
-                <div className="text-[0.65rem] text-muted-foreground font-mono">
-                  {it.item_code} · {it.stock_uom || ""}
-                  {it.is_fertilizer ? (
-                    <span className="ml-1 text-[var(--sd-data-green)]">
-                      · Fertilizer Store
-                    </span>
-                  ) : (
-                    <span className="ml-1 text-[var(--sd-data-cyan)]">
-                      · Chemical Store
-                    </span>
-                  )}
-                </div>
-                {e && !e.eligible && e.reasons[0] && (
-                  <div className="text-[0.65rem] text-muted-foreground mt-0.5">{e.reasons[0]}</div>
-                )}
-              </button>
+                <ChemicalPickerRow
+                  key={it.item_code}
+                  item={it}
+                  state={pickerState(e, addShowAll)}
+                  reason={e && !e.eligible ? e.reasons[0] : undefined}
+                  targetLabel={targetsArr.join(", ")}
+                  suggested={suggestedCodes.includes(it.item_code)}
+                  onAdd={() => addChemical(it)}
+                  onInactive={() =>
+                    setAddNotice("Tick “Show all” above to add products not registered for the targets.")
+                  }
+                />
               );
             })}
             {!addResults.length && (
               <div className="text-xs text-muted-foreground py-3 text-center">
                 Type to search.
-              </div>
-            )}
-            {addResults.length > 0 && !addShown.length && (
-              <div className="text-xs text-muted-foreground py-3 text-center">
-                No result is registered for the targets. Turn on “Show all” to see them.
               </div>
             )}
           </div>

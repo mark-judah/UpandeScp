@@ -16,13 +16,22 @@ from upande_scp.serverscripts.mobile import create_scouting_entry as CSE
 P1_BLOCK = "P1-B1 - MUT"  # under Pivot 1 - MUT
 PH1_BLOCK = "PH1-B1 - MUT"  # under Phase 1 - MUT
 DAY = "2026-10-01"
+SETTINGS = "Scouting and Crop Protection Settings"
 
 
 class TestNoFixScoutingEntry(IntegrationTestCase):
+	def setUp(self):
+		self._set_setting(1)
+
 	def tearDown(self):
 		frappe.db.rollback()
+		frappe.clear_cache()
 
-	def _send(self, **over):
+	def _set_setting(self, value):
+		frappe.db.set_single_value(SETTINGS, "save_without_gps_fix", value)
+		frappe.clear_cache()
+
+	def _post(self, **over):
 		user = frappe.db.get_value("Employee", {"user_id": ["is", "set"]}, "user_id")
 		entry = {
 			"scouts_name": user,
@@ -40,6 +49,10 @@ class TestNoFixScoutingEntry(IntegrationTestCase):
 			result = frappe.local.response["data"][0]
 		finally:
 			frappe.local.request = prev
+		return result
+
+	def _send(self, **over):
+		result = self._post(**over)
 		self.assertEqual(result["status"], "success", result)
 		return frappe.get_doc("Scouting Entry", result["name"]), frappe.get_doc(
 			"Scouting Entry Metadata", result["metadata_name"]
@@ -71,3 +84,20 @@ class TestNoFixScoutingEntry(IntegrationTestCase):
 	def test_crop_scouted_filled_from_station_when_blank(self):
 		doc, _ = self._send(latitude=None, longitude=None)
 		self.assertEqual(doc.crop_scouted, planting.crop_for_station(P1_BLOCK, DAY))
+
+	def test_unknown_status_is_stored_blank(self):
+		doc, meta = self._send(latitude=-0.5, longitude=36.7, accuracy=5, gps_fix_status="bogus")
+		self.assertTrue(doc.name)
+		self.assertFalse(meta.gps_fix_status)
+
+	def test_setting_off_without_coordinates_is_refused_as_before(self):
+		self._set_setting(0)
+		before = frappe.db.count("Scouting Entry")
+		result = self._post(latitude=None, longitude=None, gps_fix_status="none")
+		self.assertEqual(result, {"status": "error", "message": "Latitude and longitude are required."})
+		self.assertEqual(frappe.db.count("Scouting Entry"), before)
+
+	def test_setting_off_with_coordinates_still_saves(self):
+		self._set_setting(0)
+		doc, _ = self._send(latitude=-0.5, longitude=36.7, accuracy=5)
+		self.assertTrue(doc.name)

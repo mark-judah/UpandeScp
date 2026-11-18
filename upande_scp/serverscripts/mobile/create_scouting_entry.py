@@ -185,6 +185,9 @@ def _add_child_items(parent_doc, parent_field, items_list):
             child_row.root_flush  = 1 if item.get("root_flush") else 0
 
 
+GPS_FIX_STATUSES = ("good", "coarse", "none", "clock-skew", "stale")
+
+
 @frappe.whitelist()
 def createScoutingEntry():
     try:
@@ -245,7 +248,10 @@ def createScoutingEntry():
                 gps_spread      = entry_data.get('gps_spread')
                 # Why the phone had (or lacked) a usable position: good, coarse,
                 # none, clock-skew or stale. Absent from old phones; stored blank.
-                gps_fix_status  = entry_data.get('gps_fix_status') or None
+                gps_fix_status  = entry_data.get('gps_fix_status')
+                # An unknown value must not fail Select validation and refuse the save.
+                if gps_fix_status not in GPS_FIX_STATUSES:
+                    gps_fix_status = None
 
                 is_block_flow = bool(block or row or tree)
                 # Greenhouse/Bed flow: GPS rounds to nearest Zone (filtered by bed).
@@ -268,10 +274,20 @@ def createScoutingEntry():
                     })
                     continue
 
-                # A record may arrive with no coordinates (no usable GPS fix, and
-                # the settings allow saving anyway). The zone/tree matching below is
-                # guarded on coordinates + accuracy and is skipped; a missing
-                # coordinate is stored as null, never coerced to 0.
+                # With the per-site setting on, a record may arrive with no
+                # coordinates (no usable GPS fix); the zone/tree matching below is
+                # guarded on coordinates + accuracy and is skipped, and a missing
+                # coordinate is stored as null, never coerced to 0. With it off the
+                # original requirement stands.
+                if (not latitude or not longitude) and not frappe.db.get_single_value(
+                    "Scouting and Crop Protection Settings", "save_without_gps_fix", cache=True
+                ):
+                    has_errors = True
+                    results.append({
+                        "status": "error",
+                        "message": "Latitude and longitude are required."
+                    })
+                    continue
 
                 # --- Zone / Tree determination ---
                 determined_zone = None

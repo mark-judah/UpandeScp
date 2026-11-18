@@ -106,6 +106,7 @@
   "allow_scout_comments",
   "max_count_per_observation",
   "scout_greetings_enabled",
+  "save_without_gps_fix",
   "trap_photos_section",
   "trap_photo_rules",
   "asset_checks_section",
@@ -763,6 +764,13 @@
    "fieldname": "scout_greetings_enabled",
    "fieldtype": "Check",
    "label": "Birthday and encouragement messages for scouts"
+  },
+  {
+   "default": "0",
+   "description": "On: the scout app saves a scouting record even when the phone has no good GPS fix. Off: the scout must wait for a fix before saving.",
+   "fieldname": "save_without_gps_fix",
+   "fieldtype": "Check",
+   "label": "Save scouting without a good GPS fix"
   },
   {
    "description": "Per trap pest: must a scout photograph a catch of it? Separate from the general photo switch above. The scout app reads this with its observations.",

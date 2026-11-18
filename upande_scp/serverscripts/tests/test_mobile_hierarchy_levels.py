@@ -54,6 +54,7 @@ class TestHierarchyLevels(unittest.TestCase):
 
 	def tearDown(self):
 		frappe.db.rollback()
+		frappe.clear_cache(doctype="Scouting and Crop Protection Settings")
 
 	def _info(self):
 		frappe.local.response = frappe._dict()
@@ -106,6 +107,21 @@ class TestHierarchyLevels(unittest.TestCase):
 		self.assertEqual([l["name"] for l in info["levels"]], [sec])
 		b = self._bundle()
 		self.assertEqual(b["sections"], info["sections"])
+
+	def test_hierarchy_sends_save_without_gps_fix_default_false(self):
+		frappe.db.set_single_value("Scouting and Crop Protection Settings", "save_without_gps_fix", 0)
+		frappe.clear_cache(doctype="Scouting and Crop Protection Settings")
+		_wh("ZZH Farm", "Farm", None, 1)
+		info = self._info()
+		self.assertIn("save_without_gps_fix", info)
+		self.assertIs(info["save_without_gps_fix"], False)
+
+	def test_hierarchy_sends_save_without_gps_fix_when_on(self):
+		_wh("ZZH Farm", "Farm", None, 1)
+		frappe.db.set_single_value("Scouting and Crop Protection Settings", "save_without_gps_fix", 1)
+		frappe.clear_cache(doctype="Scouting and Crop Protection Settings")
+		info = self._info()
+		self.assertIs(info["save_without_gps_fix"], True)
 
 	def test_no_sections_when_blocks_under_farm(self):
 		farm = _wh("ZZH Farm", "Farm", None, 1)

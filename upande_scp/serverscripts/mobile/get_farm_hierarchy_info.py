@@ -137,6 +137,11 @@ def getFarmHierarchyInfo(farm=None):
 			"has_sections": has_sections,
 			"sections": sections,
 			"levels": levels,
+			"save_without_gps_fix": bool(
+				frappe.db.get_single_value(
+					"Scouting and Crop Protection Settings", "save_without_gps_fix", cache=True
+				)
+			),
 		}
 	}
 	return frappe.response["message"]

@@ -137,6 +137,16 @@ class TestHierarchyLevels(unittest.TestCase):
 		info = self._info()
 		self.assertIs(info["scouts_pick_unit"], False)
 
+	def test_hierarchy_scouts_pick_unit_true_when_never_saved(self):
+		_wh("ZZH Farm", "Farm", None, 1)
+		frappe.db.sql(
+			"DELETE FROM `tabSingles` WHERE doctype=%s AND field='scouts_pick_unit'",
+			("Scouting and Crop Protection Settings",),
+		)
+		frappe.clear_cache(doctype="Scouting and Crop Protection Settings")
+		info = self._info()
+		self.assertIs(info["scouts_pick_unit"], True)
+
 	def test_no_sections_when_blocks_under_farm(self):
 		farm = _wh("ZZH Farm", "Farm", None, 1)
 		_wh("ZZH BlkF", "Block", farm, 0)

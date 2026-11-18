@@ -18,6 +18,9 @@ class ScoutingEntry(Document):
 		if not greenhouse_flow and not block_flow:
 			frappe.throw("Scouting Entry requires a Greenhouse or a Block.")
 		self._fill_crop_from_station()
+		self.mapping_status = (
+			"Mapped" if any([self.tree, self.row, self.zone, self.bed]) else "To be mapped"
+		)
 
 	def _fill_crop_from_station(self):
 		"""A blank crop is read from what is planted at the station on the day."""

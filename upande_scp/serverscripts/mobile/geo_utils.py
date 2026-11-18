@@ -28,6 +28,15 @@ _tree_cache: dict = {}
 
 DEFAULT_TREE_RADIUS_M = 0.5
 
+# Per-block tree index used only by nearest_unit_in_block:
+# { (utm_epsg, block): { "built_at": float, "used_at": float, "trees": [ {name,row,point_utm} ] } }
+# Built on demand with one query for ONE block (not the farm-wide tree cache),
+# kept while in use (TTL counted from last use) but rebuilt at least every
+# BLOCK_TREE_MAX_AGE_SECONDS so edited trees are picked up.
+_block_tree_cache: dict = {}
+BLOCK_TREE_TTL_SECONDS = 300
+BLOCK_TREE_MAX_AGE_SECONDS = 3600
+
 
 def clear_zone_cache():
     """Call this from a Zone doctype hook to invalidate immediately on save."""
@@ -37,6 +46,7 @@ def clear_zone_cache():
 def clear_tree_cache():
     """Call this from a Tree doctype hook to invalidate immediately on save."""
     _tree_cache.clear()
+    _block_tree_cache.clear()
 
 
 def get_dynamic_utm_epsg(latitude, longitude):
@@ -460,6 +470,43 @@ def _project_point(latitude, longitude, accuracy):
     return utm_epsg, project_to_utm, point_utm, max(3.0, min(accuracy_m, 50.0))
 
 
+def _get_block_trees(utm_epsg, project_to_utm, block):
+    """Trees of one block as UTM points; one filtered query per (re)build."""
+    key = (utm_epsg, block)
+    now = time.monotonic()
+    entry = _block_tree_cache.get(key)
+    if (
+        entry
+        and now - entry["used_at"] < BLOCK_TREE_TTL_SECONDS
+        and now - entry["built_at"] < BLOCK_TREE_MAX_AGE_SECONDS
+    ):
+        entry["used_at"] = now
+        return entry["trees"]
+
+    built = []
+    for tree in frappe.get_all(
+        "Orchard Tree",
+        filters={"block": block, "geojson": ["is", "set"]},
+        fields=["name", "row", "geojson as raw_geojson"],
+    ):
+        try:
+            geometry, _props = feature_geometry(json.loads(tree.raw_geojson))
+            if not geometry or geometry.get("type") != "Point":
+                continue
+            coords = geometry.get("coordinates") or []
+            if len(coords) < 2:
+                continue
+            built.append({
+                "name": tree.name,
+                "row": tree.row or "",
+                "point_utm": transform(project_to_utm, Point(coords[0], coords[1])),
+            })
+        except Exception as e:
+            frappe.log_error(f"geo_utils: skipping tree {tree.name} in block index", str(e))
+    _block_tree_cache[key] = {"built_at": now, "used_at": now, "trees": built}
+    return built
+
+
 def _nearest_zone_among(zones, point_utm, buffer_m):
     best, best_d = None, float("inf")
     for zone in zones:
@@ -472,7 +519,7 @@ def _nearest_zone_among(zones, point_utm, buffer_m):
 def nearest_unit_in_block(latitude, longitude, accuracy, block):
     """Map a GPS point inside a block to ``(tree, row)`` without the scout picking a row.
 
-    Nearest Orchard Tree of the block (its row is the tree's row). A block with
+    Nearest Orchard Tree of the block, from a per-block index (see _get_block_trees; its row is the tree's row). A block with
     no mapped trees falls back to the nearest Zone line whose bed is one of the
     block's rows (Beds with ``greenhouse`` = block). Only candidates within the
     same buffer ``get_zone_from_coordinates`` uses, max(3, min(accuracy, 50)) m,
@@ -483,7 +530,7 @@ def nearest_unit_in_block(latitude, longitude, accuracy, block):
             return None, None
         utm_epsg, project_to_utm, point_utm, buffer_m = _project_point(latitude, longitude, accuracy)
 
-        trees = [t for t in _get_cached_trees(utm_epsg, project_to_utm) if t["block"] == block]
+        trees = _get_block_trees(utm_epsg, project_to_utm, block)
         if trees:
             best, best_d = None, float("inf")
             for t in trees:

@@ -148,6 +148,34 @@ class TestScoutingUnitMapping(IntegrationTestCase):
 		self.assertEqual(doc.row, row)
 		self.assertEqual(doc.mapping_status, "Mapped")
 
+	def _desk_entry(self, **fields):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Scouting Entry",
+				"scouts_name": frappe.db.get_value("Employee", {"user_id": ["is", "set"]}, "name"),
+				"date_of_capture": DAY,
+				"time_of_capture": "09:15:00",
+				**fields,
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc
+
+	def test_desk_entry_with_tree_is_mapped(self):
+		t, _, _ = self._tree()
+		doc = self._desk_entry(block=PH1_BLOCK, row=t.row, tree=t.name)
+		self.assertEqual(doc.mapping_status, "Mapped")
+
+	def test_desk_entry_without_unit_is_to_be_mapped(self):
+		doc = self._desk_entry(block=PH1_BLOCK)
+		self.assertEqual(doc.mapping_status, "To be mapped")
+
+	def test_block_index_is_one_block_and_reused(self):
+		t, lat, lon = self._tree()
+		geo_utils.nearest_unit_in_block(lat, lon, 3, PH1_BLOCK)
+		self.assertEqual(list(geo_utils._block_tree_cache), [(geo_utils.get_dynamic_utm_epsg(lat, lon), PH1_BLOCK)])
+		self.assertFalse(geo_utils._tree_cache)  # the farm-wide cache is not built
+
 	def test_helpers_are_limited_to_the_block(self):
 		t, lat, lon = self._tree()
 		self.assertEqual(geo_utils.nearest_unit_in_block(lat, lon, 3, PH1_BLOCK), (t.name, t.row))

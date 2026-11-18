@@ -149,8 +149,16 @@ def getFarmHierarchyInfo(farm=None):
 
 
 def _scouts_pick_unit():
-	"""Whether scouts pick the row / bed. Unset (older sites) means yes."""
-	value = frappe.db.get_single_value(
-		"Scouting and Crop Protection Settings", "scouts_pick_unit", cache=True
+	"""Whether scouts pick the row / bed.
+
+	Read the raw Singles row: get_single_value casts a never-saved Check to 0, but
+	a site that never set this must keep today's behaviour (scouts pick). No row
+	means yes.
+	"""
+	rows = frappe.db.sql(
+		"SELECT value FROM `tabSingles` WHERE doctype=%s AND field='scouts_pick_unit'",
+		("Scouting and Crop Protection Settings",),
 	)
-	return True if value is None else bool(int(value))
+	if not rows or rows[0][0] in (None, ""):
+		return True
+	return bool(int(rows[0][0]))

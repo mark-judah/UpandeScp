@@ -77,3 +77,5 @@ upande_scp.patches.v1_0.link_tank_mix_issues_to_plan
 upande_scp.patches.v1_0.min_spray_minutes_default_off
 # The desk grid opened SCP in a new tab (External icon); route it through the SCP sidebar.
 upande_scp.patches.v1_0.desk_icon_same_tab
+# Sites that never stored scouts_pick_unit keep the scouts-pick-the-row behaviour.
+upande_scp.patches.v1_0.scouts_pick_unit_default_on

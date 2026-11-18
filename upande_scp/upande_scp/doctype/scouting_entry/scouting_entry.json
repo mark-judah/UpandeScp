@@ -146,14 +146,12 @@
   {
    "fieldname": "latitude",
    "fieldtype": "Data",
-   "label": "Latitude",
-   "reqd": 1
+   "label": "Latitude"
   },
   {
    "fieldname": "longitude",
    "fieldtype": "Data",
-   "label": "Longitude",
-   "reqd": 1
+   "label": "Longitude"
   },
   {
    "fieldname": "section_break_hwtj",

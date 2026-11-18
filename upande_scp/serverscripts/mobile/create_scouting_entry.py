@@ -243,6 +243,9 @@ def createScoutingEntry():
                 # says whether the samples agreed. None when one sample went in —
                 # unmeasured, and stored as unmeasured rather than as zero.
                 gps_spread      = entry_data.get('gps_spread')
+                # Why the phone had (or lacked) a usable position: good, coarse,
+                # none, clock-skew or stale. Absent from old phones; stored blank.
+                gps_fix_status  = entry_data.get('gps_fix_status') or None
 
                 is_block_flow = bool(block or row or tree)
                 # Greenhouse/Bed flow: GPS rounds to nearest Zone (filtered by bed).
@@ -265,13 +268,10 @@ def createScoutingEntry():
                     })
                     continue
 
-                if not latitude or not longitude:
-                    has_errors = True
-                    results.append({
-                        "status": "error",
-                        "message": "Latitude and longitude are required."
-                    })
-                    continue
+                # A record may arrive with no coordinates (no usable GPS fix, and
+                # the settings allow saving anyway). The zone/tree matching below is
+                # guarded on coordinates + accuracy and is skipped; a missing
+                # coordinate is stored as null, never coerced to 0.
 
                 # --- Zone / Tree determination ---
                 determined_zone = None
@@ -374,6 +374,7 @@ def createScoutingEntry():
                 scout_metadata_doc.calculated_zone  = determined_zone
                 scout_metadata_doc.gps_accuracy     = accuracy
                 scout_metadata_doc.gps_quality      = quality_level
+                scout_metadata_doc.gps_fix_status   = gps_fix_status
                 scout_metadata_doc.gps_confidence   = confidence
                 scout_metadata_doc.gps_samples_used = samples_used
                 # Left unset, not zeroed, when one sample went in: the field is blank

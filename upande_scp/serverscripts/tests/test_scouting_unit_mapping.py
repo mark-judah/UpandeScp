@@ -75,6 +75,17 @@ class TestScoutingUnitMapping(IntegrationTestCase):
 		self.assertEqual(doc.row, t.row)
 		self.assertEqual(doc.mapping_status, "Mapped")
 
+	def test_endpoint_result_carries_mapping_status_tree_and_row(self):
+		t, lat, lon = self._tree()
+		result = self._post(latitude=lat, longitude=lon, accuracy=3)
+		self.assertEqual(result["status"], "success", result)
+		self.assertEqual(result["mapping_status"], "Mapped")
+		self.assertEqual(result["tree"], t.name)
+		self.assertEqual(result["row"], t.row)
+		unmapped = self._post(time_of_capture="09:30:00")
+		self.assertEqual(unmapped["mapping_status"], "To be mapped")
+		self.assertFalse(unmapped["tree"])
+
 	def test_block_entry_far_from_any_tree_is_to_be_mapped(self):
 		_, lat, lon = self._tree()
 		min_lat = min(

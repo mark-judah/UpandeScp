@@ -480,6 +480,13 @@ def createScoutingEntry():
                     "gps_accuracy": accuracy,
                     "quality_level": quality_level,
                     "zone_detection_details": zone_message,
+                    # What the server settled on, so the app can show "Mapped" for
+                    # an entry it sent without a row/bed.
+                    "mapping_status": scout_doc.mapping_status,
+                    "tree": scout_doc.tree if is_block_flow else None,
+                    "row": scout_doc.row if is_block_flow else None,
+                    "bed": None if is_block_flow else scout_doc.bed,
+                    "zone": None if is_block_flow else scout_doc.zone,
                 }
 
                 if requires_review:

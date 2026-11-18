@@ -2,7 +2,12 @@ import frappe
 
 from upande_scp.serverscripts.mobile import greenhouse_alias
 from datetime import datetime, timedelta
-from .geo_utils import get_zone_from_coordinates, get_tree_from_coordinates
+from .geo_utils import (
+    get_zone_from_coordinates,
+    get_tree_from_coordinates,
+    nearest_unit_in_block,
+    nearest_zone_in_greenhouse,
+)
 
 
 @frappe.whitelist()
@@ -304,6 +309,21 @@ def createScoutingEntry():
                         latitude, longitude, row_for_tree, accuracy, block=block
                     )
 
+                # No row/bed sent: map the point to the nearest unit of the station
+                # (block -> tree/row, greenhouse -> zone/bed), within the GPS buffer.
+                mapped_tree = mapped_row = mapped_zone = mapped_bed = None
+                if latitude and longitude and accuracy:
+                    if is_block_flow and block and not row and not tree:
+                        mapped_tree, mapped_row = nearest_unit_in_block(
+                            latitude, longitude, accuracy, block
+                        )
+                    elif not is_block_flow and greenhouse and not bed:
+                        mapped_zone = nearest_zone_in_greenhouse(
+                            latitude, longitude, accuracy, greenhouse
+                        )
+                        if mapped_zone:
+                            mapped_bed = frappe.db.get_value("Zone", mapped_zone, "bed")
+
                 # Normalize zone_message to a dict
                 if not isinstance(zone_message, dict):
                     zone_message = {"distance": "0.0", "buffer": "0.0", "fallback": False}
@@ -372,12 +392,17 @@ def createScoutingEntry():
                 scout_doc.scouts_name     = employee_name
                 if is_block_flow:
                     scout_doc.block = block
-                    scout_doc.row   = row
-                    scout_doc.tree  = determined_tree or tree
+                    scout_doc.row   = row or mapped_row
+                    scout_doc.tree  = determined_tree or tree or mapped_tree
                 else:
                     scout_doc.greenhouse = greenhouse
-                    scout_doc.bed        = bed
-                    scout_doc.zone       = determined_zone
+                    scout_doc.bed        = bed or mapped_bed
+                    scout_doc.zone       = determined_zone or mapped_zone
+                scout_doc.mapping_status = (
+                    "Mapped"
+                    if (scout_doc.tree or scout_doc.row or scout_doc.zone or scout_doc.bed)
+                    else "To be mapped"
+                )
                 scout_doc.time_of_capture = entry_data.get('time_of_capture')
                 scout_doc.date_of_capture = entry_data.get('date_of_capture')
                 scout_doc.latitude        = latitude
@@ -387,7 +412,7 @@ def createScoutingEntry():
                 scout_metadata_doc = frappe.new_doc("Scouting Entry Metadata")
                 scout_metadata_doc.latitude         = latitude
                 scout_metadata_doc.longitude        = longitude
-                scout_metadata_doc.calculated_zone  = determined_zone
+                scout_metadata_doc.calculated_zone  = determined_zone or mapped_zone
                 scout_metadata_doc.gps_accuracy     = accuracy
                 scout_metadata_doc.gps_quality      = quality_level
                 scout_metadata_doc.gps_fix_status   = gps_fix_status

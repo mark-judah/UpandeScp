@@ -449,6 +449,83 @@ def get_tree_from_coordinates(latitude, longitude, row, accuracy, block=None):
         return None, 0.0, error_msg
 
 
+def _project_point(latitude, longitude, accuracy):
+    """(utm_epsg, project_to_utm, point_utm, buffer_m) for a scouted point."""
+    lat = float(latitude)
+    lon = float(longitude)
+    accuracy_m = float(accuracy)
+    utm_epsg = get_dynamic_utm_epsg(lat, lon)
+    project_to_utm = Transformer.from_crs("EPSG:4326", utm_epsg, always_xy=True).transform
+    point_utm = transform(project_to_utm, Point(lon, lat))
+    return utm_epsg, project_to_utm, point_utm, max(3.0, min(accuracy_m, 50.0))
+
+
+def _nearest_zone_among(zones, point_utm, buffer_m):
+    best, best_d = None, float("inf")
+    for zone in zones:
+        d = point_utm.distance(zone["line_utm"])
+        if d <= buffer_m and d < best_d:
+            best, best_d = zone, d
+    return best
+
+
+def nearest_unit_in_block(latitude, longitude, accuracy, block):
+    """Map a GPS point inside a block to ``(tree, row)`` without the scout picking a row.
+
+    Nearest Orchard Tree of the block (its row is the tree's row). A block with
+    no mapped trees falls back to the nearest Zone line whose bed is one of the
+    block's rows (Beds with ``greenhouse`` = block). Only candidates within the
+    same buffer ``get_zone_from_coordinates`` uses, max(3, min(accuracy, 50)) m,
+    count; otherwise ``(None, None)``. Never searches outside the block.
+    """
+    try:
+        if not block:
+            return None, None
+        utm_epsg, project_to_utm, point_utm, buffer_m = _project_point(latitude, longitude, accuracy)
+
+        trees = [t for t in _get_cached_trees(utm_epsg, project_to_utm) if t["block"] == block]
+        if trees:
+            best, best_d = None, float("inf")
+            for t in trees:
+                d = point_utm.distance(t["point_utm"])
+                if d < best_d:
+                    best, best_d = t, d
+            if best is not None and best_d <= buffer_m:
+                return best["name"], best["row"] or None
+            return None, None
+
+        rows = set(frappe.get_all("Bed", filters={"greenhouse": block}, pluck="name"))
+        if not rows:
+            return None, None
+        zones = [z for z in _get_cached_zones(utm_epsg, project_to_utm) if z["bed"] in rows]
+        zone = _nearest_zone_among(zones, point_utm, buffer_m)
+        return (None, zone["bed"]) if zone else (None, None)
+    except Exception as e:
+        frappe.log_error("Error", f"Error in nearest_unit_in_block: {e}")
+        return None, None
+
+
+def nearest_zone_in_greenhouse(latitude, longitude, accuracy, greenhouse):
+    """Nearest Zone (a bed's line) of a greenhouse within the GPS buffer, else None.
+
+    The zone's ``bed`` is the bed to record. Candidates are restricted to beds
+    whose ``greenhouse`` is this one.
+    """
+    try:
+        if not greenhouse:
+            return None
+        utm_epsg, project_to_utm, point_utm, buffer_m = _project_point(latitude, longitude, accuracy)
+        beds = set(frappe.get_all("Bed", filters={"greenhouse": greenhouse}, pluck="name"))
+        if not beds:
+            return None
+        zones = [z for z in _get_cached_zones(utm_epsg, project_to_utm) if z["bed"] in beds]
+        zone = _nearest_zone_among(zones, point_utm, buffer_m)
+        return zone["name"] if zone else None
+    except Exception as e:
+        frappe.log_error("Error", f"Error in nearest_zone_in_greenhouse: {e}")
+        return None
+
+
 #: Kept as the old private name: this helper is shared with the web endpoint now
 #: (`geo.get_beds_and_zones`), so it is public, but existing callers and tests
 #: still reach for the underscore.

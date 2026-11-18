@@ -123,6 +123,20 @@ class TestHierarchyLevels(unittest.TestCase):
 		info = self._info()
 		self.assertIs(info["save_without_gps_fix"], True)
 
+	def test_hierarchy_sends_scouts_pick_unit_default_true(self):
+		_wh("ZZH Farm", "Farm", None, 1)
+		frappe.db.set_single_value("Scouting and Crop Protection Settings", "scouts_pick_unit", 1)
+		frappe.clear_cache(doctype="Scouting and Crop Protection Settings")
+		info = self._info()
+		self.assertIs(info["scouts_pick_unit"], True)
+
+	def test_hierarchy_sends_scouts_pick_unit_when_off(self):
+		_wh("ZZH Farm", "Farm", None, 1)
+		frappe.db.set_single_value("Scouting and Crop Protection Settings", "scouts_pick_unit", 0)
+		frappe.clear_cache(doctype="Scouting and Crop Protection Settings")
+		info = self._info()
+		self.assertIs(info["scouts_pick_unit"], False)
+
 	def test_no_sections_when_blocks_under_farm(self):
 		farm = _wh("ZZH Farm", "Farm", None, 1)
 		_wh("ZZH BlkF", "Block", farm, 0)

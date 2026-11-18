@@ -142,6 +142,15 @@ def getFarmHierarchyInfo(farm=None):
 					"Scouting and Crop Protection Settings", "save_without_gps_fix", cache=True
 				)
 			),
+			"scouts_pick_unit": _scouts_pick_unit(),
 		}
 	}
 	return frappe.response["message"]
+
+
+def _scouts_pick_unit():
+	"""Whether scouts pick the row / bed. Unset (older sites) means yes."""
+	value = frappe.db.get_single_value(
+		"Scouting and Crop Protection Settings", "scouts_pick_unit", cache=True
+	)
+	return True if value is None else bool(int(value))

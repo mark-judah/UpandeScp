@@ -98,6 +98,9 @@ const SprayPlanAccess = lazy(() =>
 const Settings = lazy(() =>
   import("@/pages/Settings").then((m) => ({ default: m.Settings })),
 );
+const FarmStructure = lazy(() =>
+  import("@/pages/FarmStructure").then((m) => ({ default: m.FarmStructure })),
+);
 const ApplicationPlan = lazy(() =>
   import("@/pages/ApplicationPlan").then((m) => ({ default: m.ApplicationPlan })),
 );
@@ -301,6 +304,8 @@ function renderView(crop: string, view: View): ReactNode {
       // Crop-scoped: the page shows what this crop overrides and scopes the
       // per-farm tabs to its farms. Site-wide tabs are shown and marked.
       return <Settings initialCrop={cropName} />;
+    case "structure":
+      return <FarmStructure initialCrop={cropName} />;
     case "spray-plan-access":
       return <SprayPlanAccess />;
     case "application-plan":

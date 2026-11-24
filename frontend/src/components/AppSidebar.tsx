@@ -25,6 +25,7 @@ import {
   QrCode,
   Scale,
   Search,
+  Network,
   Settings,
   ShieldAlert,
   SprayCan,
@@ -164,6 +165,8 @@ const REENTRY_ITEM: NavItem = {
     "Administrator",
   ],
 };
+
+const STRUCTURE_ITEM: NavItem = { kind: "view", view: "structure", label: "Farm structure", icon: Network };
 
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
@@ -311,6 +314,7 @@ const ROSE_NAV: NavSection[] = [
         icon: Settings,
         requireRoles: ["SCP General Manager", "System Manager", "Administrator"],
       },
+      STRUCTURE_ITEM,
       {
         kind: "view",
         view: "historical",
@@ -392,7 +396,10 @@ const AVOCADO_NAV: NavSection[] = [
     // rosters and map, its thresholds and ordering. The site-wide tabs are
     // still here, marked as such, so nobody has to go to roses to find them.
     label: "Settings",
-    items: [{ kind: "view", view: "settings", label: "Settings", icon: Settings }],
+    items: [
+      { kind: "view", view: "settings", label: "Settings", icon: Settings },
+      STRUCTURE_ITEM,
+    ],
   },
 ];
 
@@ -436,7 +443,10 @@ const COFFEE_NAV: NavSection[] = [
     // rosters and map, its thresholds and ordering. The site-wide tabs are
     // still here, marked as such, so nobody has to go to roses to find them.
     label: "Settings",
-    items: [{ kind: "view", view: "settings", label: "Settings", icon: Settings }],
+    items: [
+      { kind: "view", view: "settings", label: "Settings", icon: Settings },
+      STRUCTURE_ITEM,
+    ],
   },
 ];
 

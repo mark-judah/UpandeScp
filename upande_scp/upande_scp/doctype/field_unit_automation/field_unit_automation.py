@@ -15,8 +15,7 @@ There were two automations doing the same job with different vocabulary:
 They already wrote into the *same* table: both create `Bed` records,
 discriminated by `Bed.unit_type`. Only the field names, the GeoJSON property
 conventions and the child doctype differed. Coffee then needed a third —
-**bands** — and a band is simply what coffee calls a row, so a third tool would
-have been a third copy of the same code.
+**hexas** — so a third tool would have been a third copy of the same code.
 
 So there is one tool, and `unit_type` says which crop's vocabulary is in play. Each
 unit kind holds exactly one kind of child:
@@ -25,13 +24,12 @@ unit kind holds exactly one kind of child:
 |-------------|---------|------------|----------------|
 | `Bed`  | roses   | Greenhouse | `Zone`         |
 | `Row`  | avocado | Block      | `Orchard Tree` |
-| `Band` | coffee  | Block      | `Triad`        |
+| `Hexa` | coffee  | Block      | `Triad`        |
 
-Two levels, three pairs. `Band` is a `Row` under coffee's name as far as core is
-concerned — it sits on a Block and is validated as a row — so nothing downstream
-learns a new structure: a coffee band is a `Bed` with `unit_type = "Band"`, and the
-scouting screens, maps and mobile bundle read it the way they already read the
-other two. What differs is only what hangs off it.
+A coffee block is laid out as hexagons of up to six triangles. A `Hexa` sits on a
+Block like a row, but it is its own unit kind holding triads numbered 1-6, and
+core allows only one unit kind per warehouse. Before inserting, the import
+switches on the farm's structure levels the unit kind needs.
 
 ## What the merge fixed on the way through
 
@@ -43,7 +41,7 @@ tool their crop happens to use.
 
 Lookups are also keyed on `unit_type`, which the rose tool omitted. That fixes no
 live bug — core validates the warehouse's *role* too, so a warehouse is either a
-Greenhouse holding beds or a Block holding rows and bands, never both — but it
+Greenhouse holding beds or a Block holding rows and hexas, never both — but it
 makes the query state what the data model guarantees instead of borrowing the
 guarantee from another app's validation.
 
@@ -80,6 +78,8 @@ import re
 
 import frappe
 from frappe.model.document import Document
+
+from upande_core.upande_core.doctype.bed.bed import UNIT_LEVELS
 
 
 # Trailing "_ROW<n>_T<n>" in a feature's `properties.name`, e.g.
@@ -124,7 +124,7 @@ _UNIT_SPEC = {
 		"mirror": "tree_number",
 		"station": "block",
 	},
-	"Band": {
+	"Hexa": {
 		"child": "Triad",
 		"parent": "row",
 		"number": "triad",
@@ -132,6 +132,39 @@ _UNIT_SPEC = {
 		"station": "block",
 	},
 }
+
+
+# Triads are the six triangles of a hexagon.
+_TRIAD_RANGE = range(1, 7)
+_TRIAD_REASON = "triad number must be 1–6"
+
+
+def ensure_farm_levels(warehouse, unit_type):
+	"""Switch on the farm structure levels `unit_type` needs. Returns those added.
+
+	Core refuses a unit unless its warehouse's Farm declares the matching levels,
+	and no farm on a fresh site declares any, so the import declares them itself.
+	"""
+	farm_name = frappe.db.get_value("Warehouse", warehouse, "custom_farm")
+	wanted = UNIT_LEVELS.get(unit_type, ())
+	if not farm_name or not wanted:
+		return []
+
+	farm = frappe.get_doc("Farm", farm_name)
+	have = {r.farm_type for r in (farm.get("farm_type") or [])}
+	added = [level for level in wanted if level not in have]
+	if not added:
+		return []
+
+	for level in added:
+		if not frappe.db.exists("Farm Type", level):
+			frappe.get_doc({"doctype": "Farm Type", "farm_type": level}).insert(
+				ignore_permissions=True
+			)
+		farm.append("farm_type", {"farm_type": level})
+	farm.flags.ignore_mandatory = True
+	farm.save(ignore_permissions=True)
+	return added
 
 
 def child_doctype_for(unit_type):
@@ -163,10 +196,13 @@ class FieldUnitAutomation(Document):
 
 		spec = _UNIT_SPEC[unit_type]
 		child_doctype = spec["child"]
+		self._refusals: list[str] = []
+
+		switched_on = ensure_farm_levels(warehouse, unit_type)
 
 		units_created = units_skipped = 0
 		children_created = children_skipped = 0
-		unparsable = 0
+		unparsable = out_of_range = 0
 
 		# One lookup per unit, not per feature: a block of 700 trees is 700
 		# features across ~25 rows.
@@ -192,6 +228,10 @@ class FieldUnitAutomation(Document):
 				else:
 					units_skipped += 1
 
+			if unit_type == "Hexa" and not _valid_triad(child_number):
+				out_of_range += 1
+				continue
+
 			if self._get_or_create_child(
 				child_doctype=child_doctype,
 				spec=spec,
@@ -211,6 +251,13 @@ class FieldUnitAutomation(Document):
 		)
 		if unparsable:
 			summary += f" {unparsable} features unparsable."
+		if out_of_range:
+			summary += f" {out_of_range} skipped: {_TRIAD_REASON}."
+		if switched_on:
+			farm = frappe.db.get_value("Warehouse", warehouse, "custom_farm")
+			summary += f" Switched on {', '.join(switched_on)} for farm {farm}."
+		if self._refusals:
+			summary += f" Refused: {self._refusals[0]}"
 		return summary
 
 	def _get_or_create_unit(self, warehouse, unit_type, unit_number, sectors):
@@ -243,6 +290,11 @@ class FieldUnitAutomation(Document):
 			doc.insert(ignore_permissions=True)
 			return doc, True
 		except Exception as e:
+			# Core's refusals (e.g. "laid out as Row") are for the operator, so
+			# the first distinct one reaches the summary as well as the log.
+			message = _plain(e)
+			if message not in self._refusals:
+				self._refusals.append(message)
 			frappe.log_error(
 				f"Failed to create {unit_type} {unit_number} in {warehouse}: {e}",
 				"Field Unit Automation",
@@ -266,7 +318,8 @@ class FieldUnitAutomation(Document):
 		payload = {
 			"doctype": child_doctype,
 			spec["parent"]: unit.name,
-			spec["number"]: child_number,
+			# Core's Triad.validate range-checks this before Frappe coerces the Int.
+			spec["number"]: int(child_number) if child_doctype == "Triad" else child_number,
 			# Zones name their warehouse `greenhouse`, Triads and Orchard Trees
 			# call it `block`. Same column in `tabBed` either way.
 			spec["station"]: warehouse,
@@ -372,6 +425,18 @@ def _parse_features(raw):
 			"or one FeatureCollection per line."
 		)
 	return features
+
+
+def _valid_triad(child_number):
+	try:
+		return int(child_number) in _TRIAD_RANGE
+	except (TypeError, ValueError):
+		return False
+
+
+def _plain(error):
+	"""An exception's message with any HTML stripped."""
+	return frappe.utils.strip_html(str(error)).strip()
 
 
 def _try_json(text):

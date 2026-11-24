@@ -2,13 +2,13 @@
 //
 // Replaces bed_and_zone_automation.js. The rose tool had a button and the avocado
 // one had none (it was run from the bench shell), so this is also the point at
-// which laying out avocado rows and coffee bands stops needing a terminal.
+// which laying out avocado rows and coffee hexas stops needing a terminal.
 //
 // The confirmation names the unit kind and its child, because "this will create new
 // Bed and Zone documents" was wrong for two of the three crops.
 
 // One child per unit kind, mirroring _UNIT_SPEC on the server.
-const CHILD_OF = { Bed: 'Zones', Row: 'Trees', Band: 'Triads' };
+const CHILD_OF = { Bed: 'Zones', Row: 'Trees', Hexa: 'Triads' };
 
 frappe.ui.form.on('Field Unit Automation', {
     refresh: function (frm) {

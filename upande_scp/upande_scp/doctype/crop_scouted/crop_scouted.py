@@ -5,14 +5,14 @@ import frappe
 from frappe.model.document import Document
 
 
-#: A crop's field units carry its shape: roses are grown on beds, avocado on rows,
-#: coffee on bands. `Bed.unit_type` records which, so a farm tagged with a crop it has
+#: A crop's field units carry its shape: roses are grown on beds, avocado and coffee on
+#: rows or hexas (a hexa is a block unit holding triads). `Bed.unit_type` records which, so a farm tagged with a crop it has
 #: no units for is very likely a typo — `Rose -> Vale` was exactly that, and once the
 #: tags became an access rule it would have handed roses to every Kaitet Ltd. user.
-UNIT_TYPE_BY_CROP = {
-	"Rose": "Bed",
-	"Avocado": "Row",
-	"Coffee": "Band",
+UNIT_TYPES_BY_CROP = {
+	"Rose": ("Bed",),
+	"Avocado": ("Row", "Hexa"),
+	"Coffee": ("Row", "Hexa"),
 }
 
 
@@ -29,9 +29,10 @@ class CropScouted(Document):
 		scout walking the field. The point is that a mistake announces itself rather
 		than silently deciding who sees what.
 		"""
-		unit_type = UNIT_TYPE_BY_CROP.get(self.name)
-		if not unit_type:
+		kinds = UNIT_TYPES_BY_CROP.get(self.name)
+		if not kinds:
 			return
+		kinds_label = " or ".join(k.lower() + "s" for k in reversed(kinds))
 
 		suspect = []
 		for row in self.farms or []:
@@ -41,9 +42,9 @@ class CropScouted(Document):
 			units = frappe.db.sql(
 				"""SELECT 1 FROM `tabBed` b
 				   JOIN `tabWarehouse` w ON w.name = b.greenhouse
-				   WHERE w.custom_farm = %s AND IFNULL(b.unit_type, 'Bed') = %s
+				   WHERE w.custom_farm = %(farm)s AND IFNULL(b.unit_type, 'Bed') IN %(kinds)s
 				   LIMIT 1""",
-				(farm, unit_type),
+				{"farm": farm, "kinds": kinds},
 			)
 			if not units:
 				suspect.append(farm)
@@ -51,7 +52,7 @@ class CropScouted(Document):
 		if suspect:
 			frappe.msgprint(
 				f"{self.name} is tagged to {', '.join(sorted(suspect))}, which have no "
-				f"{unit_type.lower()}s recorded. That is fine for a farm planted but not "
+				f"{kinds_label} recorded. That is fine for a farm planted but not "
 				f"yet scouted — but if it is a mistake, it now decides who can see this "
 				f"crop.",
 				title="Check these farms",

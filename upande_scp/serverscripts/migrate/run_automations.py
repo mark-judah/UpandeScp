@@ -138,7 +138,7 @@ def _local_children(warehouse, unit_type):
 			"WHERE b.greenhouse = %s",
 			warehouse,
 		)[0][0]
-	if unit_type == "Band":
+	if unit_type == "Hexa":
 		return frappe.db.count("Triad", {"block": warehouse})
 	return frappe.db.count("Orchard Tree", {"block": warehouse})
 
@@ -176,7 +176,7 @@ def _children_on_target(site, warehouse, unit_type):
 	warehouse = _there(warehouse)
 	if unit_type == "Bed":
 		state, count = site.probe("Zone", [["greenhouse", "=", warehouse]])
-	elif unit_type == "Band":
+	elif unit_type == "Hexa":
 		state, count = site.probe("Triad", [["block", "=", warehouse]])
 	else:
 		state, count = site.probe("Orchard Tree", [["block", "=", warehouse]])

@@ -73,7 +73,7 @@ def getFarmDataBundle(farm=None, version=None, crop=None):
                 "station_type": "Block" | "Greenhouse" | None,
                 "has_sections": True | False,
                 "beds_by_warehouse": {wh_name: [{name, bed, unit_type}, ...]},
-            "unit_type_by_warehouse": {wh_name: "Bed" | "Row" | "Band"},
+            "unit_type_by_warehouse": {wh_name: "Bed" | "Row" | "Hexa"},
                 "traps_by_warehouse": {wh_name: [{...}, ...]},
             }
         }

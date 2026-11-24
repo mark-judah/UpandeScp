@@ -6,15 +6,16 @@
  * per branch, which is why the chains can differ inside one farm.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PlacePicker } from "@/components/PlacePicker";
 import { TogglePill } from "@/components/TogglePill";
 import { SearchInput } from "@/components/SearchInput";
-import { HeaderIconButton } from "@/components/header-controls";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { Bar, LoadProgress } from "@/components/Loading";
 import { useToast } from "@/components/Toast";
 import { useCropFarms } from "@/hooks/use-crop-farms";
+import { createLatest } from "@/lib/latest-only";
 import { readPlace, type Place } from "@/lib/places";
 import { fetchFarmStructure, type FarmStructure, type StructurePath } from "@/lib/structure-api";
 import {
@@ -182,6 +183,8 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [hit, setHit] = useState("");
+  const [error, setError] = useState("");
+  const latest = useRef(createLatest());
 
   // Default to the first farm once the list is in and nothing valid is picked.
   const farm = farmNames.includes(place.farm) ? place.farm : farmNames[0] ?? "";
@@ -189,16 +192,26 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
   const load = useCallback(
     (refresh: boolean) => {
       if (!farm) return;
+      const current = latest.current.start();
       setLoading(true);
+      setError("");
       fetchFarmStructure(farm, refresh)
         .then((d) => {
+          if (!current()) return;
           setData(d);
           setExpanded(d.root ? defaultExpanded(d.root) : new Set());
           setSearch("");
           setHit("");
         })
-        .catch((e) => toast.show("Could not load the farm structure.", "err", { hint: String(e?.message ?? e) }))
-        .finally(() => setLoading(false));
+        .catch((e) => {
+          if (!current()) return;
+          const msg = String(e?.message ?? e);
+          setError(msg);
+          toast.show("Could not load the farm structure.", "err", { hint: msg });
+        })
+        .finally(() => {
+          if (current()) setLoading(false);
+        });
     },
     [farm, toast],
   );
@@ -220,7 +233,7 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
   }, [search, data]);
 
   const first = loading && !data;
-  const empty = !first && data && (!data.root || data.paths.length === 0);
+  const empty = !!data && (tab === "paths" ? data.paths.length === 0 : !data.root);
 
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
@@ -255,7 +268,15 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
       </PageHeader>
       <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
         <LoadProgress active={loading && !!data} />
-        {first || (farmsLoading && !data) ? (
+        {error && !loading ? (
+          <div className="flex items-center gap-3 rounded-[var(--sd-radius)] bg-[var(--sd-alert-error)] p-4 text-sm">
+            <AlertTriangle className="h-4 w-4 shrink-0" style={{ color: "var(--sd-sev-critical)" }} aria-hidden />
+            <span className="min-w-0 flex-1">Could not load the farm structure. {error}</span>
+            <button type="button" onClick={() => load(false)}
+              className={`${HEADER_PILL} inline-flex cursor-pointer items-center justify-center`}>Retry</button>
+          </div>
+        ) : null}
+        {first || (farmsLoading && !data && !error) ? (
           <Skeleton />
         ) : empty ? (
           <p className="text-sm text-muted-foreground">This farm has no structure to draw yet.</p>

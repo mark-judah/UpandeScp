@@ -316,6 +316,39 @@ class TestHexas(FieldUnitCase):
         self.assertIsNone(FUA.child_doctype_for("Band"))
 
 
+class TestStaleBandOption(unittest.TestCase):
+    SETTER = "Bed-unit_type-options"
+
+    def test_a_stale_band_option_is_stripped_from_the_property_setter(self):
+        from upande_scp.serverscripts.geo.field_unit_types import ensure_unit_types
+
+        def restore():
+            if frappe.db.exists("Property Setter", self.SETTER):
+                frappe.delete_doc("Property Setter", self.SETTER, force=True, ignore_permissions=True)
+            frappe.clear_cache(doctype="Bed")
+
+        self.addCleanup(restore)
+        restore()
+        frappe.make_property_setter(
+            {
+                "doctype": "Bed",
+                "fieldname": "unit_type",
+                "property": "options",
+                "value": "Bed\nRow\nBand",
+                "property_type": "Text",
+            },
+            is_system_generated=False,
+        )
+        frappe.clear_cache(doctype="Bed")
+        ensure_unit_types()
+        options = [
+            o.strip()
+            for o in frappe.get_meta("Bed").get_field("unit_type").options.split("\n")
+        ]
+        self.assertNotIn("Band", options)
+        self.assertIn("Hexa", options)
+
+
 class TestUnitKinds(FieldUnitCase):
     def test_beds_get_zones(self):
         doc = self.build(

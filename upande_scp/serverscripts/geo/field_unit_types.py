@@ -18,6 +18,7 @@ See `field_unit_automation.py` for what a Hexa holds: up to six Triads.
 import frappe
 
 UNIT_TYPES = ("Bed", "Row", "Hexa")
+_RETIRED_UNIT_TYPES = ("Band",)
 
 
 def ensure_unit_types():
@@ -37,8 +38,12 @@ def ensure_unit_types():
 		return
 
 	current = [o.strip() for o in (field.options or "").split("\n") if o.strip()]
+	# `Band` was coffee's old unit kind, replaced by `Hexa`. A site that still
+	# carries it in a Property Setter keeps it forever unless it is stripped here.
+	stale = [o for o in current if o in _RETIRED_UNIT_TYPES]
+	current = [o for o in current if o not in _RETIRED_UNIT_TYPES]
 	missing = [u for u in UNIT_TYPES if u not in current]
-	if not missing:
+	if not missing and not stale:
 		return
 
 	options = "\n".join(current + missing)

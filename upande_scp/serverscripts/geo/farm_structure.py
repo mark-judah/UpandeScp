@@ -14,6 +14,7 @@ CACHE_TTL = 600
 PAIR = {"Bed": "Zone", "Row": "Tree", "Hexa": "Triad"}
 TRIADS_PER_HEXA = 6
 NO_TYPE = "(no type)"
+UNKNOWN = "Unknown"
 STATION_TYPES = ("Greenhouse", "Block")
 
 
@@ -23,6 +24,7 @@ def _cache_key(farm):
 
 @frappe.whitelist()
 def get_farm_structure(farm: str, refresh: int = 0) -> dict:
+    frappe.has_permission("Warehouse", "read", throw=True)
     key = _cache_key(farm)
     if not int(refresh or 0):
         cached = frappe.cache.get_value(key)
@@ -122,11 +124,13 @@ def _build(farm):
         held = counts.get(row.name) or {}
         if held:
             kind = max(held, key=lambda k: held[k]["units"])
-            node["unit"] = {"kind": kind, **held[kind]}
+            node["unit"] = {"kind": kind or UNKNOWN, **held[kind]}
             if len(held) > 1:
                 node["flags"].append("mixed kinds")
+            if any(k not in PAIR for k in held):
+                node["flags"].append("unknown kind")
             for k, v in held.items():
-                p = paths.setdefault(tuple(chain + [k, PAIR[k]]), set())
+                p = paths.setdefault(tuple(chain + [k or UNKNOWN, PAIR.get(k, "?")]), set())
                 p.add(row.name)
         elif type_ in STATION_TYPES:
             node["flags"].append("no layout")

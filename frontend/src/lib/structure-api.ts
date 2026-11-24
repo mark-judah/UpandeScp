@@ -4,7 +4,7 @@
  */
 import { call } from "./frappe";
 
-export type UnitInfo = { kind: "Bed" | "Row" | "Hexa"; units: number; children: number; edge: number };
+export type UnitInfo = { kind: "Bed" | "Row" | "Hexa" | (string & {}); units: number; children: number; edge: number };
 
 export type StructureNode = {
   name: string;

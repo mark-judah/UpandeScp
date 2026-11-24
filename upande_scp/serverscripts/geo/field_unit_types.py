@@ -42,7 +42,13 @@ def ensure_unit_types():
 	# carries it in a Property Setter keeps it forever unless it is stripped here.
 	stale = [o for o in current if o in _RETIRED_UNIT_TYPES]
 	current = [o for o in current if o not in _RETIRED_UNIT_TYPES]
-	missing = [u for u in UNIT_TYPES if u not in current]
+	try:
+		from upande_core.upande_core.doctype.bed.bed import UNIT_LEVELS  # noqa: F401
+		wanted = UNIT_TYPES
+	except ImportError:
+		# Old core would reject Hexa saves; only offer what it understands.
+		wanted = tuple(u for u in UNIT_TYPES if u != "Hexa")
+	missing = [u for u in wanted if u not in current]
 	if not missing and not stale:
 		return
 

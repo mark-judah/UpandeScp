@@ -79,7 +79,21 @@ import re
 import frappe
 from frappe.model.document import Document
 
-from upande_core.upande_core.doctype.bed.bed import UNIT_LEVELS
+try:
+	from upande_core.upande_core.doctype.bed.bed import UNIT_LEVELS
+	CORE_HAS_HEXA = True
+except ImportError:
+	# An older upande_core (no Hexa units, no UNIT_LEVELS). Beds and Rows still
+	# work with the levels core has always required for them.
+	UNIT_LEVELS = {
+		"Bed": ("Has Greenhouses", "Has Beds", "Has Zones"),
+		"Row": ("Has Blocks", "Has Rows", "Has Orchard Trees"),
+	}
+	CORE_HAS_HEXA = False
+
+HEXA_NEEDS_NEWER_CORE = (
+	"Hexa layouts need a newer upande_core (with Hexa units); update upande_core first."
+)
 
 
 # Trailing "_ROW<n>_T<n>" in a feature's `properties.name`, e.g.
@@ -189,6 +203,8 @@ class FieldUnitAutomation(Document):
 			frappe.throw("Please select a Greenhouse / Block.")
 		if unit_type not in _UNIT_SPEC:
 			frappe.throw(f"Unknown Unit Type '{unit_type}'.")
+		if unit_type == "Hexa" and not CORE_HAS_HEXA:
+			frappe.throw(HEXA_NEEDS_NEWER_CORE)
 
 		features = _parse_features(self.units_geojson)
 		if not features:

@@ -155,3 +155,28 @@ class FarmStructureCase(unittest.TestCase):
         self.assertEqual(get_farm_structure(FARM)["built_at"], first["built_at"])
         time.sleep(1.1)
         self.assertNotEqual(get_farm_structure(FARM, refresh=1)["built_at"], first["built_at"])
+
+
+class TestFarmStructureEdges(FarmStructureCase):
+    def test_guest_is_refused(self):
+        frappe.set_user("Guest")
+        try:
+            with self.assertRaises(frappe.PermissionError):
+                get_farm_structure(FARM, refresh=1)
+        finally:
+            frappe.set_user("Administrator")
+
+    def test_unknown_unit_kind_does_not_crash(self):
+        station = _wh(f"{PFX} Odd Block", "Block", frappe.db.get_value("Warehouse", self.hexa_block, "parent_warehouse"))
+        bed = frappe.get_doc(
+            {"doctype": "Bed", "greenhouse": station, "unit_type": "Band", "bed": 1, "farm": FARM}
+        )
+        bed.db_insert()
+        try:
+            res = self.get()
+            node = self.find(res["root"], station)
+            self.assertEqual(node["unit"]["kind"], "Band")
+            self.assertIn("unknown kind", node["flags"])
+            self.assertTrue(any(p["types"][-2:] == ["Band", "?"] for p in res["paths"]))
+        finally:
+            frappe.db.delete("Bed", {"name": bed.name})

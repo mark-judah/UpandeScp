@@ -322,9 +322,17 @@ class TestStaleBandOption(unittest.TestCase):
     def test_a_stale_band_option_is_stripped_from_the_property_setter(self):
         from upande_scp.serverscripts.geo.field_unit_types import ensure_unit_types
 
+        had = frappe.db.get_value("Property Setter", self.SETTER, "value") if frappe.db.exists("Property Setter", self.SETTER) else None
+
         def restore():
             if frappe.db.exists("Property Setter", self.SETTER):
                 frappe.delete_doc("Property Setter", self.SETTER, force=True, ignore_permissions=True)
+            if had is not None:
+                frappe.make_property_setter(
+                    {"doctype": "Bed", "fieldname": "unit_type", "property": "options",
+                     "value": had, "property_type": "Text"},
+                    is_system_generated=False,
+                )
             frappe.clear_cache(doctype="Bed")
 
         self.addCleanup(restore)
@@ -727,3 +735,18 @@ class TestTheMobileBundleCarriesTheUnitKind(unittest.TestCase):
 
         bundle = self._bundle("Lokitela")
         self.assertTrue(bundle["version"].startswith(_BUNDLE_SCHEMA))
+
+
+class TestOlderCore(FieldUnitCase):
+    def test_hexa_run_is_refused_on_old_core_but_bed_still_works(self):
+        from unittest import mock
+
+        with mock.patch.object(FUA, "CORE_HAS_HEXA", False):
+            doc = self.build("Hexa", _collection(_feature(unit_id=1, child_id=1)))
+            with self.assertRaises(frappe.ValidationError) as cm:
+                doc.run_automation()
+            self.assertIn("newer upande_core", str(cm.exception))
+            self.assertEqual(self.units("Hexa"), [])
+            bed = self.build("Bed", _collection(_feature(unit_id=1, child_id=1)))
+            bed.run_automation()
+            self.assertEqual(len(self.units("Bed")), 1)

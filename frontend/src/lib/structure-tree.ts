@@ -70,7 +70,7 @@ export function defaultExpanded(root: Node): Set<string> {
   return out;
 }
 
-const PAIR: Record<UnitInfo["kind"], [string, string]> = {
+const PAIR: Record<string, [string, string]> = {
   Bed: ["Bed", "Zone"],
   Row: ["Row", "Tree"],
   Hexa: ["Hexa", "Triad"],
@@ -80,7 +80,7 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /** "12 Hexas · 64 Triads (3 edge)" */
 export function unitText(u: UnitInfo): string {
-  const [a, b] = PAIR[u.kind];
+  const [a, b] = PAIR[u.kind] ?? [String(u.kind || "Unit"), "Child"];
   const base = `${plural(u.units, a)} · ${plural(u.children, b)}`;
   return u.edge > 0 ? `${base} (${u.edge} edge)` : base;
 }

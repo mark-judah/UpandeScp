@@ -314,7 +314,7 @@ const ROSE_NAV: NavSection[] = [
         icon: Settings,
         requireRoles: ["SCP General Manager", "System Manager", "Administrator"],
       },
-      STRUCTURE_ITEM,
+      { ...STRUCTURE_ITEM, requireRoles: ["SCP General Manager", "System Manager", "Administrator"] },
       {
         kind: "view",
         view: "historical",

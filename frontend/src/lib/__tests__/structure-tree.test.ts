@@ -60,6 +60,10 @@ describe("defaultExpanded", () => {
 });
 
 describe("unitText", () => {
+  it("does not crash on an unknown kind", () => {
+    expect(unitText({ kind: "Band", units: 2, children: 0, edge: 0 })).toBe("2 Bands · 0 Childs");
+  });
+
   it("names Hexa pairs and the edge count", () => {
     expect(unitText({ kind: "Hexa", units: 12, children: 64, edge: 3 })).toBe("12 Hexas · 64 Triads (3 edge)");
     expect(unitText({ kind: "Row", units: 1, children: 5, edge: 0 })).toBe("1 Row · 5 Trees");

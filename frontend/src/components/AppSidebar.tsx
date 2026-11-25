@@ -488,6 +488,10 @@ const DEFAULT_CROP_NAV: NavSection[] = [
     ],
   },
   PERSONNEL_SECTION,
+  {
+    label: "Settings",
+    items: [STRUCTURE_ITEM],
+  },
 ];
 
 function navForCrop(crop: string): NavSection[] {

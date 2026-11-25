@@ -79,6 +79,8 @@ import re
 import frappe
 from frappe.model.document import Document
 
+from upande_scp.serverscripts.geo import triad_size
+
 try:
 	from upande_core.upande_core.doctype.bed.bed import UNIT_LEVELS
 	CORE_HAS_HEXA = True
@@ -213,6 +215,16 @@ class FieldUnitAutomation(Document):
 		spec = _UNIT_SPEC[unit_type]
 		child_doctype = spec["child"]
 		self._refusals: list[str] = []
+
+		# A block laid out at the wrong triangle size is refused whole: half a
+		# block at the wrong size is worse than none.
+		if unit_type == "Hexa":
+			reason = _off_standard_reason(features)
+			if reason:
+				return (
+					f"0 hexas created, 0 existed. 0 triads created, 0 existed. "
+					f"Block refused: {reason}"
+				)
 
 		switched_on = ensure_farm_levels(warehouse, unit_type)
 
@@ -441,6 +453,25 @@ def _parse_features(raw):
 			"or one FeatureCollection per line."
 		)
 	return features
+
+
+def _feature_ring(feature):
+	"""A polygon feature's outer ring as [[lng, lat], …], or None."""
+	geometry = (feature or {}).get("geometry") or {}
+	if geometry.get("type") != "Polygon":
+		return None
+	rings = geometry.get("coordinates") or []
+	return rings[0] if rings else None
+
+
+def _off_standard_reason(features):
+	"""The refusal for the first full triangle off the site's standard side."""
+	standard = triad_size.standard_side_m()
+	for feature in features:
+		reason = triad_size.check_side(_feature_ring(feature), standard)
+		if reason:
+			return reason
+	return None
 
 
 def _valid_triad(child_number):

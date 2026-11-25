@@ -108,6 +108,7 @@
   "scout_greetings_enabled",
   "save_without_gps_fix",
   "scouts_pick_unit",
+  "triad_side_m",
   "trap_photos_section",
   "trap_photo_rules",
   "asset_checks_section",
@@ -779,6 +780,13 @@
    "fieldname": "scouts_pick_unit",
    "fieldtype": "Check",
    "label": "Scouts pick the row / bed"
+  },
+  {
+   "default": "5",
+   "description": "Standard triad (triangle) side for Hexa layouts. Imports must match within 2 %.",
+   "fieldname": "triad_side_m",
+   "fieldtype": "Float",
+   "label": "Triangle side (m)"
   },
   {
    "description": "Per trap pest: must a scout photograph a catch of it? Separate from the general photo switch above. The scout app reads this with its observations.",

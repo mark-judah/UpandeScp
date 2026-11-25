@@ -87,7 +87,10 @@ def _unit_counts(stations):
 
 def _build(farm):
     built_at = str(now_datetime())
-    empty = {"farm": farm, "root": None, "paths": [], "built_at": built_at}
+    from upande_scp.serverscripts.geo.triad_size import standard_side_m
+
+    side = standard_side_m()
+    empty = {"farm": farm, "root": None, "paths": [], "built_at": built_at, "triad_side_m": side}
 
     rows = frappe.get_all(
         "Warehouse",
@@ -148,4 +151,5 @@ def _build(farm):
             for t, s in sorted(paths.items(), key=lambda kv: kv[0])
         ],
         "built_at": built_at,
+        "triad_side_m": side,
     }

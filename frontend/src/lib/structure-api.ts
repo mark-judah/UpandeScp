@@ -23,6 +23,8 @@ export type FarmStructure = {
   root: StructureNode | null;
   paths: StructurePath[];
   built_at: string;
+  /** Standard triangle side for Hexa layouts, in metres (absent on an older server). */
+  triad_side_m?: number;
 };
 
 export function fetchFarmStructure(farm: string, refresh = false): Promise<FarmStructure> {

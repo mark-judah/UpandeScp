@@ -135,6 +135,9 @@ class FarmStructureCase(unittest.TestCase):
         node = self.find(self.get()["root"], self.hexa_block)
         self.assertEqual(node["unit"], {"kind": "Hexa", "units": 1, "children": 4, "edge": 1})
 
+    def test_payload_carries_the_standard_triangle_side(self):
+        self.assertGreater(self.get()["triad_side_m"], 0)
+
     def test_blank_type_is_flagged(self):
         node = self.find(self.get()["root"], self.blank)
         self.assertEqual(node["type"], "(no type)")

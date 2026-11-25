@@ -750,3 +750,34 @@ class TestOlderCore(FieldUnitCase):
             bed = self.build("Bed", _collection(_feature(unit_id=1, child_id=1)))
             bed.run_automation()
             self.assertEqual(len(self.units("Bed")), 1)
+
+
+def _triangle_feature(side, unit_id, child_id):
+    """A full triangle feature (4-point ring) of the given side, near Mutara."""
+    from upande_scp.serverscripts.tests.test_triad_size import triangle_ring
+
+    return {
+        "type": "Feature",
+        "properties": {"unit_id": unit_id, "child_id": child_id},
+        "geometry": {"type": "Polygon", "coordinates": [triangle_ring(side)]},
+    }
+
+
+class TestHexaSideCheck(FieldUnitCase):
+    def test_hexa_import_refuses_off_standard_block(self):
+        frappe.db.set_single_value("Scouting and Crop Protection Settings", "triad_side_m", 5)
+        feats = [_triangle_feature(3, 1, t) for t in (1, 2, 3)]
+        doc = self.build("Hexa", _collection(*feats))
+        summary = doc.run_automation()
+        self.assertEqual(self.triads("Hexa"), [])
+        self.assertEqual(self.units("Hexa"), [])
+        self.assertIn("3.00 m", summary)
+        self.assertIn("5 m", summary)
+        self.assertIn("refused", summary.lower())
+
+    def test_hexa_import_accepts_standard_block(self):
+        frappe.db.set_single_value("Scouting and Crop Protection Settings", "triad_side_m", 5)
+        feats = [_triangle_feature(5, 1, t) for t in (1, 2)]
+        doc = self.build("Hexa", _collection(*feats))
+        doc.run_automation()
+        self.assertEqual(len(self.triads("Hexa")), 2)

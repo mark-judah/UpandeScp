@@ -256,6 +256,16 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
                 disabled={farmsLoading && farmNames.length === 0} />
             ),
           },
+          ...(data?.triad_side_m
+            ? [{
+                key: "triad-side",
+                node: (
+                  <span className="rounded-full border px-3 py-1 text-xs text-muted-foreground tabular-nums">
+                    Triangle side {data.triad_side_m} m
+                  </span>
+                ),
+              }]
+            : []),
           {
             key: "search", tabs: ["tree"],
             node: <SearchInput size="md" className="w-56" value={search} onChange={setSearch} placeholder="Find a node" />,

@@ -6,6 +6,8 @@ from .geo_utils import (
     get_zone_from_coordinates,
     get_tree_from_coordinates,
     nearest_unit_in_block,
+    triad_in_block,
+    block_has_triads,
     nearest_zone_in_greenhouse,
 )
 
@@ -311,12 +313,17 @@ def createScoutingEntry():
 
                 # No row/bed sent: map the point to the nearest unit of the station
                 # (block -> tree/row, greenhouse -> zone/bed), within the GPS buffer.
-                mapped_tree = mapped_row = mapped_zone = mapped_bed = None
+                mapped_tree = mapped_row = mapped_zone = mapped_bed = mapped_triad = None
                 if latitude and longitude and accuracy:
                     if is_block_flow and block and not row and not tree:
-                        mapped_tree, mapped_row = nearest_unit_in_block(
-                            latitude, longitude, accuracy, block
-                        )
+                        if block_has_triads(block):
+                            mapped_triad, mapped_row = triad_in_block(
+                                latitude, longitude, accuracy, block
+                            )
+                        else:
+                            mapped_tree, mapped_row = nearest_unit_in_block(
+                                latitude, longitude, accuracy, block
+                            )
                     elif not is_block_flow and greenhouse and not bed:
                         mapped_zone = nearest_zone_in_greenhouse(
                             latitude, longitude, accuracy, greenhouse
@@ -394,13 +401,14 @@ def createScoutingEntry():
                     scout_doc.block = block
                     scout_doc.row   = row or mapped_row
                     scout_doc.tree  = determined_tree or tree or mapped_tree
+                    scout_doc.triad = mapped_triad
                 else:
                     scout_doc.greenhouse = greenhouse
                     scout_doc.bed        = bed or mapped_bed
                     scout_doc.zone       = determined_zone or mapped_zone
                 scout_doc.mapping_status = (
                     "Mapped"
-                    if (scout_doc.tree or scout_doc.row or scout_doc.zone or scout_doc.bed)
+                    if (scout_doc.tree or scout_doc.row or scout_doc.zone or scout_doc.bed or scout_doc.triad)
                     else "To be mapped"
                 )
                 scout_doc.time_of_capture = entry_data.get('time_of_capture')
@@ -484,6 +492,7 @@ def createScoutingEntry():
                     # an entry it sent without a row/bed.
                     "mapping_status": scout_doc.mapping_status,
                     "tree": scout_doc.tree if is_block_flow else None,
+                    "triad": scout_doc.triad if is_block_flow else None,
                     "row": scout_doc.row if is_block_flow else None,
                     "bed": None if is_block_flow else scout_doc.bed,
                     "zone": None if is_block_flow else scout_doc.zone,

@@ -10,7 +10,8 @@ or when explicitly cleared via clear_zone_cache().
 import json
 import time
 import frappe
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, shape
+from shapely.strtree import STRtree
 from shapely.ops import transform
 from pyproj import Transformer
 
@@ -37,6 +38,10 @@ _block_tree_cache: dict = {}
 BLOCK_TREE_TTL_SECONDS = 300
 BLOCK_TREE_MAX_AGE_SECONDS = 3600
 
+# Per-block Triad index (UTM polygons in an STRtree), same TTLs as the tree index:
+# { (utm_epsg, block): { "built_at", "used_at", "triads": [ {name,hexa,poly_utm,centroid} ], "tree" } }
+_block_triad_cache: dict = {}
+
 
 def clear_zone_cache():
     """Call this from a Zone doctype hook to invalidate immediately on save."""
@@ -47,6 +52,7 @@ def clear_tree_cache():
     """Call this from a Tree doctype hook to invalidate immediately on save."""
     _tree_cache.clear()
     _block_tree_cache.clear()
+    _block_triad_cache.clear()
 
 
 def get_dynamic_utm_epsg(latitude, longitude):
@@ -505,6 +511,93 @@ def _get_block_trees(utm_epsg, project_to_utm, block):
             frappe.log_error(f"geo_utils: skipping tree {tree.name} in block index", str(e))
     _block_tree_cache[key] = {"built_at": now, "used_at": now, "trees": built}
     return built
+
+
+def block_has_triads(block):
+    """True when the block holds at least one Triad (Triad doctype present on the site)."""
+    try:
+        if not block or not frappe.db.exists("DocType", "Triad"):
+            return False
+        return bool(frappe.db.exists("Triad", {"block": block}))
+    except Exception:
+        return False
+
+
+def _get_block_triads(utm_epsg, project_to_utm, block):
+    """Triads of one block as UTM polygons plus an STRtree; one query per (re)build."""
+    key = (utm_epsg, block)
+    now = time.monotonic()
+    entry = _block_triad_cache.get(key)
+    if (
+        entry
+        and now - entry["used_at"] < BLOCK_TREE_TTL_SECONDS
+        and now - entry["built_at"] < BLOCK_TREE_MAX_AGE_SECONDS
+    ):
+        entry["used_at"] = now
+        return entry
+
+    triads = []
+    for t in frappe.get_all(
+        "Triad",
+        filters={"block": block, "geojson": ["is", "set"]},
+        fields=["name", "row", "geojson as raw_geojson"],
+        order_by="name asc",
+    ):
+        try:
+            geometry, _props = feature_geometry(json.loads(t.raw_geojson))
+            if not geometry or geometry.get("type") != "Polygon":
+                continue
+            poly = transform(project_to_utm, shape(geometry))
+            if poly.is_empty:
+                continue
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            triads.append({
+                "name": t.name,
+                "hexa": t.row or "",
+                "poly_utm": poly,
+                "centroid": poly.centroid,
+            })
+        except Exception as e:
+            frappe.log_error(f"geo_utils: skipping triad {t.name} in block index", str(e))
+    tree = STRtree([t["poly_utm"] for t in triads]) if triads else None
+    entry = {"built_at": now, "used_at": now, "triads": triads, "tree": tree}
+    _block_triad_cache[key] = entry
+    return entry
+
+
+def triad_in_block(latitude, longitude, accuracy, block):
+    """Map a GPS point inside a block to ``(triad, hexa)``.
+
+    The containing Triad polygon wins (a point on a shared edge goes to the lowest
+    name); otherwise the nearest Triad centroid within max(3, min(accuracy, 50)) m;
+    otherwise ``(None, None)``. Never searches outside the block.
+    """
+    try:
+        if not block:
+            return None, None
+        utm_epsg, project_to_utm, point_utm, buffer_m = _project_point(latitude, longitude, accuracy)
+        entry = _get_block_triads(utm_epsg, project_to_utm, block)
+        triads = entry["triads"]
+        if not triads:
+            return None, None
+
+        hits = [triads[i] for i in entry["tree"].query(point_utm, predicate="intersects")]
+        if hits:
+            best = min(hits, key=lambda t: t["name"])
+            return best["name"], best["hexa"] or None
+
+        best, best_d = None, float("inf")
+        for t in triads:
+            d = point_utm.distance(t["centroid"])
+            if d < best_d or (d == best_d and best is not None and t["name"] < best["name"]):
+                best, best_d = t, d
+        if best is not None and best_d <= buffer_m:
+            return best["name"], best["hexa"] or None
+        return None, None
+    except Exception as e:
+        frappe.log_error("Error", f"Error in triad_in_block: {e}")
+        return None, None
 
 
 def _nearest_zone_among(zones, point_utm, buffer_m):

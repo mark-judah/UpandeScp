@@ -130,10 +130,11 @@
   },
   {
    "depends_on": "eval:doc.block",
-   "description": "The hexagon (Triad) scouted, where the block is surveyed into triads. Data, not a Link: the Triad doctype ships with upande_core, which not every site has.",
+   "description": "The triangle (Triad) scouted, where the block is surveyed into Hexa beds and triads; the row holds its Hexa.",
    "fieldname": "triad",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Triad",
+   "options": "Triad",
    "search_index": 1
   },
   {

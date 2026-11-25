@@ -31,6 +31,9 @@ class TestTriadUnitKey(unittest.TestCase):
 	def test_triad_entry_counts_as_unit(self):
 		self.assertEqual(T._unit_key(row(block="B1", triad="B1 - Hexa 1 - Triad 2")), "B1::triad::B1 - Hexa 1 - Triad 2")
 
+	def test_tree_wins_over_triad_when_both_set(self):
+		self.assertEqual(T._unit_key(row(block="B1", tree="T7", triad="B1 - Hexa 1 - Triad 2")), "B1::tree::T7")
+
 	def test_tree_and_zone_keys_unchanged(self):
 		self.assertEqual(T._unit_key(row(block="B1", tree="T7")), "B1::tree::T7")
 		self.assertEqual(T._unit_key(row(zone="Z1")), "zone::Z1")

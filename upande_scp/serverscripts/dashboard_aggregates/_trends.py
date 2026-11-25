@@ -103,7 +103,7 @@ def _build(from_date: str, to_date: str, crop: str, job_id: str = "") -> dict:
 
     publish_progress(job_id, 95, "loading unit counts")
     # Structural unit count per station, inferred from the warehouse type:
-    # Greenhouse → Zones, Block → Orchard Trees (and a future type → Triads
+    # Greenhouse → Zones, Block → Orchard Trees (and Hexa blocks → Triads
     # for coffee). This is the total scouting units that *exist*.
     #
     # It is the denominator of COVERAGE only. It used to be the denominator of
@@ -316,18 +316,17 @@ def _station_of(row) -> str:
 
 
 def _unit_key(row) -> str:
-    """Same logic as aggregate.ts/unitKey — block.triad path for Hexa → Triad
-    blocks, block.tree path for avocado, zone for greenhouse, bed as final fallback. Empty string drops the row
-    from the index (no usable unit identifier)."""
+    """Same precedence as frontend/src/lib/unit-key.ts (tree first, then triad) —
+    block.tree path for avocado, block.triad path for Hexa → Triad blocks, zone for
+    greenhouse, bed as final fallback. Empty string drops the row from the index
+    (no usable unit identifier)."""
     block = (row.block or "").strip()
     if block:
-        triad = (row.triad or "").strip()
-        if triad:
-            return f"{block}::triad::{triad}"
         tree = (row.tree or "").strip()
-        if not tree:
-            return ""
-        return f"{block}::tree::{tree}"
+        if tree:
+            return f"{block}::tree::{tree}"
+        triad = (row.triad or "").strip()
+        return f"{block}::triad::{triad}" if triad else ""
     zone = (row.zone or "").strip()
     if zone:
         return f"zone::{zone}"

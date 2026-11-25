@@ -281,6 +281,25 @@ class TestRegenerateHexaGrid(unittest.TestCase):
 		result = R.apply(farm=self.farm, blocks=[self.block], confirm=1)
 		self._assert_untouched(result, "Orchard Tree.row: 1")
 
+	def test_reference_added_after_planning_refuses_write(self):
+		summary, payload = R._plan(self.block)
+		self.assertIsNotNone(payload, summary)
+		frappe.get_doc(
+			{"doctype": "Orchard Tree", "name": TEST_TREE, "row": f"{self.block} - Row 2"}
+		).db_insert()
+		with self.assertRaises(frappe.ValidationError):
+			R._write_block(self.block, payload)
+		frappe.db.rollback()
+		beds, triads = self._counts()
+		self.assertEqual({b.unit_type for b in beds}, {"Row"})
+		self.assertEqual(sorted(triads), sorted(self.old))
+
+	def test_block_from_another_farm_is_refused(self):
+		result = R.apply(farm="_Test Some Other Farm", blocks=[self.block], confirm=1)
+		self._assert_untouched(result, "does not belong to farm")
+		dry = R.dry_run(farm="_Test Some Other Farm", blocks=[self.block])
+		self.assertEqual(dry["blocks"][0]["status"], "refused")
+
 	def test_apply_result_keeps_trap_moves(self):
 		old_name = sorted(self.old)[0]
 		frappe.get_doc(

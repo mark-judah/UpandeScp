@@ -26,7 +26,8 @@ from upande_scp.serverscripts.common.cache_utils import TTL_LONG
 
 Q = 10_000_000  # integer units per degree (1.1 cm)
 K_GEO_STAMP = "scp:field_geo_stamp_v1"
-K_PAYLOAD = "scp:field_geo_payload_v1"
+K_PAYLOAD = "scp:field_geo_payload_v2"
+FORMAT_TAG = "tri1"  # bump when the payload shape changes: it is part of the version hash
 _NAME = "{block} - Hexa {hexa} - Triad {t}"
 _TOL = 1  # template tolerance, in 1e-7 degree units (one quantum)
 
@@ -104,7 +105,7 @@ def encode_triads(rows):
 			continue
 		by_block.setdefault(r.block, []).append((r, _hexa_no(r), [(round(x * Q), round(y * Q)) for x, y in ring]))
 	blocks: dict = {}
-	for block in sorted(by_block):
+	for block in sorted(by_block, key=lambda b: b or ""):
 		items = by_block[block]
 		tpl = _template(items)
 		b = blocks[block] = {"tpl": tpl, "reg": [], "irr": []}
@@ -136,7 +137,7 @@ def _version(farm):
 		" and (%(f)s = '' or custom_farm = %(f)s)", {"f": farm or ""},
 	)[0]
 	stamp = frappe.cache().get_value(K_GEO_STAMP) or ""
-	return hashlib.sha1(f"{t}|{w}|{stamp}".encode()).hexdigest()[:16]
+	return hashlib.sha1(f"{FORMAT_TAG}|{t}|{w}|{stamp}".encode()).hexdigest()[:16]
 
 
 def _build(farm):

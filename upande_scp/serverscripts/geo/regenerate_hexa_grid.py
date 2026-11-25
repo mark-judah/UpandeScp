@@ -315,6 +315,7 @@ def _plan(block, side_m=None):
 	payload = {
 		"farm": farm,
 		"old_rows": old_rows,
+		"old_triads": old_triads,
 		"hexas": sorted(hexas.items()),
 		"triads": triad_rows,
 		"traps": trap_moves,
@@ -327,11 +328,26 @@ def plan_block(block: str, side_m: float | None = None) -> dict:
 	return _plan(block, side_m)[0]
 
 
+def _foreign(farm, names):
+	"""Of explicitly named blocks, those not belonging to `farm` (Warehouse.custom_farm)."""
+	return {b for b in names if frappe.db.get_value("Warehouse", b, "custom_farm") != farm}
+
+
+def _not_in_farm(block, farm):
+	return {
+		"block": block, "status": "refused", "area_ok": False, "hexas": 0, "triads": 0, "edge_hexas": 0,
+		"sample": [], "old_rows": 0, "old_triads": 0, "traps": [], "outline_m2": 0.0, "pieces_m2": 0.0,
+		"reason": f"Block {block} does not belong to farm {farm}.",
+	}
+
+
 def dry_run(farm="Mutara", blocks=None) -> dict:
 	frappe.only_for("System Manager")
 	side = standard_side_m()
-	names = _parse_blocks(blocks) or _farm_blocks(farm)
-	plans = [plan_block(b, side) for b in names]
+	explicit = _parse_blocks(blocks)
+	names = explicit or _farm_blocks(farm)
+	foreign = _foreign(farm, explicit) if explicit else set()
+	plans = [_not_in_farm(b, farm) if b in foreign else plan_block(b, side) for b in names]
 	result = {"side_m": side, "blocks": plans, "totals": _totals(plans)}
 	path = frappe.get_site_path("private", "files", DRY_RUN_FILE)
 	with open(path, "w") as fh:
@@ -367,9 +383,14 @@ def apply(farm="Mutara", blocks=None, confirm=0) -> dict:
 	if not int(confirm or 0):
 		frappe.throw("Regenerating replaces the block's units. Run dry_run first, then pass confirm=1.")
 	side = standard_side_m()
-	names = _parse_blocks(blocks) or _farm_blocks(farm)
+	explicit = _parse_blocks(blocks)
+	names = explicit or _farm_blocks(farm)
+	foreign = _foreign(farm, explicit) if explicit else set()
 	results = []
 	for block in names:
+		if block in foreign:
+			results.append(_not_in_farm(block, farm))
+			continue
 		summary, payload = _plan(block, side)
 		if payload is None:
 			results.append(summary)
@@ -388,6 +409,12 @@ def apply(farm="Mutara", blocks=None, confirm=0) -> dict:
 
 
 def _write_block(block, payload):
+	# Re-check inside the write transaction, right before deleting: something may have
+	# started pointing at the old units since the plan was made.
+	refs = _references(payload["old_rows"], payload.get("old_triads") or [])
+	if refs:
+		frappe.throw("Records now reference this block's old Rows/Triads: " + ", ".join(refs) + ".")
+
 	ensure_farm_levels(block, "Hexa")
 
 	old_rows = payload["old_rows"]

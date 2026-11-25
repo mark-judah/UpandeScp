@@ -290,6 +290,18 @@ class TestScoutingUnitMapping(IntegrationTestCase):
 		self.assertEqual(geo_utils.triad_in_block(lat, lng, 3, OTHER_BLOCK), (None, None))
 		self.assertEqual(geo_utils.triad_in_block(lat, lng, 3, None), (None, None))
 
+	def test_deleted_triad_not_served_after_stamp_bump(self):
+		from upande_scp.serverscripts.geo.field_geo import bump_geo_version
+
+		lat, lng = self._triad_point(3)
+		self.assertEqual(geo_utils.triad_in_block(lat, lng, 3, HEXA_BLOCK)[0], f"{HEXA} - Triad 3")
+		# A regenerate in another process deletes the Triad and bumps the shared stamp;
+		# this process's memory is not cleared.
+		frappe.db.delete("Triad", {"name": f"{HEXA} - Triad 3"})
+		bump_geo_version()
+		name, _hexa = geo_utils.triad_in_block(lat, lng, 3, HEXA_BLOCK)
+		self.assertNotEqual(name, f"{HEXA} - Triad 3")
+
 	def test_entry_stores_hexa_in_row_and_triad(self):
 		lat, lng = self._triad_point(5)
 		result = self._post(block=HEXA_BLOCK, latitude=lat, longitude=lng, accuracy=3)

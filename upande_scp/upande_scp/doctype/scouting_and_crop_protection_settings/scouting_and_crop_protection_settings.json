@@ -776,7 +776,7 @@
   },
   {
    "default": "1",
-   "description": "On: the scout picks the row (block) or bed (greenhouse) before scouting. Off: the scout picks only the block or greenhouse and the server maps each entry to the nearest tree, row or zone from its GPS point; entries it cannot map show To be mapped.",
+   "description": "On: the scout picks the row (block), bed (greenhouse) or Hexa (Hexa blocks) before scouting. Off: the scout picks only the block or greenhouse and the server maps each entry to the nearest tree, row, zone or triangle (Triad) from its GPS point; entries it cannot map show To be mapped.",
    "fieldname": "scouts_pick_unit",
    "fieldtype": "Check",
    "label": "Scouts pick the row / bed"

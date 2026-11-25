@@ -523,13 +523,31 @@ def block_has_triads(block):
         return False
 
 
+def _geo_stamp():
+    """The shared field-geometry stamp (bumped by a Hexa/Triad regenerate, which may run
+    in another process and so cannot clear this process's memory)."""
+    try:
+        from upande_scp.serverscripts.geo.field_geo import K_GEO_STAMP
+
+        return frappe.cache().get_value(K_GEO_STAMP) or ""
+    except Exception:
+        return ""
+
+
+def clear_triad_cache_on_event(doc=None, method=None):
+    """Triad doc_events hook: drop this process's per-block Triad index."""
+    _block_triad_cache.clear()
+
+
 def _get_block_triads(utm_epsg, project_to_utm, block):
     """Triads of one block as UTM polygons plus an STRtree; one query per (re)build."""
     key = (utm_epsg, block)
     now = time.monotonic()
+    stamp = _geo_stamp()
     entry = _block_triad_cache.get(key)
     if (
         entry
+        and entry.get("stamp") == stamp
         and now - entry["used_at"] < BLOCK_TREE_TTL_SECONDS
         and now - entry["built_at"] < BLOCK_TREE_MAX_AGE_SECONDS
     ):
@@ -561,7 +579,7 @@ def _get_block_triads(utm_epsg, project_to_utm, block):
         except Exception as e:
             frappe.log_error(f"geo_utils: skipping triad {t.name} in block index", str(e))
     tree = STRtree([t["poly_utm"] for t in triads]) if triads else None
-    entry = {"built_at": now, "used_at": now, "triads": triads, "tree": tree}
+    entry = {"built_at": now, "used_at": now, "triads": triads, "tree": tree, "stamp": stamp}
     _block_triad_cache[key] = entry
     return entry
 
@@ -596,7 +614,7 @@ def triad_in_block(latitude, longitude, accuracy, block):
             return best["name"], best["hexa"] or None
         return None, None
     except Exception as e:
-        frappe.log_error("Error", f"Error in triad_in_block: {e}")
+        frappe.log_error(f"Triad lookup failed in block {block}", f"Error in triad_in_block: {e}")
         return None, None
 
 

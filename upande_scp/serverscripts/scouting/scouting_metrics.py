@@ -220,7 +220,7 @@ def get_zone_counts_by_greenhouse():
 
 
 def get_units_by_warehouse():
-    """Return {warehouse_name: {"type": "greenhouse"|"block", "count": N, "farm": str, "area_ha": float}}.
+    """Return {warehouse_name: {"type": "greenhouse"|"block"|"triad", "count": N, "farm": str, "area_ha": float}}.
 
     Greenhouses → number of Zones; blocks → number of Orchard Trees, or of Triads when the
     block is laid out as Hexa → Triad. ``area_ha``

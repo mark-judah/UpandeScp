@@ -7,6 +7,7 @@ Run: bench --site mutara.local run-tests --app upande_scp \
 import json
 import math
 import unittest
+import unittest.mock
 
 import frappe
 
@@ -89,3 +90,9 @@ class TestVersion(unittest.TestCase):
 		r = G.get_field_layers(farm="Mutara")
 		again = G.get_field_layers(farm="Mutara", have=r["version"])
 		self.assertEqual(again, {"version": r["version"], "unchanged": True})
+
+	def test_version_depends_on_format_tag(self):
+		before = G._version("Mutara")
+		with unittest.mock.patch.object(G, "FORMAT_TAG", "tri-next"):
+			self.assertNotEqual(G._version("Mutara"), before)
+		self.assertTrue(G.K_PAYLOAD.endswith("_v2"))

@@ -120,7 +120,7 @@
    "options": "Orchard Tree"
   },
   {
-   "description": "Set by the server: Mapped when a tree, row, bed or zone was recorded (picked by the scout or found from the GPS point); To be mapped otherwise.",
+   "description": "Set by the server: Mapped when a tree, triangle (Triad), row, bed or zone was recorded (picked by the scout or found from the GPS point); To be mapped otherwise.",
    "fieldname": "mapping_status",
    "fieldtype": "Select",
    "in_list_view": 0,

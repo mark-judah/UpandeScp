@@ -121,7 +121,7 @@ export function hexaEdges(tri: TriPayload | null | undefined): GeoJsonFC {
 /* ---------- fetch with a versioned local copy ---------- */
 
 const METHOD = "upande_scp.serverscripts.geo.field_geo.get_field_layers";
-const IDB_VERSION = 2;
+const IDB_VERSION = 3;
 const IDB_MAX_AGE = 14 * 24 * 60 * 60 * 1000;
 const memory = new Map<string, Promise<FieldLayersPayload>>();
 
@@ -141,6 +141,7 @@ async function load(farm: string): Promise<FieldLayersPayload> {
   let held: FieldLayersPayload | null = null;
   try {
     held = await getPayload<FieldLayersPayload>(key, IDB_VERSION, IDB_MAX_AGE);
+    if (held && !held.tri) held = null; // an old-shape copy is not reusable
   } catch {
     held = null;
   }
@@ -154,7 +155,8 @@ async function load(farm: string): Promise<FieldLayersPayload> {
     blocks: r?.blocks ?? { type: "FeatureCollection", features: [] },
     tri: r?.tri ?? { q: 1e7, blocks: {} },
   };
-  setPayload(key, fresh, IDB_VERSION).catch(() => undefined);
+  // A response without `tri` (old server shape) is usable but never cached.
+  if (r?.tri) setPayload(key, fresh, IDB_VERSION).catch(() => undefined);
   return fresh;
 }
 

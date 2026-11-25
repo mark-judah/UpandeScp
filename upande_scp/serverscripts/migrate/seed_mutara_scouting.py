@@ -452,7 +452,7 @@ def _insert(plan: list) -> list:
 		"Scouting Entry",
 		["name", "creation", "modified", "modified_by", "owner", "docstatus", "idx", "naming_series", "scouts_name",
 		 "crop_scouted", "greenhouse", "bed", "zone", "block", "row", "tree", "time_of_capture", "date_of_capture",
-		 "latitude", "longitude", "triad", "_user_tags"],
+		 "latitude", "longitude", "triad", "row", "_user_tags"],
 		entries,
 	)
 	frappe.db.bulk_insert("Pests Scouting Entry", pe_fields + ["plant_section", "pest", "stage", "count"], pests)
@@ -760,10 +760,13 @@ def _insert_trap_readings(sites: list, rng) -> int:
 	scouts = _scouts()
 	end = datetime.date.today()
 	rows = []
+	triad_names = [s["unit"] for s in sites if s["unit_type"] == "Triad"]
+	hexa_of = dict(frappe.get_all("Triad", filters={"name": ("in", triad_names)}, fields=["name", "row"], as_list=True)) if triad_names else {}
 	for s in sites:
 		for r in trap_readings(s["trap"], s["pest"], end, WINDOW_DAYS, rng, scouts):
 			rows.append({**r, **{k: s[k] for k in ("block", "crop", "lng", "lat")},
 			             "triad": s["unit"] if s["unit_type"] == "Triad" else None,
+			             "row": hexa_of.get(s["unit"]) if s["unit_type"] == "Triad" else None,
 			             "tree": s["unit"] if s["unit_type"] == "Orchard Tree" else None})
 	rows.sort(key=lambda r: (r["date"], r["time"], r["trap"]))
 	year = end.year
@@ -780,14 +783,14 @@ def _insert_trap_readings(sites: list, rng) -> int:
 		entries.append((
 			name, ts, ts, "Administrator", "Administrator", 0, 0, "SCE-.YYYY.-", r["scout"], r["crop"],
 			r["block"], r["tree"], r["time"].strftime("%H:%M:%S"), r["date"],
-			f"{r['lat']:.6f}", f"{r['lng']:.6f}", r["triad"], f",{TRAP_TAG}",
+			f"{r['lat']:.6f}", f"{r['lng']:.6f}", r["triad"], r["row"], f",{TRAP_TAG}",
 		))
 		children.append((_hash(used), ts, ts, "Administrator", "Administrator", 0, 1, name, "trap_scouting_entry",
 		                 "Scouting Entry", r["trap"], r["pest"], "Outdoor", r["count"]))
 	frappe.db.bulk_insert(
 		"Scouting Entry",
 		["name", "creation", "modified", "modified_by", "owner", "docstatus", "idx", "naming_series", "scouts_name",
-		 "crop_scouted", "block", "tree", "time_of_capture", "date_of_capture", "latitude", "longitude", "triad", "_user_tags"],
+		 "crop_scouted", "block", "tree", "time_of_capture", "date_of_capture", "latitude", "longitude", "triad", "row", "_user_tags"],
 		entries,
 	)
 	frappe.db.bulk_insert(

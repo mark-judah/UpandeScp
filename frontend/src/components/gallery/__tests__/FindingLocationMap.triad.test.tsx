@@ -11,15 +11,19 @@ vi.mock("@/lib/scouting-api", () => ({
     features: [{ type: "Feature", properties: { block: "P1-B1 - MUT" }, geometry: { type: "Polygon", coordinates: sq(36.67, 0.04, 0.002) } }],
   }),
 }));
-// Two hexagons in the block; the second is the finding's.
+// Two triangles in the block; the second is the finding's.
 vi.mock("@/lib/field-geo", async (orig) => ({
   ...(await orig<typeof import("@/lib/field-geo")>()),
   fetchFieldLayers: vi.fn().mockResolvedValue({
-    version: "v", blocks: { type: "FeatureCollection", features: [] }, rows: [],
-    hex: {
+    version: "v", blocks: { type: "FeatureCollection", features: [] }, tri: {
       q: 1e7,
-      tpl: [[-100, -50], [0, -100], [100, -50], [100, 50], [0, 100], [-100, 50]],
-      blocks: [{ b: "P1-B1 - MUT", reg: [1, 1, 366705000, 400100, 1, 2, 366715000, 400100], irr: [] }],
+      blocks: {
+        "P1-B1 - MUT": {
+          tpl: { "1": [[0, 0], [100, 50], [0, 100]], "2": [[0, 0], [0, 100], [-100, 50]] },
+          reg: [1, 1, 366705000, 400100, 1, 2, 366705000, 400100],
+          irr: [],
+        },
+      },
     },
   }),
 }));
@@ -30,7 +34,7 @@ const base = { zone: "", bed: "", greenhouse: "", house: "", block: "P1-B1 - MUT
 
 describe("FindingLocationMap · pivot block with hexagons", () => {
   it("draws the block's hexagons and pulses the finding's hexagon", async () => {
-    render(<FindingLocationMap size="large" crop="Potato" photo={{ ...base, triad: "P1-B1 - MUT - Row 1 - Triad 2" } as never} />);
+    render(<FindingLocationMap size="large" crop="Potato" photo={{ ...base, triad: "P1-B1 - MUT - Hexa 1 - Triad 2" } as never} />);
     expect(await screen.findByTestId("block-hexes")).toBeInTheDocument();
     const pulse = screen.getByTestId("finding-map-pulse");
     expect(pulse.style.left).not.toBe("");

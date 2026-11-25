@@ -23,7 +23,7 @@ import { observationColor } from "@/lib/observation-colors";
 import { cropSlug } from "@/lib/router";
 import { isBlockGrown } from "@/lib/crop-profile";
 import type { FeedPhoto } from "@/lib/gallery-api";
-import { decodeHexes, fetchFieldLayers, type HexSet } from "@/lib/field-geo";
+import { decodeTriads, fetchFieldLayers, type TriadSet } from "@/lib/field-geo";
 import { entryPoint } from "@/lib/unit-key";
 
 const cache = new Map<string, Promise<ProjectedGeometry | null>>();
@@ -171,10 +171,10 @@ const ringsOf = (g: { type?: string; coordinates?: unknown } | null | undefined)
 };
 
 const blockCache = new Map<string, Promise<ProjectedBlock | null>>();
-let hexCache: Promise<HexSet> | null = null;
+let hexCache: Promise<TriadSet> | null = null;
 /** Every hexagon on the farms, decoded once (the payload is the compact, versioned one). */
-function fieldHexes(): Promise<HexSet> {
-  return (hexCache ??= fetchFieldLayers("").then((r) => decodeHexes(r.hex)));
+function fieldHexes(): Promise<TriadSet> {
+  return (hexCache ??= fetchFieldLayers("").then((r) => decodeTriads(r.tri)));
 }
 /** Projected outline + trees of one block (equirectangular, fitted to the outline), cached. */
 export function loadBlockGeometry(block: string): Promise<ProjectedBlock | null> {
@@ -210,14 +210,14 @@ export function loadBlockGeometry(block: string): Promise<ProjectedBlock | null>
         const triads = new Map<string, { x: number; y: number }>();
         const hexPath: string[] = [];
         for (const f of hexes?.fc.features ?? []) {
-          if (f.properties.b !== block) continue;
+          if (f.properties.block !== block) continue;
           const ring = f.geometry.coordinates[0];
           hexPath.push(`M${ring.map(px).join("L")}Z`);
           const mid = proj(
             (Math.min(...ring.map((c) => c[0])) + Math.max(...ring.map((c) => c[0]))) / 2,
             (Math.min(...ring.map((c) => c[1])) + Math.max(...ring.map((c) => c[1]))) / 2,
           );
-          triads.set(f.properties.n, mid);
+          triads.set(f.properties.name, mid);
         }
         const trees = pts.names.map((n, i) => ({ key: treeKey(n), ...proj(pts.coords[i * 2], pts.coords[i * 2 + 1]) }));
         const cx = all.reduce((s, c) => s + c[0], 0) / all.length;

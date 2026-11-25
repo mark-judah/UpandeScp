@@ -59,7 +59,7 @@ import { addFieldLayers, blockColors, paintFieldColors, pointFeatures, setFieldV
 import { addTrapMarkers, drawTrapUnits, flyToTrap } from "../maps/trap-layers";
 import { SpheresLayer } from "../maps/SpheresLayer";
 import { spherePoints } from "../maps/sphere-data";
-import { decodeHexes, fetchFieldLayers, rowLines, type FieldLayersPayload } from "@/lib/field-geo";
+import { decodeTriads, fetchFieldLayers, hexaEdges, type FieldLayersPayload } from "@/lib/field-geo";
 import { deriveTrapMarkers } from "./derive-traps";
 import type { MarkerPoint } from "./tree-map-types";
 import type { OpenFieldGroup } from "@/lib/open-field";
@@ -186,8 +186,8 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       alive = false;
     };
   }, [filters.farm]);
-  const hexSet = useMemo(() => decodeHexes(field?.hex), [field]);
-  const hexBlocks = useMemo(() => new Set(hexSet.fc.features.map((f) => f.properties.b)), [hexSet]);
+  const hexSet = useMemo(() => decodeTriads(field?.tri), [field]);
+  const hexBlocks = useMemo(() => new Set(hexSet.fc.features.map((f) => f.properties.block)), [hexSet]);
 
   useEffect(() => {
     let cancelled = false;
@@ -351,13 +351,13 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   clickRef.current = (e) => {
     const map = mapRef.current;
     if (!map) return;
-    const layers = ["fg-hex-fill", "blocks-fill"].filter((id) => map.getLayer(id));
+    const layers = ["fg-tri-fill", "blocks-fill"].filter((id) => map.getLayer(id));
     const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : [];
-    const hex = hits.find((f) => f.layer?.id === "fg-hex-fill");
+    const hex = hits.find((f) => f.layer?.id === "fg-tri-fill");
     if (hex) {
-      const p = hex.properties as { n?: string; b?: string };
-      if (p.n) {
-        setDetail({ kind: "hex", unit: p.n, block: p.b || "" });
+      const p = hex.properties as { name?: string; block?: string };
+      if (p.name) {
+        setDetail({ kind: "hex", unit: p.name, block: p.block || "" });
         return;
       }
     }
@@ -463,25 +463,25 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     } as never);
   }, [picked, blocks, mapReady]);
 
-  // Hexagons, rows and visit points under the outlines; Solid blocks painted per unit.
+  // Triangles, Hexa outlines and visit points under the outlines; Solid blocks painted per unit.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !blocks || !field) return;
-    addFieldLayers(map, hexSet, rowLines(field.rows, field.hex.q), [...hexBlocks]);
+    addFieldLayers(map, hexSet, hexaEdges(field.tri), [...hexBlocks]);
     paintedRef.current = { units: null, blocks: null };
-    setFieldVisibility(map, { hex: showHex, rows: showHex });
+    setFieldVisibility(map, { tri: showHex, hexa: showHex });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field, hexSet, blocks, mapReady]);
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !map.getSource("fg-hex")) return;
+    if (!map || !mapReady || !map.getSource("fg-tri")) return;
     paintFieldColors(map, hexSet, paintedRef.current.units, unitTones, { prev: paintedRef.current.blocks, next: solidBlockTones });
     paintedRef.current = { units: unitTones, blocks: solidBlockTones };
     (map.getSource("fg-pts") as maplibregl.GeoJSONSource | undefined)?.setData(pointFeatures(solidEntries, unitTones) as never);
   }, [unitTones, solidBlockTones, solidEntries, hexSet, field, mapReady]);
   useEffect(() => {
     const map = mapRef.current;
-    if (map && mapReady) setFieldVisibility(map, { hex: showHex, rows: showHex });
+    if (map && mapReady) setFieldVisibility(map, { tri: showHex, hexa: showHex });
   }, [showHex, mapReady, field]);
 
   useEffect(() => {
@@ -633,7 +633,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
                   [
                     ["Trees", showTrees, setShowTrees],
                     ["Boundary", showBoundary, setShowBoundary],
-                    ["Hexagons & rows", showHex, setShowHex],
+                    ["Triangles & Hexas", showHex, setShowHex],
                     ["Traps", showTraps, setShowTraps],
                   ] as const
                 ).map(([label, on, set]) => (
@@ -721,7 +721,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
             />
           ) : detail ? (
             <MapFloatingCard
-              eyebrow={detail.kind === "hex" ? `Hexagon · ${detail.block}` : "Block"}
+              eyebrow={detail.kind === "hex" ? `Triangle · ${detail.block}` : "Block"}
               title={detailTitle}
               onClose={() => setDetail(null)}
               testId="map-detail-card"

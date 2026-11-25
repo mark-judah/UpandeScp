@@ -452,7 +452,7 @@ def _insert(plan: list) -> list:
 		"Scouting Entry",
 		["name", "creation", "modified", "modified_by", "owner", "docstatus", "idx", "naming_series", "scouts_name",
 		 "crop_scouted", "greenhouse", "bed", "zone", "block", "row", "tree", "time_of_capture", "date_of_capture",
-		 "latitude", "longitude", "triad", "row", "_user_tags"],
+		 "latitude", "longitude", "triad", "_user_tags"],
 		entries,
 	)
 	frappe.db.bulk_insert("Pests Scouting Entry", pe_fields + ["plant_section", "pest", "stage", "count"], pests)

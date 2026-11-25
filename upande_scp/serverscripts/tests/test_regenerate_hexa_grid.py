@@ -20,6 +20,7 @@ from upande_scp.serverscripts.geo import regenerate_hexa_grid as R
 TEST_FARM = "_Test Hexa Regen Farm"
 TEST_BLOCK_LABEL = "_Test Hexa Regen BLK"
 TEST_TRAP = "_Test Hexa Regen Trap"
+TEST_TREE = "_Test Hexa Regen Tree"
 OLD_LEVELS = ("Has Blocks", "Has Rows")
 EPSG = "EPSG:32637"
 ORIGIN = (36.70, 0.10)  # lng, lat — away from any real block
@@ -47,9 +48,10 @@ def _hexagons(width=30.0, height=20.0, r=1.5):
 
 class TestRegenerateHexaGrid(unittest.TestCase):
 	def setUp(self):
+		self.created_levels = []
 		self.farm = self._ensure_farm()
 		self.block = self._ensure_block()
-		self.addCleanup(self._cleanup)
+		self.addCleanup(self._teardown)
 		self._cleanup()
 		self._seed()
 
@@ -59,6 +61,7 @@ class TestRegenerateHexaGrid(unittest.TestCase):
 		for level in OLD_LEVELS + ("Has Triads",):
 			if not frappe.db.exists("Farm Type", level):
 				frappe.get_doc({"doctype": "Farm Type", "farm_type": level}).insert(ignore_permissions=True)
+				self.created_levels.append(level)
 		if frappe.db.exists("Farm", TEST_FARM):
 			farm = frappe.get_doc("Farm", TEST_FARM)
 			farm.set("farm_type", [{"farm_type": lv} for lv in OLD_LEVELS])
@@ -141,7 +144,25 @@ class TestRegenerateHexaGrid(unittest.TestCase):
 			frappe.db.delete("Bed", {"name": ("in", beds)})
 		frappe.db.delete("Triad", {"block": self.block})
 		frappe.db.delete("Trap", {"name": TEST_TRAP})
+		frappe.db.delete("Orchard Tree", {"name": TEST_TREE})
 		frappe.db.commit()
+
+	def _teardown(self):
+		"""Units first, then the block, the farm and any Farm Type this test made."""
+		self._cleanup()
+		frappe.delete_doc("Warehouse", self.block, force=True, ignore_permissions=True)
+		frappe.delete_doc("Farm", self.farm, force=True, ignore_permissions=True)
+		for level in self.created_levels:
+			frappe.delete_doc("Farm Type", level, force=True, ignore_permissions=True)
+		frappe.db.commit()
+
+	def _assert_untouched(self, result, reason_part):
+		row = result["blocks"][0]
+		self.assertEqual(row["status"], "refused", result)
+		self.assertIn(reason_part, row["reason"])
+		beds, triads = self._counts()
+		self.assertEqual(sorted(b.name for b in beds), [f"{self.block} - Row 1", f"{self.block} - Row 2"])
+		self.assertEqual(sorted(triads), sorted(self.old))
 
 	def _counts(self):
 		beds = frappe.get_all("Bed", filters={"greenhouse": self.block}, fields=["name", "unit_type"])
@@ -220,3 +241,53 @@ class TestRegenerateHexaGrid(unittest.TestCase):
 		hexa = frappe.get_doc("Bed", names[0].rsplit(" - Triad ", 1)[0])
 		self.assertEqual(hexa.name, f"{hexa.greenhouse} - {hexa.unit_type} {hexa.bed}")
 		hexa.validate()
+
+	def test_area_fail_block_is_refused(self):
+		original = R.AREA_TOLERANCE
+		R.AREA_TOLERANCE = -1.0  # nothing can pass
+		try:
+			plan = R.plan_block(self.block)
+			self.assertFalse(plan["area_ok"])
+			result = R.apply(farm=self.farm, blocks=[self.block], confirm=1)
+		finally:
+			R.AREA_TOLERANCE = original
+		self._assert_untouched(result, "Area check failed")
+
+	def test_trap_without_geometry_refuses_block(self):
+		old_name = sorted(self.old)[0]
+		frappe.db.set_value("Triad", old_name, "geojson", None, update_modified=False)
+		frappe.get_doc(
+			{"doctype": "Trap", "name": TEST_TRAP, "farm": self.farm, "unit_type": "Triad", "unit": old_name}
+		).db_insert()
+		frappe.db.commit()
+		result = R.apply(farm=self.farm, blocks=[self.block], confirm=1)
+		self.assertEqual(result["blocks"][0]["reason"], f"Trap {TEST_TRAP} on {old_name} has no geometry.")
+		self._assert_untouched(result, "has no geometry")
+		self.assertEqual(frappe.db.get_value("Trap", TEST_TRAP, "unit"), old_name)
+
+	def test_trap_on_old_row_refuses_block(self):
+		frappe.get_doc(
+			{"doctype": "Trap", "name": TEST_TRAP, "farm": self.farm, "unit_type": "Bed", "unit": f"{self.block} - Row 1"}
+		).db_insert()
+		frappe.db.commit()
+		result = R.apply(farm=self.farm, blocks=[self.block], confirm=1)
+		self._assert_untouched(result, "Trap (Bed): 1")
+
+	def test_orchard_tree_on_old_row_refuses_block(self):
+		frappe.get_doc(
+			{"doctype": "Orchard Tree", "name": TEST_TREE, "row": f"{self.block} - Row 2"}
+		).db_insert()
+		frappe.db.commit()
+		result = R.apply(farm=self.farm, blocks=[self.block], confirm=1)
+		self._assert_untouched(result, "Orchard Tree.row: 1")
+
+	def test_apply_result_keeps_trap_moves(self):
+		old_name = sorted(self.old)[0]
+		frappe.get_doc(
+			{"doctype": "Trap", "name": TEST_TRAP, "farm": self.farm, "unit_type": "Triad", "unit": old_name}
+		).db_insert()
+		frappe.db.commit()
+		result = R.apply(farm=self.farm, blocks=[self.block], confirm=1)
+		moves = result["blocks"][0]["traps"]
+		self.assertEqual([(m["trap"], m["old"]) for m in moves], [(TEST_TRAP, old_name)])
+		self.assertEqual(frappe.db.get_value("Trap", TEST_TRAP, "unit"), moves[0]["new"])

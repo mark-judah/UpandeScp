@@ -129,15 +129,37 @@ def _is_hexa_at_side(triads, units, side):
 	return measured is not None and abs(measured - side) <= SIDE_TOLERANCE * side
 
 
-def _scouting_refs(old_rows, old_triads):
-	if not old_rows and not old_triads:
-		return 0
-	n = 0
-	if old_rows:
-		n += frappe.db.count("Scouting Entry", {"row": ("in", old_rows)})
-	for i in range(0, len(old_triads), 1000):
-		n += frappe.db.count("Scouting Entry", {"triad": ("in", old_triads[i : i + 1000])})
-	return n
+# (doctype, column, what it points at) — any hit refuses the block.
+_REFERENCES = (
+	("Scouting Entry", "row", "rows"),
+	("Scouting Entry", "bed", "rows"),
+	("Scouting Entry", "triad", "triads"),
+	("Orchard Tree", "row", "rows"),
+	("Orchard Tree", "triad", "triads"),
+	("Zone", "bed", "rows"),
+)
+
+
+def _references(old_rows, old_triads):
+	"""Records outside the grid that point at the block's old units, e.g.
+	["Scouting Entry.row: 3", "Trap (Bed): 1"]. Traps on old Triads are remapped,
+	so only Traps on old Rows count here."""
+	targets = {"rows": list(old_rows), "triads": list(old_triads)}
+	hits = []
+	for doctype, column, kind in _REFERENCES:
+		names = targets[kind]
+		if not names or not frappe.db.has_column(doctype, column):
+			continue
+		n = 0
+		for i in range(0, len(names), 1000):
+			n += frappe.db.count(doctype, {column: ("in", names[i : i + 1000])})
+		if n:
+			hits.append(f"{doctype}.{column}: {n}")
+	if old_rows and frappe.db.has_column("Trap", "unit"):
+		n = frappe.db.count("Trap", {"unit_type": "Bed", "unit": ("in", list(old_rows))})
+		if n:
+			hits.append(f"Trap (Bed): {n}")
+	return hits
 
 
 # --------------------------------------------------------------------------- planning
@@ -182,10 +204,10 @@ def _plan(block, side_m=None):
 		summary["reason"] = f"{len(stray)} unit(s) hold no Triads (e.g. {stray[0]}); a block holds one kind."
 		return summary, None
 
-	refs = _scouting_refs(old_rows, old_triads)
+	refs = _references(old_rows, old_triads)
 	if refs:
 		summary["status"] = "refused"
-		summary["reason"] = f"{refs} Scouting Entr(ies) reference this block's old Rows/Triads."
+		summary["reason"] = "Records reference this block's old Rows/Triads: " + ", ".join(refs) + "."
 		return summary, None
 
 	# Old polygons, lng/lat → UTM.
@@ -252,14 +274,20 @@ def _plan(block, side_m=None):
 		filters={"unit_type": "Triad", "unit": ("in", old_triads)} if old_triads else {"name": ""},
 		fields=["name", "unit"],
 	)
-	if traps and pieces:
+	if traps and not pieces:
+		summary["status"] = "refused"
+		summary["reason"] = f"{len(traps)} trap(s) on old Triads but the new grid is empty."
+		return summary, None
+	if traps:
 		new_polys = [p.polygon_utm for p in pieces]
 		tree = STRtree(new_polys)
 		ctree = STRtree([g.centroid for g in new_polys])
 		for trap in traps:
 			i = old_index.get(trap.unit)
 			if i is None:
-				continue
+				summary["status"] = "refused"
+				summary["reason"] = f"Trap {trap.name} on {trap.unit} has no geometry."
+				return summary, None
 			pt = old_polys[i].centroid
 			hit = tree.query(pt, predicate="within")
 			j = int(hit[0]) if len(hit) else int(ctree.nearest(pt))
@@ -277,6 +305,13 @@ def _plan(block, side_m=None):
 			"traps": trap_moves,
 		}
 	)
+	if not summary["area_ok"]:
+		summary["status"] = "refused"
+		summary["reason"] = (
+			f"Area check failed: pieces {pieces_m2:.1f} m² vs outline {outline_m2:.1f} m² "
+			f"(tolerance {AREA_TOLERANCE:.0%})."
+		)
+		return summary, None
 	payload = {
 		"farm": farm,
 		"old_rows": old_rows,
@@ -292,7 +327,6 @@ def plan_block(block: str, side_m: float | None = None) -> dict:
 	return _plan(block, side_m)[0]
 
 
-@frappe.whitelist()
 def dry_run(farm="Mutara", blocks=None) -> dict:
 	frappe.only_for("System Manager")
 	side = standard_side_m()
@@ -313,7 +347,7 @@ def _totals(plans):
 		"ready": len(ready),
 		"already_hexa": sum(1 for p in plans if p["status"] == "already_hexa"),
 		"refused": sum(1 for p in plans if p["status"] == "refused"),
-		"area_ok": sum(1 for p in ready if p["area_ok"]),
+		"area_ok": sum(1 for p in plans if p["area_ok"]),
 		"hexas": sum(p["hexas"] for p in ready),
 		"triads": sum(p["triads"] for p in ready),
 		"edge_hexas": sum(p["edge_hexas"] for p in ready),
@@ -328,7 +362,6 @@ def _totals(plans):
 # --------------------------------------------------------------------------- apply
 
 
-@frappe.whitelist()
 def apply(farm="Mutara", blocks=None, confirm=0) -> dict:
 	frappe.only_for("System Manager")
 	if not int(confirm or 0):
@@ -338,13 +371,13 @@ def apply(farm="Mutara", blocks=None, confirm=0) -> dict:
 	results = []
 	for block in names:
 		summary, payload = _plan(block, side)
-		summary.pop("traps", None)
 		if payload is None:
 			results.append(summary)
 			continue
 		try:
 			_write_block(block, payload)
 			frappe.db.commit()
+			bump_geo_version()
 			summary["status"] = "applied"
 		except Exception:
 			frappe.db.rollback()
@@ -384,4 +417,3 @@ def _write_block(block, payload):
 	)
 	for move in payload["traps"]:
 		frappe.db.set_value("Trap", move["trap"], "unit", move["new"])
-	bump_geo_version()

@@ -115,7 +115,7 @@ const DATA = {
 const TRAPS = {
   "Mutara - T01": {
     lat: 0.0005, lng: 36.0005, source: "Unit", fixes: 0, spread_m: 0, flag: "", trap_number: "T01",
-    unit_type: "Triad", unit: "P1-B1 - MUT - Row 1 - Triad 1",
+    unit_type: "Triad", unit: "P1-B1 - MUT - Hexa 1 - Triad 1",
     unit_geometry: { type: "Polygon", coordinates: [[[36.0004, 0.0004], [36.0006, 0.0004], [36.0006, 0.0006], [36.0004, 0.0004]]] },
   },
 };
@@ -257,7 +257,7 @@ describe("open-field Application Plan", () => {
     await act(async () => marker!.click());
     expect(MAP.flyTo).toHaveBeenCalledWith(expect.objectContaining({ center: [36.0005, 0.0005] }));
     const card = await screen.findByRole("dialog", { name: "Trap Mutara - T01" });
-    expect(within(card).getByText(/On hexagon P1-B1 - MUT - Row 1 - Triad 1/)).toBeInTheDocument();
+    expect(within(card).getByText(/On triad 1 of hexa 1/)).toBeInTheDocument();
   });
 
   it("paints the heat in the pest's own colour, never green / amber / red", async () => {

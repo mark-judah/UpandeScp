@@ -1,11 +1,11 @@
-"""One request per map: the latest entry on every hexagon / visit point for a date range.
+"""One request per map: the latest entry on every triad / visit point for a date range.
 
-The block-grown Scouting Map colours hexagons, blocks and visit points by who scouted them last.
+The block-grown Scouting Map colours triads, blocks and visit points by who scouted them last.
 It does not need the raw entries (50k of them for two months on a farm scouted daily), only one
 row per mapped unit, so this returns exactly that, shaped like ``getScoutingEntriesChunk`` rows so
 the page's own derive functions run on it unchanged.
 
-A unit is the entry's triad (hexagon) or, where a block has an outline but no hexagons, the visit
+A unit is the entry's triad (a Hexa triangle) or, where a block has an outline but no triads, the visit
 point gridded to ~22 m so a day's visits to one spot count once. Farms whose entries sit on
 orchard trees (Kaitet's avocado) get ``aggregated: false`` and the page keeps its per-week raw
 fetch: tree tracks need every entry.

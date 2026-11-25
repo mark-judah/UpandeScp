@@ -1,17 +1,16 @@
-"""One automation for beds, rows and coffee bands.
+"""One automation for beds, rows and coffee hexas.
 
 There used to be two tools — `Bed And Zone Automation` for roses and
 `Tree And Row Automation` for avocado — doing the same job in different words.
 They already wrote into the *same* table (`tabBed`, discriminated by
 `unit_type`); only the field names, GeoJSON conventions and child doctype
-differed. Coffee then needed bands, and a band is what coffee calls a row, so a
-third tool would have been a third copy.
+differed. Coffee then needed hexas, so a third tool would have been a third copy.
 
 What these tests hold in place:
 
-* **A Band is a Row.** Same structure, same child doctype, different label. If
-  that ever diverges, coffee grows a parallel geometry the maps and the mobile
-  bundle do not understand.
+* **A Hexa holds triads, not trees.** It sits on a Block like a row but is its
+  own unit kind, with at most six triads. The import also switches on the farm
+  structure levels it needs, and refuses to mix unit kinds in one block.
 * **Both GeoJSON layouts and all three id conventions are read.** Each old tool
   understood only its own, so an operator had to reshape exports. The merge is
   only worth having if that stays fixed.
@@ -41,6 +40,8 @@ TEST_FARM = "_Test SCP Units Farm"
 # wants Has Orchard Trees. A farm missing any one of them fails silently, because
 # the automation logs insert failures rather than raising.
 _STRUCTURE_LEVELS = (
+    "Has Greenhouses",
+    "Has Blocks",
     "Has Beds",
     "Has Rows",
     "Has Zones",
@@ -79,7 +80,7 @@ class FieldUnitCase(unittest.TestCase):
         self.farm = self._ensure_farm()
         n = FieldUnitCase.counter
         # Core validates the warehouse's *role* as well as the farm's structure
-        # levels: beds must sit on a Greenhouse, rows and bands on a Block. So a
+        # levels: beds must sit on a Greenhouse, rows and hexas on a Block. So a
         # test needs whichever warehouse matches the unit kind it is exercising.
         self.greenhouse = self._ensure_warehouse(f"{TEST_WAREHOUSE_PREFIX} GH {n}", "Greenhouse")
         self.block = self._ensure_warehouse(f"{TEST_WAREHOUSE_PREFIX} BLK {n}", "Block")
@@ -88,14 +89,14 @@ class FieldUnitCase(unittest.TestCase):
     def warehouse_for(self, unit_type):
         return self.greenhouse if unit_type == "Bed" else self.block
 
-    def _ensure_farm(self):
-        """A farm declared to hold every unit kind.
+    def _ensure_farm(self, levels=_STRUCTURE_LEVELS, farm_name=TEST_FARM):
+        """A farm declared to hold exactly `levels` (default: every unit kind).
 
         `Bed.validate` (upande_core) refuses a unit unless the warehouse's Farm
-        lists the matching structure level — "Has Beds" for beds, "Has Rows" for
-        rows and bands — and `Orchard Tree` additionally wants "Has Orchard
-        Trees". Tests supply their own farm so they exercise this app's code
-        rather than whatever the site's farms happen to be configured with.
+        lists the matching structure levels. Tests supply their own farm so they
+        exercise this app's code rather than whatever the site's farms are
+        configured with. A farm left behind by an earlier run is reset to exactly
+        `levels`, so the switch-on test can ask for none.
         """
         for level in _STRUCTURE_LEVELS:
             if not frappe.db.exists("Farm Type", level):
@@ -103,25 +104,18 @@ class FieldUnitCase(unittest.TestCase):
                     ignore_permissions=True
                 )
 
-        wanted = _STRUCTURE_LEVELS
-        if frappe.db.exists("Farm", TEST_FARM):
-            # Top up rather than trusting a farm an earlier run left behind: a
-            # missing level fails child creation for a reason unrelated to the
-            # code under test, and the automation only logs it.
-            farm = frappe.get_doc("Farm", TEST_FARM)
-            have = {r.farm_type for r in (farm.get("farm_type") or [])}
-            missing = [level for level in wanted if level not in have]
-            if missing:
-                for level in missing:
-                    farm.append("farm_type", {"farm_type": level})
-                farm.flags.ignore_mandatory = True
-                farm.save(ignore_permissions=True)
-            return TEST_FARM
+        wanted = tuple(levels)
+        if frappe.db.exists("Farm", farm_name):
+            farm = frappe.get_doc("Farm", farm_name)
+            farm.set("farm_type", [{"farm_type": level} for level in wanted])
+            farm.flags.ignore_mandatory = True
+            farm.save(ignore_permissions=True)
+            return farm_name
 
         doc = frappe.get_doc(
             {
                 "doctype": "Farm",
-                "farm_name": TEST_FARM,
+                "farm_name": farm_name,
                 "farm_type": [{"farm_type": level} for level in wanted],
             }
         )
@@ -231,13 +225,13 @@ class FieldUnitCase(unittest.TestCase):
         return self.children("Triad", "row", unit_type)
 
 
-class TestBands(FieldUnitCase):
-    """A Band is a Row under coffee's name — the whole reason there is one tool."""
+class TestHexas(FieldUnitCase):
+    """A Hexa holds triads, not trees — the whole reason there is one tool."""
 
-    def test_a_band_creates_units_and_triads(self):
-        """Triads are what divides a band, the way zones divide a bed."""
+    def test_a_hexa_creates_units_and_triads(self):
+        """Triads are what divides a hexa, the way zones divide a bed."""
         doc = self.build(
-            "Band",
+            "Hexa",
             _collection(
                 _feature(unit_id=1, child_id=1),
                 _feature(unit_id=1, child_id=2),
@@ -245,20 +239,8 @@ class TestBands(FieldUnitCase):
             ),
         )
         doc.run_automation()
-        self.assertEqual(len(self.units("Band")), 2)
-        self.assertEqual(len(self.triads("Band")), 3)
-
-    def test_a_band_is_a_row_to_core_but_holds_its_own_child(self):
-        """Both halves matter. Core validates a band onto a Block exactly as it does
-        a row, which is what keeps the maps and mobile bundle working — and is also
-        why it is easy to wrongly give it a row's child."""
-        doc = self.build("Band", _collection(_feature(unit_id=2, child_id=1)))
-        doc.run_automation()
-        unit = self.units("Band")[0]
-        self.assertEqual(
-            frappe.db.get_value("Bed", unit.name, "greenhouse"), self.block
-        )
-        self.assertEqual(FUA.child_doctype_for("Band"), "Triad")
+        self.assertEqual(len(self.units("Hexa")), 2)
+        self.assertEqual(len(self.triads("Hexa")), 3)
 
     def test_trees_carry_the_number_readers_actually_query(self):
         """`tree` is mandatory and names the document; `tree_number` is what every
@@ -274,19 +256,105 @@ class TestBands(FieldUnitCase):
         self.assertEqual(tree.tree, 4)
         self.assertEqual(tree.tree_number, "4")
 
-    def test_a_band_is_stored_under_its_own_unit_type(self):
-        """Same structure, but still distinguishable — a coffee band must not be
+    def test_a_hexa_is_stored_under_its_own_unit_type(self):
+        """Same structure, but still distinguishable — a coffee hexa must not be
         counted as an avocado row in a report."""
-        doc = self.build("Band", _collection(_feature(unit_id=7, child_id=1)))
+        doc = self.build("Hexa", _collection(_feature(unit_id=7, child_id=1)))
         doc.run_automation()
-        self.assertEqual(len(self.units("Band")), 1)
+        self.assertEqual(len(self.units("Hexa")), 1)
         self.assertEqual(self.units("Row"), [])
 
-    def test_band_is_an_allowed_unit_type_on_the_shared_bed_doctype(self):
+    def test_hexa_is_an_allowed_unit_type_on_the_shared_bed_doctype(self):
         """`Bed` belongs to upande_core; SCP appends the option via Property
         Setter. Without it, every coffee layout would fail validation."""
         options = frappe.get_meta("Bed").get_field("unit_type").options
-        self.assertIn("Band", [o.strip() for o in options.split("\n")])
+        self.assertIn("Hexa", [o.strip() for o in options.split("\n")])
+
+
+    def test_triad_numbers_outside_1_to_6_are_skipped_with_a_reason(self):
+        doc = self.build(
+            "Hexa",
+            _collection(
+                _feature(unit_id=1, child_id=0),
+                _feature(unit_id=1, child_id=3),
+                _feature(unit_id=1, child_id=7),
+            ),
+        )
+        summary = doc.run_automation()
+        names = self.triads("Hexa")
+        self.assertEqual(len(names), 1)
+        self.assertEqual(frappe.db.get_value("Triad", names[0], "triad"), 3)
+        self.assertIn("2 skipped", summary)
+        self.assertIn("1\u20136", summary)
+
+    def test_import_switches_on_the_farm_levels_it_needs(self):
+        bare = self._ensure_farm(levels=(), farm_name=TEST_FARM + " Bare")
+        frappe.db.set_value("Warehouse", self.block, "custom_farm", bare)
+        frappe.clear_document_cache("Warehouse", self.block)
+        doc = self.build("Hexa", _collection(_feature(unit_id=1, child_id=1)))
+        summary = doc.run_automation()
+        self.assertEqual(len(self.triads("Hexa")), 1)
+        have = {r.farm_type for r in frappe.get_doc("Farm", bare).farm_type}
+        self.assertIn("Has Blocks", have)
+        self.assertIn("Has Triads", have)
+        self.assertIn("Has Triads", summary)
+
+    def test_rows_then_hexas_on_one_block_are_refused(self):
+        doc = self.build("Row", _collection(_feature(row_id=1, tree_id=1)))
+        doc.run_automation()
+        self.assertEqual(len(self.units("Row")), 1)
+        doc.unit_type = "Hexa"
+        doc.units_geojson = _collection(_feature(unit_id=2, child_id=1))
+        doc.save(ignore_permissions=True)
+        summary = doc.run_automation()
+        self.assertEqual(self.units("Hexa"), [])
+        self.assertIn("laid out as Row", summary)
+
+    def test_band_is_gone(self):
+        options = frappe.get_meta("Bed").get_field("unit_type").options
+        self.assertNotIn("Band", [o.strip() for o in options.split("\n")])
+        self.assertIsNone(FUA.child_doctype_for("Band"))
+
+
+class TestStaleBandOption(unittest.TestCase):
+    SETTER = "Bed-unit_type-options"
+
+    def test_a_stale_band_option_is_stripped_from_the_property_setter(self):
+        from upande_scp.serverscripts.geo.field_unit_types import ensure_unit_types
+
+        had = frappe.db.get_value("Property Setter", self.SETTER, "value") if frappe.db.exists("Property Setter", self.SETTER) else None
+
+        def restore():
+            if frappe.db.exists("Property Setter", self.SETTER):
+                frappe.delete_doc("Property Setter", self.SETTER, force=True, ignore_permissions=True)
+            if had is not None:
+                frappe.make_property_setter(
+                    {"doctype": "Bed", "fieldname": "unit_type", "property": "options",
+                     "value": had, "property_type": "Text"},
+                    is_system_generated=False,
+                )
+            frappe.clear_cache(doctype="Bed")
+
+        self.addCleanup(restore)
+        restore()
+        frappe.make_property_setter(
+            {
+                "doctype": "Bed",
+                "fieldname": "unit_type",
+                "property": "options",
+                "value": "Bed\nRow\nBand",
+                "property_type": "Text",
+            },
+            is_system_generated=False,
+        )
+        frappe.clear_cache(doctype="Bed")
+        ensure_unit_types()
+        options = [
+            o.strip()
+            for o in frappe.get_meta("Bed").get_field("unit_type").options.split("\n")
+        ]
+        self.assertNotIn("Band", options)
+        self.assertIn("Hexa", options)
 
 
 class TestUnitKinds(FieldUnitCase):
@@ -313,9 +381,9 @@ class TestUnitKinds(FieldUnitCase):
 
     def test_the_summary_names_the_unit_kind_and_its_child(self):
         """The old confirmation said "Bed and Zone documents" for all three crops."""
-        doc = self.build("Band", _collection(_feature(unit_id=1, child_id=1)))
+        doc = self.build("Hexa", _collection(_feature(unit_id=1, child_id=1)))
         summary = doc.run_automation()
-        self.assertIn("band", summary.lower())
+        self.assertIn("hexa", summary.lower())
         self.assertIn("triad", summary.lower())
 
 
@@ -326,29 +394,29 @@ class TestTheThreePairs(FieldUnitCase):
     |-------------|----------------|
     | `Bed`  | `Zone`         |
     | `Row`  | `Orchard Tree` |
-    | `Band` | `Triad`        |
+    | `Hexa` | `Triad`        |
 
-    Getting the coffee pair wrong is the failure that matters. `Band` behaves like
+    Getting the coffee pair wrong is the failure that matters. `Hexa` behaves like
     `Row` everywhere core is concerned — it sits on a Block and validates as a row
     — which makes it easy to assume it holds trees like a row does. It does not: a
-    band holds triads.
+    hexa holds triads.
     """
 
     def test_each_unit_kind_holds_its_own_child(self):
         self.assertEqual(FUA.child_doctype_for("Bed"), "Zone")
         self.assertEqual(FUA.child_doctype_for("Row"), "Orchard Tree")
-        self.assertEqual(FUA.child_doctype_for("Band"), "Triad")
+        self.assertEqual(FUA.child_doctype_for("Hexa"), "Triad")
 
     def test_an_unknown_unit_kind_holds_nothing(self):
         self.assertIsNone(FUA.child_doctype_for("Terrace"))
 
-    def test_a_band_holds_triads_not_trees(self):
-        """The assumption this exists to block: core treats a band as a row, so it
+    def test_a_hexa_holds_triads_not_trees(self):
+        """The assumption this exists to block: it sits on a Block like a row, so it
         would be easy to give it a row's child."""
-        doc = self.build("Band", _collection(_feature(unit_id=1, child_id=1)))
+        doc = self.build("Hexa", _collection(_feature(unit_id=1, child_id=1)))
         doc.run_automation()
-        self.assertEqual(len(self.triads("Band")), 1)
-        self.assertEqual(self.children("Orchard Tree", "row", "Band"), [])
+        self.assertEqual(len(self.triads("Hexa")), 1)
+        self.assertEqual(self.children("Orchard Tree", "row", "Hexa"), [])
 
     def test_a_row_holds_trees_not_triads(self):
         doc = self.build("Row", _collection(_feature(row_id=2, tree_id=1)))
@@ -364,14 +432,14 @@ class TestTheThreePairs(FieldUnitCase):
     def test_a_triad_records_its_number_block_and_geometry(self):
         """Nothing had ever populated `Triad` on kaitet, so this is the first thing
         that proves core's row -> triad edge works."""
-        doc = self.build("Band", _collection(_feature(unit_id=3, child_id=7)))
+        doc = self.build("Hexa", _collection(_feature(unit_id=3, child_id=5)))
         doc.run_automation()
-        names = self.triads("Band")
+        names = self.triads("Hexa")
         self.assertEqual(len(names), 1)
         triad = frappe.db.get_value(
             "Triad", names[0], ["triad", "block", "geojson"], as_dict=True
         )
-        self.assertEqual(triad.triad, 7)
+        self.assertEqual(triad.triad, 5)
         self.assertEqual(triad.block, self.block)
         self.assertTrue(triad.geojson)
 
@@ -437,9 +505,9 @@ class TestIdConventions(FieldUnitCase):
 
     def test_a_name_ending_in_row_and_tree_numbers(self):
         """The avocado exports carry no ids at all."""
-        doc = self.build("Band", _collection(_feature(name="KAPT_BLK9_ROW12_T3")))
+        doc = self.build("Hexa", _collection(_feature(name="KAPT_BLK9_ROW12_T3")))
         doc.run_automation()
-        self.assertEqual(self.numbers("Band"), [12])
+        self.assertEqual(self.numbers("Hexa"), [12])
 
     def test_a_feature_with_no_usable_numbers_is_counted_not_crashed_on(self):
         doc = self.build(
@@ -466,16 +534,16 @@ class TestUnitTypeIsPartOfEveryLookup(FieldUnitCase):
 
     That never mattered, and cannot: core additionally validates the warehouse's
     role, so a warehouse is either a Greenhouse holding beds or a Block holding
-    rows and bands — never both. Keying the lookup on `unit_type` therefore fixes
+    rows and hexas — never both. Keying the lookup on `unit_type` therefore fixes
     no live bug; it makes the query state what the data model already guarantees,
     instead of depending on a validation in another app to hold the line.
     """
 
     def test_a_warehouse_cannot_hold_two_unit_kinds(self):
         """The guarantee the lookup no longer has to borrow."""
-        doc = self.build("Band", _collection(_feature(unit_id=5, child_id=1)))
+        doc = self.build("Hexa", _collection(_feature(unit_id=5, child_id=1)))
         doc.run_automation()
-        self.assertEqual(self.numbers("Band"), [5])
+        self.assertEqual(self.numbers("Hexa"), [5])
 
         # The same warehouse, asked for beds: core refuses, because a Block is not
         # a Greenhouse. The automation logs it rather than raising.
@@ -542,12 +610,12 @@ class TestSectors(FieldUnitCase):
         if not variety:
             self.skipTest("no Items on this site")
         doc = self.build(
-            "Band",
+            "Hexa",
             _collection(_feature(unit_id=3, child_id=1)),
             sectors=[{"sector": variety, "from_unit": 1, "to_unit": 5}],
         )
         doc.run_automation()
-        self.assertEqual(self.units("Band")[0].variety, variety)
+        self.assertEqual(self.units("Hexa")[0].variety, variety)
 
     def test_a_unit_outside_every_range_gets_none(self):
         variety = self._variety()
@@ -603,7 +671,7 @@ class TestTheOldToolsAreGone(unittest.TestCase):
             self.assertEqual(
                 doc.name, doc.warehouse, "a migrated document lost its warehouse name"
             )
-            self.assertIn(doc.unit_type, ("Bed", "Row", "Band"))
+            self.assertIn(doc.unit_type, ("Bed", "Row", "Hexa"))
 
     def test_the_entry_point_is_callable_from_the_desk(self):
         self.assertIn(FUA.run, frappe.whitelisted)
@@ -613,7 +681,7 @@ class TestTheOldToolsAreGone(unittest.TestCase):
 class TestTheMobileBundleCarriesTheUnitKind(unittest.TestCase):
     """The phone downloads its units from `getFarmDataBundle`.
 
-    Beds, rows and bands all live in `tabBed`, so a payload without `unit_type`
+    Beds, rows and hexas all live in `tabBed`, so a payload without `unit_type`
     leaves the app unable to label a unit or pick the right scouting screen —
     which is what it was, before this. Lokitela is the one farm on kaitet holding
     rows (1,872 of them), so it is the case that proves the field is real and not
@@ -635,7 +703,7 @@ class TestTheMobileBundleCarriesTheUnitKind(unittest.TestCase):
         if not units:
             self.skipTest("Lokitela has no units on this site")
         for unit in units:
-            self.assertIn(unit.get("unit_type"), ("Bed", "Row", "Band"), unit)
+            self.assertIn(unit.get("unit_type"), ("Bed", "Row", "Hexa"), unit)
 
     def test_rows_are_reported_as_rows(self):
         """Not silently defaulted to Bed."""
@@ -647,7 +715,7 @@ class TestTheMobileBundleCarriesTheUnitKind(unittest.TestCase):
 
     def test_each_warehouse_is_summarised_by_one_kind(self):
         """So the app can label a picker without scanning every unit. Core
-        validates beds onto Greenhouses and rows/bands onto Blocks, so a
+        validates beds onto Greenhouses and rows/hexas onto Blocks, so a
         warehouse holds one kind."""
         bundle = self._bundle("Lokitela")
         for warehouse, units in bundle["beds_by_warehouse"].items():
@@ -667,3 +735,49 @@ class TestTheMobileBundleCarriesTheUnitKind(unittest.TestCase):
 
         bundle = self._bundle("Lokitela")
         self.assertTrue(bundle["version"].startswith(_BUNDLE_SCHEMA))
+
+
+class TestOlderCore(FieldUnitCase):
+    def test_hexa_run_is_refused_on_old_core_but_bed_still_works(self):
+        from unittest import mock
+
+        with mock.patch.object(FUA, "CORE_HAS_HEXA", False):
+            doc = self.build("Hexa", _collection(_feature(unit_id=1, child_id=1)))
+            with self.assertRaises(frappe.ValidationError) as cm:
+                doc.run_automation()
+            self.assertIn("newer upande_core", str(cm.exception))
+            self.assertEqual(self.units("Hexa"), [])
+            bed = self.build("Bed", _collection(_feature(unit_id=1, child_id=1)))
+            bed.run_automation()
+            self.assertEqual(len(self.units("Bed")), 1)
+
+
+def _triangle_feature(side, unit_id, child_id):
+    """A full triangle feature (4-point ring) of the given side, near Mutara."""
+    from upande_scp.serverscripts.tests.test_triad_size import triangle_ring
+
+    return {
+        "type": "Feature",
+        "properties": {"unit_id": unit_id, "child_id": child_id},
+        "geometry": {"type": "Polygon", "coordinates": [triangle_ring(side)]},
+    }
+
+
+class TestHexaSideCheck(FieldUnitCase):
+    def test_hexa_import_refuses_off_standard_block(self):
+        frappe.db.set_single_value("Scouting and Crop Protection Settings", "triad_side_m", 5)
+        feats = [_triangle_feature(3, 1, t) for t in (1, 2, 3)]
+        doc = self.build("Hexa", _collection(*feats))
+        summary = doc.run_automation()
+        self.assertEqual(self.triads("Hexa"), [])
+        self.assertEqual(self.units("Hexa"), [])
+        self.assertIn("3.00 m", summary)
+        self.assertIn("5 m", summary)
+        self.assertIn("refused", summary.lower())
+
+    def test_hexa_import_accepts_standard_block(self):
+        frappe.db.set_single_value("Scouting and Crop Protection Settings", "triad_side_m", 5)
+        feats = [_triangle_feature(5, 1, t) for t in (1, 2)]
+        doc = self.build("Hexa", _collection(*feats))
+        doc.run_automation()
+        self.assertEqual(len(self.triads("Hexa")), 2)

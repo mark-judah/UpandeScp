@@ -27,13 +27,13 @@
   },
   {
    "default": "Bed",
-   "description": "What one unit is called here. Beds hold Zones; Rows and Bands hold Trees. A Band is a Row under its coffee name.",
+   "description": "What one unit is called here. Beds hold Zones; Rows hold Trees; Hexas hold Triads.",
    "fieldname": "unit_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Unit Type",
-   "options": "Bed\nRow\nBand",
+   "options": "Bed\nRow\nHexa",
    "reqd": 1
   },
   {

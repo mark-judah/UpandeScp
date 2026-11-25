@@ -28,6 +28,7 @@ export type View =
   | "historical"
   | "approvals"
   | "settings"
+  | "structure"
   | "spray-plan-access"
   | "application-plan"
   | "chemical-dashboard"
@@ -66,6 +67,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "historical",
   "approvals",
   "settings",
+  "structure",
   "spray-plan-access",
   "application-plan",
   "chemical-dashboard",

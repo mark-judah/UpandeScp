@@ -8,8 +8,8 @@
 What it makes, per block that has a crop planted (``common.planting``: the current Production Crop
 Cycle, a Production Unit's own crop where it has none yet, never a Retired unit):
 
-* surveyed pivot blocks: every entry sits on one of the block's Triads (3 m hexagons) and its
-  Row (Bed); the hexagon is stored in ``Scouting Entry.triad``;
+* surveyed pivot blocks: every entry sits on one of the block's Triads (the triangles of a Hexa); the
+  Triad is stored in ``Scouting Entry.triad`` and its Hexa (``Triad.row``) in ``Scouting Entry.row``;
 * avocado blocks, which have an outline but no rows or trees yet: entries are points inside the
   block polygon;
 * blocks with no surveyed geometry: block-level entries with no coordinates.
@@ -71,7 +71,7 @@ def season_of(kind: str, target: str) -> str:
 class Unit:
 	block: str
 	crop: str
-	#: (name, lng, lat, row, number) per scoutable hexagon; empty when the block has none.
+	#: (triad name, lng, lat, hexa (Triad.row), slot 1..6) per scoutable Triad; empty when the block has none.
 	sites: list = field(default_factory=list)
 	#: outline ring [(lng, lat), ...] when there are no sites but a surveyed polygon.
 	polygon: list | None = None
@@ -683,7 +683,7 @@ def _trap_sites(farm: str = FARM) -> list:
 		crop, pest = _block_crop_and_pest(b.block)
 		if not pest:
 			continue
-		# The block's most scouted hexagon: where the scouts walk, so the trap sits on the heat.
+		# The block's most scouted triad: where the scouts walk, so the trap sits on the heat.
 		tri = frappe.db.sql(
 			"select triad from `tabScouting Entry` where block = %s and triad is not null and triad != ''"
 			" group by triad order by count(*) desc limit 1", (b.block,),
@@ -760,10 +760,13 @@ def _insert_trap_readings(sites: list, rng) -> int:
 	scouts = _scouts()
 	end = datetime.date.today()
 	rows = []
+	triad_names = [s["unit"] for s in sites if s["unit_type"] == "Triad"]
+	hexa_of = dict(frappe.get_all("Triad", filters={"name": ("in", triad_names)}, fields=["name", "row"], as_list=True)) if triad_names else {}
 	for s in sites:
 		for r in trap_readings(s["trap"], s["pest"], end, WINDOW_DAYS, rng, scouts):
 			rows.append({**r, **{k: s[k] for k in ("block", "crop", "lng", "lat")},
 			             "triad": s["unit"] if s["unit_type"] == "Triad" else None,
+			             "row": hexa_of.get(s["unit"]) if s["unit_type"] == "Triad" else None,
 			             "tree": s["unit"] if s["unit_type"] == "Orchard Tree" else None})
 	rows.sort(key=lambda r: (r["date"], r["time"], r["trap"]))
 	year = end.year
@@ -780,14 +783,14 @@ def _insert_trap_readings(sites: list, rng) -> int:
 		entries.append((
 			name, ts, ts, "Administrator", "Administrator", 0, 0, "SCE-.YYYY.-", r["scout"], r["crop"],
 			r["block"], r["tree"], r["time"].strftime("%H:%M:%S"), r["date"],
-			f"{r['lat']:.6f}", f"{r['lng']:.6f}", r["triad"], f",{TRAP_TAG}",
+			f"{r['lat']:.6f}", f"{r['lng']:.6f}", r["triad"], r["row"], f",{TRAP_TAG}",
 		))
 		children.append((_hash(used), ts, ts, "Administrator", "Administrator", 0, 1, name, "trap_scouting_entry",
 		                 "Scouting Entry", r["trap"], r["pest"], "Outdoor", r["count"]))
 	frappe.db.bulk_insert(
 		"Scouting Entry",
 		["name", "creation", "modified", "modified_by", "owner", "docstatus", "idx", "naming_series", "scouts_name",
-		 "crop_scouted", "block", "tree", "time_of_capture", "date_of_capture", "latitude", "longitude", "triad", "_user_tags"],
+		 "crop_scouted", "block", "tree", "time_of_capture", "date_of_capture", "latitude", "longitude", "triad", "row", "_user_tags"],
 		entries,
 	)
 	frappe.db.bulk_insert(

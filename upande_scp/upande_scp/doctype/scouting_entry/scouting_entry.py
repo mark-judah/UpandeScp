@@ -8,7 +8,7 @@ from frappe.model.document import Document
 class ScoutingEntry(Document):
 	def validate(self):
 		greenhouse_flow = any([self.greenhouse, self.bed, self.zone])
-		block_flow = any([self.block, self.row, self.tree])
+		block_flow = any([self.block, self.row, self.tree, self.triad])
 
 		if greenhouse_flow and block_flow:
 			frappe.throw(
@@ -19,7 +19,7 @@ class ScoutingEntry(Document):
 			frappe.throw("Scouting Entry requires a Greenhouse or a Block.")
 		self._fill_crop_from_station()
 		self.mapping_status = (
-			"Mapped" if any([self.tree, self.row, self.zone, self.bed]) else "To be mapped"
+			"Mapped" if any([self.tree, self.row, self.zone, self.bed, self.triad]) else "To be mapped"
 		)
 
 	def _fill_crop_from_station(self):

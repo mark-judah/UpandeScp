@@ -122,7 +122,7 @@ class TestFetchGreenhouseBeds(unittest.TestCase):
 		beds = fetchGreenhouseBeds(station)
 		self.assertTrue(beds)
 		for bed in beds:
-			self.assertIn(bed["unit_type"], ("Bed", "Row", "Band"))
+			self.assertIn(bed["unit_type"], ("Bed", "Row", "Hexa"))
 
 	def test_more_than_a_page_of_beds_comes_back(self):
 		# The deleted Server Script used `frappe.db.get_list`, whose default

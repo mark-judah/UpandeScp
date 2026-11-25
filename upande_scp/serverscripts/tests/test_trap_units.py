@@ -63,7 +63,7 @@ class TestTrapUnitFields(unittest.TestCase):
 		meta = frappe.get_meta("Trap")
 		ut, u = meta.get_field("unit_type"), meta.get_field("unit")
 		self.assertEqual(ut.fieldtype, "Select")
-		self.assertEqual([o for o in ut.options.split("\n") if o], ["Triad", "Orchard Tree", "Bed"])
+		self.assertEqual([o for o in ut.options.split("\n") if o], ["Triad", "Orchard Tree", "Bed"])  # a Hexa is a Bed
 		self.assertEqual(u.fieldtype, "Dynamic Link")
 		self.assertEqual(u.options, "unit_type")
 
@@ -85,6 +85,17 @@ class TestTrapUnitDb(unittest.TestCase):
 			frappe.db.sql(
 				"INSERT INTO `tabTriad` (name, block, `row`, triad, farm, geojson) VALUES (%s, %s, %s, %s, %s, %s)",
 				(f"{BLOCK} - Row 1 - Triad {n}", BLOCK, f"{BLOCK} - Row 1", n, FARM, feature({"type": "Polygon", "coordinates": [ring]})),
+			)
+		hexa = f"{BLOCK} - Hexa 1"
+		frappe.db.sql("INSERT INTO `tabBed` (name, greenhouse, bed, unit_type) VALUES (%s, %s, 1, 'Hexa')", (hexa, BLOCK))
+		# Two triangles sharing the edge (36.2, 0.2)-(36.20001, 0.20002): they union into one polygon.
+		for t, tri in enumerate([
+			[[36.2, 0.2], [36.20002, 0.2], [36.20001, 0.20002], [36.2, 0.2]],
+			[[36.2, 0.2], [36.20001, 0.20002], [36.19999, 0.20002], [36.2, 0.2]],
+		], start=1):
+			frappe.db.sql(
+				"INSERT INTO `tabTriad` (name, block, `row`, triad, farm, geojson) VALUES (%s, %s, %s, %s, %s, %s)",
+				(f"{hexa} - Triad {t}", BLOCK, hexa, t, FARM, feature({"type": "Polygon", "coordinates": [tri]})),
 			)
 		frappe.db.sql(
 			"INSERT INTO `tabOrchard Tree` (name, block, triad, farm, geojson) VALUES (%s, %s, %s, %s, %s)",
@@ -122,6 +133,21 @@ class TestTrapUnitDb(unittest.TestCase):
 		self.assertEqual(len(g["coordinates"]), 3)
 		xs = [p[0] for p in g["coordinates"]]
 		self.assertEqual(xs, sorted(xs))
+
+	def test_trap_on_hexa_uses_union_outline(self):
+		from shapely.geometry import shape
+
+		hexa = f"{BLOCK} - Hexa 1"
+		g = TU.unit_geometry("Bed", hexa)
+		self.assertEqual(g["type"], "Polygon")
+		tris = [shape(TU.geometry_of(frappe.db.get_value("Triad", f"{hexa} - Triad {t}", "geojson"))) for t in (1, 2)]
+		self.assertAlmostEqual(shape(g).area, sum(t.area for t in tris), places=14)
+		t = self.trap(7, "Bed", hexa)
+		payload = TU.trap_unit_payload({"unit_type": "Bed", "unit": hexa})
+		c = shape(g).centroid
+		self.assertAlmostEqual(payload["lat"], c.y, places=9)
+		self.assertAlmostEqual(payload["lng"], c.x, places=9)
+		self.assertEqual(TL.get_trap_locations(farm=FARM)[t]["unit_geometry"]["type"], "Polygon")
 
 	def test_missing_unit_has_no_geometry(self):
 		self.assertIsNone(TU.unit_geometry("Triad", "_TEST nope"))

@@ -1,6 +1,6 @@
 /**
  * Traps on the unit they hang on (spec 2026-10-29 §4). A trap with a unit (Trap.unit) carries the
- * unit's geometry from get_trap_locations: a hexagon is outlined, a bed / row is drawn as its line,
+ * unit's geometry from get_trap_locations: a triangle / Hexa is outlined, a bed / row is drawn as its line,
  * and a tree (a point) or a trap with no unit gets a ring at its point. Every trap is labelled with
  * its number at the trap's point (the unit's centre). Pure: the page hands the result to MapLibre.
  */
@@ -13,7 +13,7 @@ export const TRAP_IDLE = "#3a3a34";
 const numberOf = (trap: string, n?: string) => (n && n.trim()) || trap.split(" - ").pop() || trap;
 
 export interface TrapUnitLayers {
-  /** Hexagons (Polygon) and beds (LineString), one per trap. */
+  /** Triangles and Hexas (Polygon) and beds (LineString), one per trap. */
   outlines: GeoJsonFC;
   /** Point units (a tree) and traps with no unit: a ring at the point. */
   rings: GeoJsonFC;
@@ -47,8 +47,13 @@ export function trapUnitLayers(locs: TrapLocations, colors: Record<string, strin
  *  entries' average. */
 export function trapPlacement(f: TrapLocations[string] | undefined): string {
   if (!f) return "Average of entries";
-  if (f.unit && f.unit_geometry)
-    return `On ${f.unit_type === "Triad" ? "hexagon" : f.unit_type === "Orchard Tree" ? "tree" : "bed"} ${f.unit}`;
+  if (f.unit && f.unit_geometry) {
+    const triad = f.unit_type === "Triad" ? /Hexa (\d+) - Triad (\d+)$/.exec(f.unit) : null;
+    if (triad) return `On triad ${triad[2]} of hexa ${triad[1]}`;
+    const hexa = f.unit_type === "Bed" ? /Hexa (\d+)$/.exec(f.unit) : null;
+    if (hexa) return `On hexa ${hexa[1]}`;
+    return `On ${f.unit_type === "Triad" ? "triad" : f.unit_type === "Orchard Tree" ? "tree" : "bed"} ${f.unit}`;
+  }
   if (f.source === "Manual" || f.source === "Unit") return "Fixed · placed manually";
   return `GPS estimate · ${f.fixes} fixes`;
 }

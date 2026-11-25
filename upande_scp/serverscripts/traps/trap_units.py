@@ -1,7 +1,7 @@
-"""A trap hung on a unit: a Triad (hexagon), an Orchard Tree or a Bed / Row.
+"""A trap hung on a unit: a Triad (triangle), an Orchard Tree or a Bed / Row / Hexa.
 
 ``Trap.unit_type`` + ``Trap.unit`` (Dynamic Link) say what the trap hangs on. The maps draw the
-trap on that unit's geometry (the hexagon, the tree point, the bed line) and put its marker at the
+trap on that unit's geometry (the triangle, the tree point, the bed line, the Hexa outline) and put its marker at the
 unit's centre; a trap without a unit, or whose unit has no geometry yet, falls back to its own
 ``geojson`` point.
 
@@ -86,8 +86,40 @@ def unit_station_field(unit_type):
 # ---------------------------------------------------------------- database side
 
 
+def hexa_outline(polygons):
+	"""The union of Triad polygons (GeoJSON geometries) as one GeoJSON geometry, or None."""
+	from shapely.geometry import mapping, shape
+	from shapely.ops import unary_union
+
+	shapes = []
+	for g in polygons:
+		if g and g.get("type") in ("Polygon", "MultiPolygon"):
+			try:
+				shapes.append(shape(g).buffer(0))
+			except (TypeError, ValueError):
+				continue
+	if not shapes:
+		return None
+	return json.loads(json.dumps(mapping(unary_union(shapes))))
+
+
+def polygon_centroid(geometry):
+	"""(lat, lng) of a Polygon / MultiPolygon's area centroid, or None."""
+	from shapely.geometry import shape
+
+	try:
+		c = shape(geometry).centroid
+	except (TypeError, ValueError, AttributeError):
+		return None
+	return None if c.is_empty else (c.y, c.x)
+
+
 def _bed_geometry(bed):
-	"""A bed's line: its zones end to end (roses), else its hexagons' centres in order (a pivot row)."""
+	"""A bed's line: its zones end to end (roses), else its triads' centres in order (a pivot row).
+	A Hexa is not a line: it is the union of its Triads."""
+	if frappe.db.get_value("Bed", bed, "unit_type") == "Hexa":
+		rows = frappe.get_all("Triad", filters={"row": bed, "geojson": ["is", "set"]}, fields=["geojson"], limit_page_length=0)
+		return hexa_outline([geometry_of(r.geojson) for r in rows])
 	pts = []
 	prefix = f"{bed} - Zone "
 	for z in frappe.get_all("Zone", filters={"name": ["like", f"{prefix}%"], "geojson": ["is", "set"]}, fields=["name", "geojson"]):
@@ -115,7 +147,7 @@ def unit_geometry(unit_type, unit):
 	row = frappe.db.get_value(unit_type, unit, ["geojson"] + (["triad"] if unit_type == "Orchard Tree" else []), as_dict=True)
 	g = geometry_of(row.geojson)
 	if not g and unit_type == "Orchard Tree" and row.get("triad"):
-		# A tree not surveyed on its own yet sits in its hexagon.
+		# A tree not surveyed on its own yet sits in its triad.
 		g = geometry_of(frappe.db.get_value("Triad", row.triad, "geojson"))
 	return g
 
@@ -143,7 +175,10 @@ def trap_unit_payload(trap):
 	from upande_scp.serverscripts.traps import trap_geometry as G
 
 	geo = unit_geometry(trap.get("unit_type"), trap.get("unit")) if trap.get("unit") else None
-	centre = centre_of(geo) if geo else None
+	if geo and trap.get("unit_type") == "Bed" and geo.get("type") in ("Polygon", "MultiPolygon"):
+		centre = polygon_centroid(geo)  # a Hexa outline: its area centroid, not the vertex mean
+	else:
+		centre = centre_of(geo) if geo else None
 	if not centre:
 		centre = G.point_of(trap.get("geojson")) if trap.get("geojson") else None
 	return {

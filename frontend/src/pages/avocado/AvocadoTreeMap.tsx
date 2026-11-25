@@ -3,7 +3,7 @@ import { FilterSelect } from "@/components/FilterSelect";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
 import { StationCardBody } from "@/components/scouting/StationCard";
 import { captureStamp } from "@/lib/capture-time";
-import { hexCentroids } from "@/lib/hex-centroids";
+import { triadCentroids } from "@/lib/hex-centroids";
 import { unitKey, POINT_PREFIX } from "@/lib/unit-key";
 import {
   deriveStations,
@@ -43,7 +43,7 @@ import { HEADER_PILL } from "@/components/header-controls";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import { TreesLayer } from "../maps/TreesLayer";
 import { addFieldLayers, blockColors, paintFieldColors, pointFeatures, setFieldVisibility } from "../maps/field-layers";
-import { decodeHexes, fetchFieldLayers, rowLines, type FieldLayersPayload } from "@/lib/field-geo";
+import { decodeTriads, fetchFieldLayers, hexaEdges, type FieldLayersPayload } from "@/lib/field-geo";
 import {
   fetchBlocksGeojson,
   fetchOrchardTreeRows,
@@ -228,7 +228,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
       alive = false;
     };
   }, [filters.farm]);
-  const hexSet = useMemo(() => decodeHexes(field?.hex), [field]);
+  const hexSet = useMemo(() => decodeTriads(field?.tri), [field]);
 
   // Orchard trees can be huge (every tree on every avocado block), so fetch
   // them OFF the critical path — the map paints from blocks/tanks + scouting
@@ -364,7 +364,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   // Stations: one per tree / hexagon / visit point a scout recorded at, per scout-day-block
   // walk. A tree sits at its own position, a hexagon at its centre, a visit point (or a unit
   // with no position) at the entry's GPS.
-  const hexCentre = useMemo(() => hexCentroids(hexSet), [hexSet]);
+  const hexCentre = useMemo(() => triadCentroids(hexSet), [hexSet]);
   const allStations = useMemo<Station[]>(() => {
     if (!view.showTracks || !data?.entries?.length) return [];
     return deriveStations(data.entries, {
@@ -547,16 +547,16 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !blocks || !field) return;
-    const hexBlocks = [...new Set(hexSet.fc.features.map((f) => f.properties.b))];
-    addFieldLayers(map, hexSet, rowLines(field.rows, field.hex.q), hexBlocks);
+    const hexBlocks = [...new Set(hexSet.fc.features.map((f) => f.properties.block))];
+    addFieldLayers(map, hexSet, hexaEdges(field.tri), hexBlocks);
     paintedRef.current = { units: null, blocks: null };
-    setFieldVisibility(map, { hex: showHex, rows: showRows });
+    setFieldVisibility(map, { tri: showHex, hexa: showRows });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field, hexSet, blocks, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !field || !map.getSource("fg-hex")) return;
+    if (!map || !mapReady || !field || !map.getSource("fg-tri")) return;
     const perBlock = blockColors(data?.entries ?? [], treeColors);
     paintFieldColors(map, hexSet, paintedRef.current.units, treeColors, {
       prev: paintedRef.current.blocks,
@@ -570,7 +570,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map && mapReady) setFieldVisibility(map, { hex: showHex, rows: showRows });
+    if (map && mapReady) setFieldVisibility(map, { tri: showHex, hexa: showRows });
   }, [showHex, showRows, mapReady, field]);
 
   // Optional marker overlay (e.g. trap catches), driven by the view. Each is a
@@ -730,7 +730,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     };
     setVis("blocks-fill", showBlocks);
     setVis("blocks-heat", showBlocks);
-    setVis("blocks-heat-hex", showBlocks);
+    setVis("blocks-heat-tri", showBlocks);
     setVis("blocks-line", showBlocks);
     setVis("blocks-labels", showBlocks);
     setVis("tanks-circle", showTanks);
@@ -869,14 +869,14 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
                     checked={showHex}
                     onCheckedChange={(v) => setShowHex(!!v)}
                   />
-                  Hexagons
+                  Triangles
                 </label>
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
                   <Checkbox
                     checked={showRows}
                     onCheckedChange={(v) => setShowRows(!!v)}
                   />
-                  Rows
+                  Hexas
                 </label>
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
                   <Checkbox

@@ -103,7 +103,7 @@ def _build(from_date: str, to_date: str, crop: str, job_id: str = "") -> dict:
 
     publish_progress(job_id, 95, "loading unit counts")
     # Structural unit count per station, inferred from the warehouse type:
-    # Greenhouse → Zones, Block → Orchard Trees (and a future type → Triads
+    # Greenhouse → Zones, Block → Orchard Trees (and Hexa blocks → Triads
     # for coffee). This is the total scouting units that *exist*.
     #
     # It is the denominator of COVERAGE only. It used to be the denominator of
@@ -174,7 +174,7 @@ def _fetch_observations(where: str, params: dict) -> list:
     return frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
-               se.bed, se.zone, se.tree,
+               se.bed, se.zone, se.tree, se.triad,
                'pest' AS kind,
                p.pest AS obs_name, p.stage AS stage,
                p.`count` AS obs_count
@@ -183,7 +183,7 @@ def _fetch_observations(where: str, params: dict) -> list:
         WHERE {where}{pest_obs}
         UNION ALL
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
-               se.bed, se.zone, se.tree,
+               se.bed, se.zone, se.tree, se.triad,
                'disease' AS kind,
                d.disease AS obs_name, d.stage AS stage,
                0 AS obs_count
@@ -302,7 +302,7 @@ def _fetch_scouted(where: str, params: dict) -> list:
     return frappe.db.sql(
         f"""
         SELECT se.date_of_capture, se.greenhouse, se.block,
-               se.bed, se.zone, se.tree
+               se.bed, se.zone, se.tree, se.triad
         FROM `tabScouting Entry` se
         WHERE {where}
         """,
@@ -316,15 +316,17 @@ def _station_of(row) -> str:
 
 
 def _unit_key(row) -> str:
-    """Same logic as aggregate.ts/unitKey — block.tree path for avocado,
-    zone for greenhouse, bed as final fallback. Empty string drops the row
-    from the index (no usable unit identifier)."""
+    """Same precedence as frontend/src/lib/unit-key.ts (tree first, then triad) —
+    block.tree path for avocado, block.triad path for Hexa → Triad blocks, zone for
+    greenhouse, bed as final fallback. Empty string drops the row from the index
+    (no usable unit identifier)."""
     block = (row.block or "").strip()
     if block:
         tree = (row.tree or "").strip()
-        if not tree:
-            return ""
-        return f"{block}::tree::{tree}"
+        if tree:
+            return f"{block}::tree::{tree}"
+        triad = (row.triad or "").strip()
+        return f"{block}::triad::{triad}" if triad else ""
     zone = (row.zone or "").strip()
     if zone:
         return f"zone::{zone}"

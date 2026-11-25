@@ -1,26 +1,27 @@
 /**
- * MapLibre layers for blocks that are surveyed into rows and hexagons (Triads).
+ * MapLibre layers for blocks that are surveyed into Hexas and triangles (Triads).
  *
  * Everything the browser draws here comes from lib/field-geo.ts: one GeoJSON source for all
- * hexagons (MapLibre tiles and parses it in its worker, and only what is in view is drawn), row
- * lines, and a point source for visits on blocks that have an outline but no hexagons. The
- * hexagon fill appears from HEX_ZOOM and its outline from HEX_LINE_ZOOM; below that only the
- * block boundaries paint, so zooming out never pays for 24,000 polygons. Colour is feature-state
- * (set per hexagon / per block, never by rebuilding geometry).
+ * triangles (MapLibre tiles and parses it in its worker, and only what is in view is drawn), the
+ * Hexa outlines, and a point source for visits on blocks that have an outline but no triangles.
+ * The triangle fill appears from TRI_ZOOM, the Hexa outline from HEXA_LINE_ZOOM and the triangle
+ * outline from TRI_LINE_ZOOM; below that only the block boundaries paint, so zooming out never
+ * pays for tens of thousands of polygons. Colour is feature-state (set per triangle / per
+ * block, never by rebuilding geometry).
  */
 import type maplibregl from "maplibre-gl";
 import type { GeoJsonFC } from "@/lib/scouting-api";
-import type { HexSet } from "@/lib/field-geo";
+import type { TriadSet } from "@/lib/field-geo";
 import type { ScoutingEntry } from "@/lib/scouting-types";
 import { POINT_PREFIX, entryPoint, unitKey } from "@/lib/unit-key";
 
-export const HEX_ZOOM = 15.5;
-export const HEX_LINE_ZOOM = 17.2;
-export const ROW_ZOOM = 16;
+export const TRI_ZOOM = 15.5;
+export const TRI_LINE_ZOOM = 18;
+export const HEXA_LINE_ZOOM = 16.5;
 export const POINT_ZOOM = 14;
-const UNSCOUTED_HEX = "#d8d3c4";
+const UNSCOUTED_TRI = "#d8d3c4";
 
-export const FG_LAYERS = ["fg-hex-fill", "fg-hex-line", "fg-rows", "fg-pts", "blocks-heat", "blocks-heat-hex"] as const;
+export const FG_LAYERS = ["fg-tri-fill", "fg-tri-line", "fg-hexa-line", "fg-pts", "blocks-heat", "blocks-heat-tri"] as const;
 
 /** Which names changed colour, so a recolour touches only what changed. Pure. */
 export function diffColors(
@@ -59,7 +60,7 @@ export function blockColors(entries: ScoutingEntry[], colors: Map<string, string
   return out;
 }
 
-/** Visit points for blocks with no hexagons or trees: one coloured dot per located visit. Pure. */
+/** Visit points for blocks with no triangles or trees: one coloured dot per located visit. Pure. */
 export function pointFeatures(entries: ScoutingEntry[], colors: Map<string, string>): GeoJsonFC {
   const features: GeoJsonFC["features"] = [];
   for (const e of entries) {
@@ -79,19 +80,19 @@ function ensureSource(map: maplibregl.Map, id: string, data: unknown, extra: Rec
   else map.addSource(id, { type: "geojson", data: data as never, ...extra } as never);
 }
 
-/** Add (once) the hexagon, row and point layers under the block outline. */
-export function addFieldLayers(map: maplibregl.Map, hex: HexSet, rows: GeoJsonFC, hexBlocks: string[]): void {
+/** Add (once) the triangle, Hexa-outline and point layers under the block outline. */
+export function addFieldLayers(map: maplibregl.Map, tri: TriadSet, hexaLines: GeoJsonFC, triBlocks: string[]): void {
   const before = map.getLayer("blocks-line") ? "blocks-line" : undefined;
-  if (!map.getSource("fg-hex")) {
-    map.addSource("fg-hex", { type: "geojson", data: hex.fc as never, tolerance: 0, buffer: 32, maxzoom: 19 } as never);
+  if (!map.getSource("fg-tri")) {
+    map.addSource("fg-tri", { type: "geojson", data: tri.fc as never, tolerance: 0, buffer: 32, maxzoom: 20 } as never);
     map.addLayer(
       {
-        id: "fg-hex-fill",
+        id: "fg-tri-fill",
         type: "fill",
-        source: "fg-hex",
-        minzoom: HEX_ZOOM,
+        source: "fg-tri",
+        minzoom: TRI_ZOOM,
         paint: {
-          "fill-color": ["coalesce", ["feature-state", "c"], UNSCOUTED_HEX] as never,
+          "fill-color": ["coalesce", ["feature-state", "c"], UNSCOUTED_TRI] as never,
           "fill-opacity": ["case", ["to-boolean", ["feature-state", "c"]], 0.88, 0.28] as never,
         },
       },
@@ -99,24 +100,24 @@ export function addFieldLayers(map: maplibregl.Map, hex: HexSet, rows: GeoJsonFC
     );
     map.addLayer(
       {
-        id: "fg-hex-line",
+        id: "fg-tri-line",
         type: "line",
-        source: "fg-hex",
-        minzoom: HEX_LINE_ZOOM,
+        source: "fg-tri",
+        minzoom: TRI_LINE_ZOOM,
         paint: { "line-color": "#2a2a26", "line-width": 0.5, "line-opacity": 0.35 },
       },
       before,
     );
   }
-  ensureSource(map, "fg-rows", rows);
-  if (!map.getLayer("fg-rows")) {
+  ensureSource(map, "fg-hexa", hexaLines);
+  if (!map.getLayer("fg-hexa-line")) {
     map.addLayer(
       {
-        id: "fg-rows",
+        id: "fg-hexa-line",
         type: "line",
-        source: "fg-rows",
-        minzoom: ROW_ZOOM,
-        paint: { "line-color": "#6b705c", "line-width": 1, "line-opacity": 0.5, "line-dasharray": [2, 2] },
+        source: "fg-hexa",
+        minzoom: HEXA_LINE_ZOOM,
+        paint: { "line-color": "#2a2a26", "line-width": 1, "line-opacity": 0.55 },
       },
       before,
     );
@@ -137,29 +138,29 @@ export function addFieldLayers(map: maplibregl.Map, hex: HexSet, rows: GeoJsonFC
       },
     });
   }
-  // Block colour wash: blocks that have hexagons fade it out as the hexagons come in.
+  // Block colour wash: blocks that have triangles fade it out as the triangles come in.
   if (map.getSource("blocks") && !map.getLayer("blocks-heat")) {
-    const hexIn = ["in", ["get", "block"], ["literal", hexBlocks]] as never;
+    const triIn = ["in", ["get", "block"], ["literal", triBlocks]] as never;
     const colour = ["coalesce", ["feature-state", "c"], "rgba(0,0,0,0)"] as never;
     map.addLayer(
       {
         id: "blocks-heat",
         type: "fill",
         source: "blocks",
-        filter: ["!", hexIn] as never,
+        filter: ["!", triIn] as never,
         paint: { "fill-color": colour, "fill-opacity": 0.4 },
       },
       "blocks-line",
     );
     map.addLayer(
       {
-        id: "blocks-heat-hex",
+        id: "blocks-heat-tri",
         type: "fill",
         source: "blocks",
-        filter: hexIn,
+        filter: triIn,
         paint: {
           "fill-color": colour,
-          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.5, HEX_ZOOM, 0.45, HEX_ZOOM + 1.2, 0] as never,
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.5, TRI_ZOOM, 0.45, TRI_ZOOM + 1.2, 0] as never,
         },
       },
       "blocks-line",
@@ -167,18 +168,18 @@ export function addFieldLayers(map: maplibregl.Map, hex: HexSet, rows: GeoJsonFC
   }
 }
 
-/** Colour the hexagons and blocks from the view's per-unit colours (touching only what changed). */
+/** Colour the triangles and blocks from the view's per-unit colours (touching only what changed). */
 export function paintFieldColors(
   map: maplibregl.Map,
-  hex: HexSet,
+  tri: TriadSet,
   prev: Map<string, string> | null,
   next: Map<string, string>,
   perBlock: { prev: Map<string, string> | null; next: Map<string, string> },
 ): void {
-  if (map.getSource("fg-hex")) {
-    const { set, clear } = diffColors(prev, next, (k) => hex.idByName.has(k));
-    for (const k of clear) map.removeFeatureState({ source: "fg-hex", id: hex.idByName.get(k)! }, "c");
-    for (const [k, c] of set) map.setFeatureState({ source: "fg-hex", id: hex.idByName.get(k)! }, { c });
+  if (map.getSource("fg-tri")) {
+    const { set, clear } = diffColors(prev, next, (k) => tri.idByName.has(k));
+    for (const k of clear) map.removeFeatureState({ source: "fg-tri", id: tri.idByName.get(k)! }, "c");
+    for (const [k, c] of set) map.setFeatureState({ source: "fg-tri", id: tri.idByName.get(k)! }, { c });
   }
   if (map.getSource("blocks")) {
     const { set, clear } = diffColors(perBlock.prev, perBlock.next, () => true);
@@ -187,9 +188,9 @@ export function paintFieldColors(
   }
 }
 
-export function setFieldVisibility(map: maplibregl.Map, v: { hex: boolean; rows: boolean }): void {
+export function setFieldVisibility(map: maplibregl.Map, v: { tri: boolean; hexa: boolean }): void {
   const set = (id: string, on: boolean) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
-  set("fg-hex-fill", v.hex);
-  set("fg-hex-line", v.hex);
-  set("fg-rows", v.rows);
+  set("fg-tri-fill", v.tri);
+  set("fg-tri-line", v.tri);
+  set("fg-hexa-line", v.hexa);
 }

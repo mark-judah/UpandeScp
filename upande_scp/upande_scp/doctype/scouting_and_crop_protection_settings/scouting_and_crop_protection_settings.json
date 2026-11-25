@@ -108,6 +108,7 @@
   "scout_greetings_enabled",
   "save_without_gps_fix",
   "scouts_pick_unit",
+  "triad_side_m",
   "trap_photos_section",
   "trap_photo_rules",
   "asset_checks_section",
@@ -775,10 +776,17 @@
   },
   {
    "default": "1",
-   "description": "On: the scout picks the row (block) or bed (greenhouse) before scouting. Off: the scout picks only the block or greenhouse and the server maps each entry to the nearest tree, row or zone from its GPS point; entries it cannot map show To be mapped.",
+   "description": "On: the scout picks the row (block), bed (greenhouse) or Hexa (Hexa blocks) before scouting. Off: the scout picks only the block or greenhouse and the server maps each entry to the nearest tree, row, zone or triangle (Triad) from its GPS point; entries it cannot map show To be mapped.",
    "fieldname": "scouts_pick_unit",
    "fieldtype": "Check",
    "label": "Scouts pick the row / bed"
+  },
+  {
+   "default": "5",
+   "description": "Standard triad (triangle) side for Hexa layouts. Imports must match within 2 %.",
+   "fieldname": "triad_side_m",
+   "fieldtype": "Float",
+   "label": "Triangle side (m)"
   },
   {
    "description": "Per trap pest: must a scout photograph a catch of it? Separate from the general photo switch above. The scout app reads this with its observations.",

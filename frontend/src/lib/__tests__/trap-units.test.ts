@@ -40,7 +40,9 @@ describe("trapUnitLayers", () => {
 describe("trapPlacement", () => {
   it("names the unit a trap hangs on, else how it was placed", async () => {
     const { trapPlacement } = await import("../trap-units");
-    expect(trapPlacement(LOCS["Mutara - T01"])).toBe("On hexagon P1-B1 - Row 1 - Triad 1");
+    expect(trapPlacement(LOCS["Mutara - T01"])).toBe("On triad P1-B1 - Row 1 - Triad 1");
+    expect(trapPlacement({ ...LOCS["Mutara - T01"], unit: "P1-B1 - Hexa 4 - Triad 3" })).toBe("On triad 3 of hexa 4");
+    expect(trapPlacement({ ...LOCS["Mutara - T03"], unit: "P1-B1 - Hexa 4" })).toBe("On hexa 4");
     expect(trapPlacement(LOCS["Mutara - T02"])).toBe("On tree Tree 1");
     expect(trapPlacement(LOCS["Mutara - T03"])).toBe("On bed Row 4");
     expect(trapPlacement(LOCS["Mutara - T04"])).toBe("Fixed · placed manually");

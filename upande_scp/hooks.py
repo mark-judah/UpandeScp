@@ -324,6 +324,10 @@ doc_events = {
         "on_update": "upande_scp.serverscripts.common.crop_protection.on_item_update",
     },
     "Orchard Tree": _SCP_CACHE_EVENTS,
+    "Triad": {
+        "on_update": "upande_scp.serverscripts.mobile.geo_utils.clear_triad_cache_on_event",
+        "on_trash": "upande_scp.serverscripts.mobile.geo_utils.clear_triad_cache_on_event",
+    },
     # These four were declared in cache_utils' invalidation map but never
     # hooked, so their entries were dead code and the cache never flushed for
     # them. Map Settings was the visible one: setting a farm's coordinates left

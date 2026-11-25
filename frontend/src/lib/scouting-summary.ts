@@ -1,5 +1,5 @@
 /**
- * One request for the block-grown Scouting Map: the latest entry on every hexagon / visit point
+ * One request for the block-grown Scouting Map: the latest entry on every triad / visit point
  * for the selected range, instead of every raw entry week by week (see
  * serverscripts/scouting/unit_summary.py). The rows expand back into entry-shaped objects, so the
  * map's own derive functions run on them unchanged.

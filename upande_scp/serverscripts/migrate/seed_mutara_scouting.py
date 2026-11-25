@@ -8,8 +8,8 @@
 What it makes, per block that has a crop planted (``common.planting``: the current Production Crop
 Cycle, a Production Unit's own crop where it has none yet, never a Retired unit):
 
-* surveyed pivot blocks: every entry sits on one of the block's Triads (3 m hexagons) and its
-  Row (Bed); the hexagon is stored in ``Scouting Entry.triad``;
+* surveyed pivot blocks: every entry sits on one of the block's Triads (the triangles of a Hexa); the
+  Triad is stored in ``Scouting Entry.triad`` and its Hexa (``Triad.row``) in ``Scouting Entry.row``;
 * avocado blocks, which have an outline but no rows or trees yet: entries are points inside the
   block polygon;
 * blocks with no surveyed geometry: block-level entries with no coordinates.
@@ -71,7 +71,7 @@ def season_of(kind: str, target: str) -> str:
 class Unit:
 	block: str
 	crop: str
-	#: (name, lng, lat, row, number) per scoutable hexagon; empty when the block has none.
+	#: (triad name, lng, lat, hexa (Triad.row), slot 1..6) per scoutable Triad; empty when the block has none.
 	sites: list = field(default_factory=list)
 	#: outline ring [(lng, lat), ...] when there are no sites but a surveyed polygon.
 	polygon: list | None = None
@@ -683,7 +683,7 @@ def _trap_sites(farm: str = FARM) -> list:
 		crop, pest = _block_crop_and_pest(b.block)
 		if not pest:
 			continue
-		# The block's most scouted hexagon: where the scouts walk, so the trap sits on the heat.
+		# The block's most scouted triad: where the scouts walk, so the trap sits on the heat.
 		tri = frappe.db.sql(
 			"select triad from `tabScouting Entry` where block = %s and triad is not null and triad != ''"
 			" group by triad order by count(*) desc limit 1", (b.block,),

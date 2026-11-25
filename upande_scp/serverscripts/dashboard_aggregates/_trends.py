@@ -174,7 +174,7 @@ def _fetch_observations(where: str, params: dict) -> list:
     return frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
-               se.bed, se.zone, se.tree,
+               se.bed, se.zone, se.tree, se.triad,
                'pest' AS kind,
                p.pest AS obs_name, p.stage AS stage,
                p.`count` AS obs_count
@@ -183,7 +183,7 @@ def _fetch_observations(where: str, params: dict) -> list:
         WHERE {where}{pest_obs}
         UNION ALL
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
-               se.bed, se.zone, se.tree,
+               se.bed, se.zone, se.tree, se.triad,
                'disease' AS kind,
                d.disease AS obs_name, d.stage AS stage,
                0 AS obs_count
@@ -302,7 +302,7 @@ def _fetch_scouted(where: str, params: dict) -> list:
     return frappe.db.sql(
         f"""
         SELECT se.date_of_capture, se.greenhouse, se.block,
-               se.bed, se.zone, se.tree
+               se.bed, se.zone, se.tree, se.triad
         FROM `tabScouting Entry` se
         WHERE {where}
         """,
@@ -316,11 +316,14 @@ def _station_of(row) -> str:
 
 
 def _unit_key(row) -> str:
-    """Same logic as aggregate.ts/unitKey — block.tree path for avocado,
-    zone for greenhouse, bed as final fallback. Empty string drops the row
+    """Same logic as aggregate.ts/unitKey — block.triad path for Hexa → Triad
+    blocks, block.tree path for avocado, zone for greenhouse, bed as final fallback. Empty string drops the row
     from the index (no usable unit identifier)."""
     block = (row.block or "").strip()
     if block:
+        triad = (row.triad or "").strip()
+        if triad:
+            return f"{block}::triad::{triad}"
         tree = (row.tree or "").strip()
         if not tree:
             return ""

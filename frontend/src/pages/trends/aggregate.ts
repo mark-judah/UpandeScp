@@ -110,7 +110,7 @@ export function parseObs(id: string): ObsKey | null {
  *
  * The chart shows INCIDENCE: ``% of units SCOUTED that had the matching
  * observation``, per ISO week, per selection — where a "unit" is the crop's
- * scouting unit (zone for roses, orchard tree for avocado, triad for coffee).
+ * scouting unit (zone for roses, orchard tree for avocado, triad for Hexa → Triad blocks).
  *
  *   numerator   = distinct units that matched in that week
  *   denominator = distinct units actually scouted in that week (scoutedByStation)
@@ -122,7 +122,7 @@ export function parseObs(id: string): ObsKey | null {
  * is now reported separately (see ``cellStats``) instead of being silently
  * folded into the percentage.
  *
- * Unit keys are station-prefixed on the server (``block::tree::Tx``
+ * Unit keys are station-prefixed on the server (``block::triad::Tx``, ``block::tree::Tx``
  * or ``zone::Zy``) so summing the per-station ``n`` from a row stays
  * a correct distinct-unit count for the selection.
  * ============================================================= */

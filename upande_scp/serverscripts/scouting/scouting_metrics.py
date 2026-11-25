@@ -222,7 +222,8 @@ def get_zone_counts_by_greenhouse():
 def get_units_by_warehouse():
     """Return {warehouse_name: {"type": "greenhouse"|"block", "count": N, "farm": str, "area_ha": float}}.
 
-    Greenhouses → number of Zones; blocks → number of Orchard Trees. ``area_ha``
+    Greenhouses → number of Zones; blocks → number of Orchard Trees, or of Triads when the
+    block is laid out as Hexa → Triad. ``area_ha``
     comes from ``Warehouse.custom_area_ha`` and is the denominator for
     Per-Hectare severity thresholds. Drives the "Zone Coverage %" / "Tree
     Coverage %" denominator on the scouting dashboard so pressure metrics
@@ -281,6 +282,23 @@ def get_units_by_warehouse():
             out[r.wh]["count"] = int(r.cnt or 0)
         else:
             out[r.wh] = {"type": "block", "count": int(r.cnt or 0), "farm": "", "area_ha": 0.0}
+
+    # Hexa → Triad blocks: the Triad is the scouting unit, so it replaces trees as the count.
+    triad_counts = frappe.db.sql(
+        """
+        SELECT block AS wh, COUNT(*) AS cnt
+        FROM   `tabTriad`
+        WHERE  block IS NOT NULL AND block != ''
+        GROUP  BY block
+        """,
+        as_dict=True,
+    )
+    for r in triad_counts:
+        if r.wh in out:
+            out[r.wh]["type"] = "triad"
+            out[r.wh]["count"] = int(r.cnt or 0)
+        else:
+            out[r.wh] = {"type": "triad", "count": int(r.cnt or 0), "farm": "", "area_ha": 0.0}
     return out
 
 

@@ -537,7 +537,7 @@ def partition_scope(names, units=None) -> tuple:
         units = scouting_metrics.get_units_by_warehouse() or {}
     ghs, blocks = [], []
     for n in names:
-        if (units.get(n) or {}).get("type") == "block":
+        if (units.get(n) or {}).get("type") in ("block", "triad"):
             blocks.append(n)
         else:
             ghs.append(n)

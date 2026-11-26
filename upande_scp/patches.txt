@@ -79,3 +79,5 @@ upande_scp.patches.v1_0.min_spray_minutes_default_off
 upande_scp.patches.v1_0.desk_icon_same_tab
 # Sites that never stored scouts_pick_unit keep the scouts-pick-the-row behaviour.
 upande_scp.patches.v1_0.scouts_pick_unit_default_on
+# Spray rates are stock UOM per an amount of Water/Area; product types become a list.
+upande_scp.patches.v1_0.spray_rates_per_uom

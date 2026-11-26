@@ -29,7 +29,10 @@ import {
 import { CropRatesTable, hasDuplicateRates } from "./CropRatesTable";
 import { listCrops } from "@/lib/thresholds-api";
 import {
+  fetchProductTypes,
+  fetchRateUoms,
   saveChemical,
+  type RateUoms,
   type CropRateRow,
   type ChemicalRow,
   type ChemicalTarget,
@@ -76,6 +79,8 @@ export function ChemicalEditDrawer({
   const [upper, setUpper] = useState<string>("");
   const [cropRates, setCropRates] = useState<CropRateRow[]>([]);
   const [cropNames, setCropNames] = useState<string[]>([]);
+  const [rateUoms, setRateUoms] = useState<RateUoms | null>(null);
+  const [types, setTypes] = useState<string[]>([]);
   const [lowStock, setLowStock] = useState<string>("");
   const [iracMoa, setIracMoa] = useState("");
   const [fracMoa, setFracMoa] = useState("");
@@ -93,6 +98,8 @@ export function ChemicalEditDrawer({
   useEffect(() => {
     if (!open) return;
     listCrops().then((c) => setCropNames(c || [])).catch(() => setCropNames([]));
+    fetchRateUoms().then(setRateUoms).catch(() => setRateUoms(null));
+    fetchProductTypes().then(setTypes).catch(() => setTypes([]));
   }, [open]);
 
   // Hydrate state from the picked chemical.
@@ -316,10 +323,9 @@ export function ChemicalEditDrawer({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none">Unclassified</SelectItem>
-                    <SelectItem value="Insecticide">Insecticide</SelectItem>
-                    <SelectItem value="Fungicide">Fungicide</SelectItem>
-                    <SelectItem value="Adjuvant">Adjuvant</SelectItem>
-                    <SelectItem value="pH Buffer">pH Buffer</SelectItem>
+                    {[...new Set([...types, ...(type ? [type] : [])])].map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -375,7 +381,7 @@ export function ChemicalEditDrawer({
             />
           </section>
 
-          <CropRatesTable rows={cropRates} crops={cropNames} onChange={setCropRates} />
+          <CropRatesTable rows={cropRates} crops={cropNames} uoms={rateUoms} onChange={setCropRates} />
 
           {/* Resistance codes — chemicals only. Fertilizers don't carry
               insecticide / fungicide resistance classifications. */}

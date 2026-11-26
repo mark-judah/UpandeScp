@@ -24,7 +24,24 @@ class SprayProduct(Document):
 	def validate(self):
 		if self.item and not self.product_name:
 			self.product_name = frappe.db.get_value("Item", self.item, "item_name")
+		if self.item and not self.get("stock_uom"):
+			self.stock_uom = frappe.db.get_value("Item", self.item, "stock_uom")
 		self._validate_crop_rates()
+		self._fill_rate_units()
+
+	def _fill_rate_units(self):
+		"""Default each rate row's unit, refuse a UOM with no conversion, write the readable line."""
+		from upande_scp.serverscripts.common.spray_rates import per_unit, rate_line
+
+		for row in self.get("crop_rates") or []:
+			basis = row.get("basis") or "Water"
+			# throws when the UOM is the wrong category or has no conversion to the base
+			qty, uom, _base = per_unit(basis, row.get("per_qty"), row.get("per_uom"))
+			row.per_qty, row.per_uom = qty, uom
+			row.rate_line = rate_line(
+				self.product_name or self.item, self.get("stock_uom"), basis,
+				row.lower_rate_limit, row.upper_rate_limit, qty, uom,
+			)
 
 	def _validate_crop_rates(self):
 		"""One row per crop and determinant, and a lower bound that is actually below the upper.

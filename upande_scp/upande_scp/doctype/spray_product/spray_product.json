@@ -30,7 +30,9 @@
   "low_stock_threshold",
   "default_lower_rate_limit",
   "default_upper_rate_limit",
+  "stock_uom",
   "crop_rates",
+  "rate_summary",
   "default_targets",
   "default_requirements",
   "qr_item_id"
@@ -75,10 +77,10 @@
   },
   {
    "fieldname": "type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Type",
-   "options": "\nInsecticide\nFungicide\nAdjuvant\npH Buffer\nPlant Growth Regulator"
+   "options": "Spray Product Type"
   },
   {
    "fieldname": "classification_section",
@@ -212,6 +214,20 @@
    "label": "QR Item Id",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "stock_uom",
+   "fieldtype": "Link",
+   "label": "Stock UOM",
+   "options": "UOM",
+   "read_only": 1,
+   "fetch_from": "item.stock_uom",
+   "description": "The unit every dose below is measured in (the Item's stock UOM)."
+  },
+  {
+   "fieldname": "rate_summary",
+   "fieldtype": "HTML",
+   "label": "Rates as read"
   }
  ],
  "grid_page_length": 50,

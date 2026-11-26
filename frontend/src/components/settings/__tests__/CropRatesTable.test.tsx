@@ -25,13 +25,15 @@ describe("CropRatesTable", () => {
     const spy = vi.fn();
     render(<Host initial={[]} spy={spy} />);
     await userEvent.click(screen.getByRole("button", { name: /add rate/i }));
-    expect(spy).toHaveBeenLastCalledWith([{ crop: "", basis: "Water", lower_rate_limit: 0, upper_rate_limit: 0 }]);
+    expect(spy).toHaveBeenLastCalledWith([
+      { crop: "", basis: "Water", lower_rate_limit: 0, upper_rate_limit: 0, per_qty: 1000, per_uom: "Litre" },
+    ]);
     expect(screen.getAllByTestId("crop-rate-row")).toHaveLength(1);
     await userEvent.click(screen.getByRole("button", { name: /remove rate/i }));
     expect(screen.queryAllByTestId("crop-rate-row")).toHaveLength(0);
   });
 
-  it("shows the unit of each determinant and edits the limits", async () => {
+  it("shows the determinant and its unit, and edits the limits", async () => {
     const spy = vi.fn();
     render(
       <Host
@@ -39,12 +41,29 @@ describe("CropRatesTable", () => {
         spy={spy}
       />,
     );
-    expect(screen.getByText("Hectarage · per 10,000 m²")).toBeTruthy();
+    expect(screen.getByText("Area")).toBeTruthy();
+    expect(screen.getByText("Hectare")).toBeTruthy();
     const upper = screen.getByLabelText("Upper rate");
     await userEvent.clear(upper);
     await userEvent.type(upper, "3");
     expect(spy).toHaveBeenLastCalledWith([
       { crop: "Avocado", basis: "Hectarage", lower_rate_limit: 1, upper_rate_limit: 3 },
+    ]);
+  });
+
+  it("keeps a row's own unit when its limits are edited, and resets it when the determinant changes", async () => {
+    const spy = vi.fn();
+    render(
+      <Host
+        initial={[{ crop: "", basis: "Water", lower_rate_limit: 0.1, upper_rate_limit: 0.2, per_qty: 100, per_uom: "Litre" }]}
+        spy={spy}
+      />,
+    );
+    const upper = screen.getByLabelText("Upper rate");
+    await userEvent.clear(upper);
+    await userEvent.type(upper, "3");
+    expect(spy).toHaveBeenLastCalledWith([
+      { crop: "", basis: "Water", lower_rate_limit: 0.1, upper_rate_limit: 3, per_qty: 100, per_uom: "Litre" },
     ]);
   });
 

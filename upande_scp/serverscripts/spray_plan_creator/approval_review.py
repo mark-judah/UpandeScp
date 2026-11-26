@@ -2,10 +2,16 @@
 from __future__ import annotations
 
 import frappe
-from frappe.utils import add_days, get_datetime, now_datetime
+from frappe.utils import add_days, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
-from upande_scp.serverscripts.common.crop_protection import get_product_rate
+from upande_scp.serverscripts.common import crop_catalog
+from upande_scp.serverscripts.common.spray_rates import (
+    pick_row,
+    rate_from_quantity,
+    rates_for,
+    rate_status as rate_status_for,
+)
 from upande_scp.serverscripts.spray_compliance import context as C
 
 
@@ -20,30 +26,33 @@ def get_approval_review(wo_name: str) -> dict:
     frac_window = settings.frac_rotation_window_days or 21
 
     # A product's codes = its linked ingredients' codes + hand-entered ones (spec D9).
+    crop = crop_catalog.crop_for_greenhouse(wo.custom_greenhouse)
+    area_m2 = flt(wo.custom_area) * 10000.0
+    water_l = flt(wo.custom_water_volume)
+    prefer_area = frappe.db.get_value("Warehouse", wo.custom_greenhouse, "warehouse_type") == "Block"
     products = C.load_products([r.item_code for r in wo.required_items or []])
     chemicals = []
     for r in (wo.required_items or []):
         item_exists = frappe.db.exists("Item", r.item_code)
-        if item_exists:
-            _lo, _up = get_product_rate(r.item_code)
-            lower = _lo or None
-            upper = _up or None
-        else:
-            lower = upper = None
+        lower = upper = None
 
         product = products.get(r.item_code) or {}
         irac_codes = list(product.get("irac") or [])
         frac_codes = list(product.get("frac") or [])
 
-        # Rate limits (custom_lower_rate_limit/custom_upper_rate_limit) are
-        # per-1000 L; required_qty is the absolute, so derive the rate to compare.
-        rate = absolute_to_rate(r.required_qty, wo.custom_water_volume)
-        rate_status = "ok"
-        if rate is not None:
-            if lower is not None and rate < lower:
-                rate_status = "below"
-            if upper is not None and rate > upper:
-                rate_status = "above"
+        # Rate limits live on the product's rate rows, in the row's own unit (stock UOM
+        # per an amount of water or area). required_qty is the absolute, so derive the rate
+        # on the same row and conversion the planner used (spray_rates.pick_row: blocks prefer an
+        # Area row, greenhouses a Water row).
+        row = pick_row(rates_for(r.item_code, crop), prefer_area) if item_exists else None
+        if row:
+            rate = rate_from_quantity(r.required_qty, row, area_m2, water_l)
+            lower, upper = row["lower"] or None, row["upper"] or None
+        else:
+            rate = absolute_to_rate(r.required_qty, wo.custom_water_volume)
+        rate_status = rate_status_for(r.item_code, crop, r.required_qty, area_m2, water_l, prefer_area) if row else "ok"
+        if rate is None:
+            rate = flt(r.required_qty)
 
         warnings: list[dict] = []
         for irac_code in irac_codes:

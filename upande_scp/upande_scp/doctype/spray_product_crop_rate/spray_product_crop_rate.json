@@ -8,12 +8,15 @@
  "field_order": [
   "crop",
   "basis",
+  "per_qty",
+  "per_uom",
   "lower_rate_limit",
-  "upper_rate_limit"
+  "upper_rate_limit",
+  "rate_line"
  ],
  "fields": [
   {
-   "columns": 3,
+   "columns": 2,
    "fieldname": "crop",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -29,11 +32,30 @@
    "label": "Determinant",
    "options": "Water\nHectarage",
    "default": "Water",
-   "description": "Water: rate is per 1000 L of spray water. Hectarage: rate is per 10,000 m² of area."
+   "description": "Water: the rate is per an amount of spray water (a Volume unit). Hectarage (shown as Area): per an amount of land (an Area unit)."
   },
   {
+   "fieldname": "per_qty",
+   "fieldtype": "Float",
+   "label": "Per",
+   "columns": 1,
+   "in_list_view": 1,
+   "default": "0",
+   "non_negative": 1,
+   "description": "The amount in the denominator, e.g. 1, 100 or 1000. Blank reads as the legacy unit (1000 for Water, 1 for Area)."
+  },
+  {
+   "fieldname": "per_uom",
+   "fieldtype": "Link",
+   "label": "Per UOM",
+   "options": "UOM",
    "columns": 2,
-   "description": "Minimum dose per the determinant's unit (Water: 1000 L; Hectarage: 10,000 m²).",
+   "in_list_view": 1,
+   "description": "Volume UOM for Water, Area UOM for Hectarage. Must convert to Litre or Square Meter."
+  },
+  {
+   "columns": 1,
+   "description": "Dose in the product's stock UOM, per the amount and unit on this row.",
    "fieldname": "lower_rate_limit",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -42,20 +64,27 @@
    "precision": "4"
   },
   {
-   "columns": 2,
-   "description": "Maximum dose per the determinant's unit (Water: 1000 L; Hectarage: 10,000 m²).",
+   "columns": 1,
+   "description": "Dose in the product's stock UOM, per the amount and unit on this row.",
    "fieldname": "upper_rate_limit",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Upper Rate Limit",
    "non_negative": 1,
    "precision": "4"
+  },
+  {
+   "fieldname": "rate_line",
+   "fieldtype": "Small Text",
+   "label": "Reads as",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-02 00:00:00.000000",
+ "modified": "2026-11-26 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Spray Product Crop Rate",

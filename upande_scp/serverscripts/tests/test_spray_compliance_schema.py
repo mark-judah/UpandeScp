@@ -53,5 +53,7 @@ class TestSchema(unittest.TestCase):
 		self.assertEqual(meta.get_field("ingredient").label, "As on label")
 
 	def test_spray_product_type_has_pgr(self):
-		opts = frappe.get_meta("Spray Product").get_field("type").options.split("\n")
-		self.assertIn("Plant Growth Regulator", opts)
+		# type is a Link to the Spray Product Type list now, not a fixed Select
+		df = frappe.get_meta("Spray Product").get_field("type")
+		self.assertEqual((df.fieldtype, df.options), ("Link", "Spray Product Type"))
+		self.assertTrue(frappe.db.exists("Spray Product Type", "Plant Growth Regulator"))

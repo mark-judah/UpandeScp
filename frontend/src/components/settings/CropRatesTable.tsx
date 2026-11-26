@@ -1,26 +1,34 @@
 /**
  * Per-product rate table: one row per (crop, determinant). The determinant is
- * what the rate is measured against — Water (per 1000 L) or Hectarage (per
- * 10,000 m²). A product can carry both, and a row with no crop applies to
- * every crop.
+ * what the rate is measured against — Water or Area — and the unit is "per N of a
+ * UOM" (a Volume UOM for Water, an Area UOM for Area; e.g. per 1000 Litre, per 1
+ * Acre). A product can carry both, and a row with no crop applies to every crop.
+ * A row with no unit reads as the legacy one (1000 Litre / 1 Hectare).
  */
 
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FilterSelect } from "@/components/FilterSelect";
-import { RATE_BASES, basisLabel, type RateBasis } from "@/lib/spray-rates";
-import type { CropRateRow } from "@/lib/settings-api";
+import { BASIS_NAME, RATE_BASES, type RateBasis } from "@/lib/spray-rates";
+import type { CropRateRow, RateUoms } from "@/lib/settings-api";
 
 const ALL_CROPS = "All crops";
+const LEGACY: Record<RateBasis, { per_qty: number; per_uom: string }> = {
+  Water: { per_qty: 1000, per_uom: "Litre" },
+  Hectarage: { per_qty: 1, per_uom: "Hectare" },
+};
 
 export function CropRatesTable({
   rows,
   crops,
+  uoms,
   onChange,
 }: {
   rows: CropRateRow[];
   crops: string[];
+  /** the UOMs each determinant offers; without them the unit stays what the row carries */
+  uoms?: RateUoms | null;
   onChange: (next: CropRateRow[]) => void;
 }) {
   const patch = (i: number, p: Partial<CropRateRow>) =>
@@ -48,7 +56,7 @@ export function CropRatesTable({
           variant="outline"
           className="h-8 gap-1 rounded-full"
           onClick={() =>
-            onChange([...rows, { crop: "", basis: "Water", lower_rate_limit: 0, upper_rate_limit: 0 }])
+            onChange([...rows, { crop: "", basis: "Water", lower_rate_limit: 0, upper_rate_limit: 0, ...LEGACY.Water }])
           }
         >
           <Plus className="h-3 w-3" />
@@ -57,13 +65,15 @@ export function CropRatesTable({
       </div>
       {rows.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">
-          No crop rows — the default limits above apply (Water, per 1000 L) to every crop.
+          No crop rows — the default limits above apply (Water, per 1000 Litre) to every crop.
         </p>
       ) : (
         <div className="rounded-lg border divide-y">
           <div className="hidden md:grid grid-cols-[1.2fr_1.4fr_1fr_1fr_2rem] gap-2 px-3 py-1.5 text-[0.65rem] uppercase tracking-wide font-bold text-muted-foreground bg-muted/30">
             <span>Crop</span>
             <span>Determinant</span>
+            <span>Per</span>
+            <span>Unit</span>
             <span>Lower</span>
             <span>Upper</span>
             <span />
@@ -72,7 +82,7 @@ export function CropRatesTable({
             <div
               key={i}
               data-testid="crop-rate-row"
-              className="grid grid-cols-2 md:grid-cols-[1.2fr_1.4fr_1fr_1fr_2rem] gap-2 px-3 py-2 items-center"
+              className="grid grid-cols-2 md:grid-cols-[1.1fr_1fr_0.7fr_1.2fr_0.8fr_0.8fr_2rem] gap-2 px-3 py-2 items-center"
             >
               <FilterSelect
                 label="Crop"
@@ -83,9 +93,24 @@ export function CropRatesTable({
               <FilterSelect
                 label="Determinant"
                 value={r.basis}
-                onChange={(v) => patch(i, { basis: v as RateBasis })}
+                onChange={(v) => patch(i, { basis: v as RateBasis, ...LEGACY[v as RateBasis] })}
                 options={RATE_BASES}
-                format={(o) => basisLabel(o as RateBasis)}
+                format={(o) => BASIS_NAME[o as RateBasis]}
+              />
+              <Input
+                aria-label="Per amount"
+                type="number"
+                step="any"
+                min={0}
+                value={r.per_qty ?? LEGACY[r.basis].per_qty}
+                onChange={(e) => patch(i, { per_qty: parseFloat(e.target.value) || 0 })}
+                className="h-9 text-xs tabular-nums"
+              />
+              <FilterSelect
+                label="Unit"
+                value={r.per_uom || LEGACY[r.basis].per_uom}
+                onChange={(v) => patch(i, { per_uom: v })}
+                options={[...new Set([r.per_uom || LEGACY[r.basis].per_uom, ...(uoms?.[r.basis] ?? [])])]}
               />
               <Input
                 aria-label="Lower rate"

@@ -222,7 +222,8 @@ export interface ChemicalTarget {
 }
 
 /** Item.custom_type — drives the chemical class badge in the UI. */
-export type ChemicalType = "" | "Insecticide" | "Fungicide" | "Adjuvant" | "pH Buffer";
+/** A Spray Product Type name (a list on the site, not a fixed set); "" = unclassified. */
+export type ChemicalType = string;
 
 /** Item.custom_toxicity — WHO hazard classification (I most toxic, IV least). */
 export type ToxicityClass = "" | "I" | "II" | "III" | "IV";
@@ -237,6 +238,29 @@ export interface CropRateRow {
   basis: "Water" | "Hectarage";
   lower_rate_limit: number;
   upper_rate_limit: number;
+  /** the denominator: per `per_qty` of `per_uom`; blank reads as 1000 Litre / 1 Hectare */
+  per_qty?: number;
+  per_uom?: string;
+  rate_line?: string;
+}
+
+/** The UOMs each determinant offers (ERPNext Volume / Area units that convert to Litre / m²). */
+export type RateUoms = { Water: string[]; Hectarage: string[] };
+
+export function fetchRateUoms(): Promise<RateUoms> {
+  return call<RateUoms>("upande_scp.serverscripts.common.spray_rates.get_rate_uoms");
+}
+
+/** The enabled Spray Product Types, for the class picker. */
+export async function fetchProductTypes(): Promise<string[]> {
+  const rows = await call<Array<{ name: string }>>("frappe.client.get_list", {
+    doctype: "Spray Product Type",
+    fields: ["name"],
+    filters: { disabled: 0 },
+    order_by: "name asc",
+    limit_page_length: 0,
+  });
+  return (rows || []).map((r) => r.name);
 }
 
 export interface ChemicalRow {

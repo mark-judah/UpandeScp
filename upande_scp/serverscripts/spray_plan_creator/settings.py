@@ -550,11 +550,13 @@ def _crop_rate_rows(item_code):
     return [
         {"crop": x.crop or "", "basis": x.basis or "Water",
          "lower_rate_limit": x.lower_rate_limit or 0,
-         "upper_rate_limit": x.upper_rate_limit or 0}
+         "upper_rate_limit": x.upper_rate_limit or 0,
+         "per_qty": x.per_qty or 0, "per_uom": x.per_uom or "", "rate_line": x.rate_line or ""}
         for x in frappe.get_all(
             "Spray Product Crop Rate",
             filters={"parent": item_code, "parenttype": "Spray Product"},
-            fields=["crop", "basis", "lower_rate_limit", "upper_rate_limit"],
+            fields=["crop", "basis", "lower_rate_limit", "upper_rate_limit",
+                    "per_qty", "per_uom", "rate_line"],
             order_by="idx asc",
         )
     ]
@@ -595,6 +597,8 @@ def _save_product_fields(doc, payload):
                 "basis": "Hectarage" if row.get("basis") == "Hectarage" else "Water",
                 "lower_rate_limit": lower,
                 "upper_rate_limit": upper,
+                "per_qty": frappe.utils.flt(row.get("per_qty")),
+                "per_uom": row.get("per_uom") or None,
             })
     if "targets" in payload:
         doc.set("default_targets", [])

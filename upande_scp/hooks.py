@@ -112,6 +112,11 @@ app_include_icons = ["/assets/upande_scp/icons/scp-icons.svg"]
 # 	"methods": "upande_scp.utils.jinja_methods",
 # 	"filters": "upande_scp.utils.jinja_filters"
 # }
+jinja = {
+	"methods": [
+		"upande_scp.serverscripts.spray_plan_ops.spray_ticket.ticket_for_print",
+	],
+}
 
 # Installation
 # ------------
@@ -124,6 +129,8 @@ app_include_icons = ["/assets/upande_scp/icons/scp-icons.svg"]
 # steps. The seed only fills empty colour fields, so operator-set overrides
 # are preserved.
 after_migrate = [
+	# Spray Product Type is a list; keep the seed types present on a fresh install.
+	"upande_scp.upande_scp.doctype.spray_product_type.spray_product_type.ensure_product_types",
 	"upande_scp.serverscripts.scouting.observation_colors.after_migrate",
 	# Declare SCP's Stock Entry fields before the layout pass, so the enforcer
 	# has something to place. Stock Entry is shared with three other installed

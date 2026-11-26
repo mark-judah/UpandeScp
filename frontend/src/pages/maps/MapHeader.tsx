@@ -34,6 +34,10 @@ export interface MapHeaderProps {
    *  block-typed (avocado-style); used by the Avocado map. */
   blocksOnly?: boolean;
   rightSlot?: React.ReactNode;
+  /** Controls placed before the date-range picker (after the place pill). */
+  beforeDate?: React.ReactNode;
+  /** Show the farm pill only when the crop has more than one farm to choose from. */
+  hideSingleFarm?: boolean;
 }
 
 /**
@@ -51,6 +55,8 @@ export function MapHeader({
   onReload,
   showGreenhouse = true,
   rightSlot,
+  beforeDate,
+  hideSingleFarm = false,
 }: MapHeaderProps) {
   // Farms for the route crop only, narrowed on the server (spec D3).
   const { farms, loading } = useCropFarms(value.crop);
@@ -91,7 +97,7 @@ export function MapHeader({
   return (
     <PageHeader title={title} eyebrow={subtitle}>
       {/* One place pill (place picker spec G1); the page keeps ALL as "all". */}
-      <PlacePicker
+      {hideSingleFarm && farmList.length <= 1 ? null : <PlacePicker
         farms={farms}
         crop={value.crop}
         level={showGreenhouse ? "both" : "farm"}
@@ -99,7 +105,9 @@ export function MapHeader({
         onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
         disabled={loading}
         houseExtra={blockGrown ? (h) => <CropChip crop={blockCrops[h]?.crop_label} /> : undefined}
-      />
+      />}
+
+      {beforeDate}
 
       <DateRangePicker
         label="Date range"

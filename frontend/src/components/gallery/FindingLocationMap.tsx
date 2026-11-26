@@ -23,7 +23,7 @@ import { observationColor } from "@/lib/observation-colors";
 import { cropSlug } from "@/lib/router";
 import { isBlockGrown } from "@/lib/crop-profile";
 import type { FeedPhoto } from "@/lib/gallery-api";
-import { decodeTriads, fetchFieldLayers, type TriadSet } from "@/lib/field-geo";
+import { fetchLatticeBlocks, latticeTriadSet, type TriadSet } from "@/lib/field-geo";
 import { entryPoint } from "@/lib/unit-key";
 
 const cache = new Map<string, Promise<ProjectedGeometry | null>>();
@@ -50,7 +50,7 @@ export function loadHouseGeometry(house: string): Promise<ProjectedGeometry | nu
 export const clearHouseGeometryCache = () => {
   cache.clear();
   blockCache.clear();
-  hexCache = null;
+  hexCache.clear();
   trapCache = null;
 };
 
@@ -171,10 +171,15 @@ const ringsOf = (g: { type?: string; coordinates?: unknown } | null | undefined)
 };
 
 const blockCache = new Map<string, Promise<ProjectedBlock | null>>();
-let hexCache: Promise<TriadSet> | null = null;
-/** Every hexagon on the farms, decoded once (the payload is the compact, versioned one). */
-function fieldHexes(): Promise<TriadSet> {
-  return (hexCache ??= fetchFieldLayers("").then((r) => decodeTriads(r.tri)));
+const hexCache = new Map<string, Promise<TriadSet>>();
+/** The block's triangles only (its lattice, a few KB), rebuilt once per block. */
+function fieldHexes(block: string): Promise<TriadSet> {
+  let hit = hexCache.get(block);
+  if (!hit) {
+    hit = fetchLatticeBlocks([block]).then((r) => latticeTriadSet(block, r[block] ?? { h: [], e: [], x: [] }));
+    hexCache.set(block, hit);
+  }
+  return hit;
 }
 /** Projected outline + trees of one block (equirectangular, fitted to the outline), cached. */
 export function loadBlockGeometry(block: string): Promise<ProjectedBlock | null> {
@@ -183,7 +188,7 @@ export function loadBlockGeometry(block: string): Promise<ProjectedBlock | null>
     hit = Promise.all([
       fetchBlocksGeojson(),
       fetchOrchardTreeRows({ block }),
-      fieldHexes().catch(() => null),
+      fieldHexes(block).catch(() => null),
     ])
       .then(([fc, pts, hexes]) => {
         const rings = (fc?.features || [])

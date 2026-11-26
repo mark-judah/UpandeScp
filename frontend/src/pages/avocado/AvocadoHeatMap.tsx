@@ -18,7 +18,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { ChevronDown, Layers } from "lucide-react";
+import { Layers } from "lucide-react";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
@@ -29,6 +30,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { HEADER_PILL } from "@/components/header-controls";
 import { OpenFieldPlanner } from "@/components/spray-plan/OpenFieldPlanner";
+import { BlockFilterPill } from "@/components/spray-plan/BlockFilterPill";
+import { fetchRoundPerHa, type RoundPerHa } from "@/lib/cumulative-api";
+import { blockWeekly } from "@/lib/weekly-threshold";
 import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
 import { featureTag } from "@/lib/block-groups";
 import { BAND_LABEL, bandRank, judgedLabel, perHectare, type Band, type HouseFigure } from "@/lib/pest-bands";
@@ -45,21 +49,20 @@ import {
 } from "@/lib/scouting-api";
 import { BLOCK_MAP_MONTHS, lastMonthsRange } from "@/lib/utils";
 import { useObservationColors } from "@/lib/observation-colors";
-import { classOf } from "@/lib/idw";
-import { computeField, FIELD_RADIUS_M, observationOptions, type ObsOption } from "@/lib/pest-heat";
-import { FIELD_ALPHAS, rgbOf, splitByHeatStyle, toneBands, toneOf } from "@/lib/pest-tone";
+import { observationOptions, type ObsOption } from "@/lib/pest-heat";
+import { rgbOf, toneBands, toneOf } from "@/lib/pest-tone";
 import { trapPlacement, trapUnitLayers } from "@/lib/trap-units";
 import { TRAP_FOCUS_ZOOM } from "@/lib/trap-pulse";
-import { unitKey } from "@/lib/unit-key";
+import { entryPoint, unitKey } from "@/lib/unit-key";
+import type { ScoutingEntry } from "@/lib/scouting-types";
 import { triadObsColors } from "@/lib/triad-colors";
 import { ObservationMultiPicker, obsOptionKey as obsKey } from "@/components/ObservationMultiPicker";
-import { computeMultiField, rankBlocks, type MultiField } from "@/lib/pest-heat-multi";
 import { multiUnitColors } from "@/lib/triad-multi";
-import { addFieldLayers, blockColors, paintFieldColors, pointFeatures, setFieldVisibility } from "../maps/field-layers";
+import { blockColors } from "../maps/field-layers";
+import { triangleClickable, useFieldIndex, useFieldLattice } from "../maps/use-field-lattice";
 import { addTrapMarkers, drawTrapUnits, flyToTrap } from "../maps/trap-layers";
 import { SpheresLayer } from "../maps/SpheresLayer";
 import { spherePoints } from "../maps/sphere-data";
-import { decodeTriads, fetchFieldLayers, hexaEdges, type FieldLayersPayload } from "@/lib/field-geo";
 import { deriveTrapMarkers } from "./derive-traps";
 import type { MarkerPoint } from "./tree-map-types";
 import type { OpenFieldGroup } from "@/lib/open-field";
@@ -131,13 +134,14 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const [showTrees, setShowTrees] = useState(true);
   const [showTraps, setShowTraps] = useState(true);
   const [view3d, setView3d] = useState(false);
-  const [field, setField] = useState<FieldLayersPayload | null>(null);
-  const paintedRef = useRef<{ units: Map<string, string> | null; blocks: Map<string, string> | null }>({ units: null, blocks: null });
   const [blockAreas, setBlockAreas] = useState<Record<string, number>>({});
   // Blocks picked for spraying — the same list the planning column ticks.
   const [picked, setPicked] = useState<string[]>([]);
   const [focus, setFocus] = useState<string | null>(null);
   const [plannable, setPlannable] = useState<Set<string>>(new Set());
+  const [groups, setGroups] = useState<OpenFieldGroup[]>([]);
+  // This ISO week's cumulative per-ha figures and thresholds: the numbers the alerts use.
+  const [round, setRound] = useState<RoundPerHa | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   // The pests and diseases the map shows (null = all of them, so ones seen later join in).
   const [pickedObs, setPickedObs] = useState<Set<string> | null>(null);
@@ -176,18 +180,30 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       cancelled = true;
     };
   }, [filters.farm]);
-  // Rows and hexagons: compact, versioned, cached locally; drawn only once zoomed in.
   useEffect(() => {
     let alive = true;
-    fetchFieldLayers(filters.farm === ALL ? "" : filters.farm)
-      .then((r) => alive && setField(r))
-      .catch(() => alive && setField(null));
+    setRound(null);
+    fetchRoundPerHa(filters.crop, { farm: filters.farm === ALL ? undefined : filters.farm })
+      .then((r) => alive && setRound(r))
+      .catch(() => alive && setRound(null));
     return () => {
       alive = false;
     };
-  }, [filters.farm]);
-  const hexSet = useMemo(() => decodeTriads(field?.tri), [field]);
-  const hexBlocks = useMemo(() => new Set(hexSet.fc.features.map((f) => f.properties.block)), [hexSet]);
+  }, [filters.crop, filters.farm]);
+  // The 2D/3D switch means trees: it shows only when the farm has tree-level elements mapped.
+  const hasTrees = (treePoints?.names.length ?? 0) > 0;
+  // Hexas and triangles: an index first (per block, how many), then the whole farm's lattice in
+  // the background (useFieldLattice below), drawn instanced once zoomed in.
+  const farmKey = filters.farm === ALL ? "" : filters.farm;
+  // A single-farm crop is switched to its farm by MapHeader once the farm list is in: until then
+  // the farm is not settled and the per-farm geometry waits (no "All farms" fetch first).
+  const cropFarms = useCropFarms(filters.crop);
+  const farmSettled = filters.farm !== ALL || (!cropFarms.loading && Object.keys(cropFarms.farms).length !== 1);
+  const { index: fieldIndex, refresh: refreshFieldIndex } = useFieldIndex(farmKey, farmSettled);
+  const hexBlocks = useMemo(
+    () => new Set(Object.entries(fieldIndex?.counts ?? {}).filter(([, c]) => c[0] > 0).map(([b]) => b)),
+    [fieldIndex],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -219,23 +235,34 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const obsColor = obs ? colorOfObs(obs) : NO_OBS;
   const tones = useMemo(() => toneBands(obsColor), [obsColor]);
 
-  // Smear blocks feed the field; Solid blocks are painted per hexagon / unit.
-  const styles = useMemo(() => (blocks ? splitByHeatStyle(blocks, hexBlocks) : null), [blocks, hexBlocks]);
-  const fieldResult = useMemo(() => {
-    if (!data || !styles || !styles.smear.features.length || !selected.length) return null;
-    if (selected.length === 1)
-      return computeField(data.entries, selected[0], styles.smear, traps, blockTag, [obsColor, obsColor, obsColor], FIELD_ALPHAS);
-    return computeMultiField(
-      data.entries, selected, styles.smear, traps, blockTag,
-      (o) => colorOfObs(o), NO_OBS, FIELD_ALPHAS,
-    );
+  // A block with a configured weekly threshold is coloured by the alerts' own figure (this
+  // ISO week's cumulative count per hectare against the threshold), so colour and alert agree.
+  const weekly = useMemo(() => blockWeekly(round, selected), [round, selected]);
+  const weeklyTones = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [block, w] of weekly) {
+      const base = multi ? colorOfObs({ kind: w.kind, name: w.observation }) : obsColor;
+      m.set(block, toneOf(base, w.cls));
+    }
+    return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, selected, styles, traps, obsColor, pestColor, diseaseColor]);
-  const heat = fieldResult?.kind === "ok" ? fieldResult : null;
-  const multiHeat = heat && "share" in heat ? (heat as Extract<MultiField, { kind: "ok" }>) : null;
+  }, [weekly, multi, obsColor, pestColor, diseaseColor]);
+
+  // Every finding is tied to its triad (the Scouting Entry's own, else the nearest one by the
+  // lattice maths once the farm's lattice is in) and the triad is filled solid in its pest's
+  // colour, in three strength steps; no triad without a finding is filled.
+  const hasObs = (e: ScoutingEntry, o: ObsOption) =>
+    o.kind === "pest"
+      ? (e.pests_scouting_entry || []).some((p) => p.pest === o.name)
+      : (e.diseases_scouting_entry || []).some((d) => d.disease === o.name);
+  const hitEntries = useMemo(
+    () => (data ? data.entries.filter((e) => e.block && selected.some((o) => hasObs(e, o))) : []),
+    [data, selected],
+  );
+  const [nearest, setNearest] = useState<Map<string, string>>(new Map());
   const solidEntries = useMemo(
-    () => (data && styles ? data.entries.filter((e) => e.block && styles.solid.has(e.block)) : []),
-    [data, styles],
+    () => hitEntries.map((e) => (!e.triad && !e.tree && nearest.has(e.name) ? { ...e, triad: nearest.get(e.name) } : e)),
+    [hitEntries, nearest],
   );
   const unitTones = useMemo(
     () =>
@@ -245,7 +272,37 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [solidEntries, obs, tones, multi, selected, pestColor, diseaseColor],
   );
-  const solidBlockTones = useMemo(() => blockColors(solidEntries, unitTones), [solidEntries, unitTones]);
+  const solidBlockTones = useMemo(() => {
+    const m = blockColors(solidEntries, unitTones);
+    for (const [b, tone] of weeklyTones) m.set(b, tone);
+    return m;
+  }, [solidEntries, unitTones, weeklyTones]);
+  const fieldLattice = useFieldLattice({
+    mapRef,
+    mapReady,
+    blocks,
+    farmKey,
+    index: fieldIndex,
+    onStale: refreshFieldIndex,
+    colors: unitTones,
+    perBlock: solidBlockTones,
+    pointEntries: solidEntries,
+    showTri: showHex,
+    showHexa: showHex,
+    unscoutedFill: false,
+  });
+  useEffect(() => {
+    if (!fieldLattice.ready) return;
+    const m = new Map<string, string>();
+    for (const e of hitEntries) {
+      if (e.triad || e.tree) continue;
+      const pt = entryPoint(e);
+      const t = pt && fieldLattice.pick(pt[0], pt[1], e.block);
+      if (t) m.set(e.name, t);
+    }
+    setNearest(m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldLattice.ready, hitEntries]);
 
   // Why the map is blank, said plainly.
   const emptyMsg =
@@ -292,22 +349,14 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     return m;
   }, [data]);
 
-  // Each block's heat for the list: the smear's mean and band, or the solid wash.
+  // Each block's heat for the list: the solid wash, or the weekly threshold's own figure.
   const blockHeat = useMemo(() => {
     const m = new Map<string, { tone: string; label: string; name?: string }>();
-    for (const b of rankBlocks(heat?.blocks ?? [])) {
-      const domKey = multiHeat?.dominant.get(b.tag);
-      const dom = domKey ? selected.find((o) => obsKey(o) === domKey) : undefined;
-      m.set(b.tag, {
-        tone: toneOf(dom ? colorOfObs(dom) : obsColor, classOf(b.mean, heat!.cuts)),
-        label: fmt(b.mean),
-        name: dom?.name,
-      });
-    }
-    for (const [b, tone] of solidBlockTones) if (!m.has(b)) m.set(b, { tone, label: "" });
+    for (const [b, tone] of solidBlockTones) m.set(b, { tone, label: "" });
+    for (const [b, w] of weekly) m.set(b, { tone: weeklyTones.get(b) || "", label: `${fmt(w.perHa)}/ha`, name: multi ? w.observation : undefined });
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heat, multiHeat, selected, solidBlockTones, obsColor, pestColor, diseaseColor]);
+  }, [solidBlockTones, weekly, weeklyTones, multi]);
 
   // Traps: one pulsing marker per trap (size by catch, the pest's colour), on its unit.
   const trapMarkers = useMemo(() => deriveTrapMarkers(data, traps, pestColor), [data, traps, pestColor]);
@@ -347,20 +396,23 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   };
   const togglePick = (block: string) =>
     setPicked((p) => (p.includes(block) ? p.filter((b) => b !== block) : [...p, block]));
+  const showHexRef = useRef(showHex);
+  showHexRef.current = showHex;
   const clickRef = useRef<(e: maplibregl.MapMouseEvent) => void>(() => {});
   clickRef.current = (e) => {
     const map = mapRef.current;
     if (!map) return;
-    const layers = ["fg-tri-fill", "blocks-fill"].filter((id) => map.getLayer(id));
-    const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : [];
-    const hex = hits.find((f) => f.layer?.id === "fg-tri-fill");
-    if (hex) {
-      const p = hex.properties as { name?: string; block?: string };
-      if (p.name) {
-        setDetail({ kind: "hex", unit: p.name, block: p.block || "" });
+    // Close enough to see triangles: a click names the one under it (the lattice maths the grid
+    // was cut with), not the block.
+    if (triangleClickable(map.getZoom(), fieldLattice.triZoom, showHexRef.current)) {
+      const name = fieldLattice.pick(e.lngLat.lng, e.lngLat.lat);
+      if (name) {
+        setDetail({ kind: "hex", unit: name, block: name.replace(/ - Hexa \d+ - Triad \d+$/, "") });
         return;
       }
     }
+    const layers = ["blocks-fill"].filter((id) => map.getLayer(id));
+    const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : [];
     const blk = hits.find((f) => f.layer?.id === "blocks-fill");
     const tag = blk ? blockTag(blk.properties) : "";
     if (!tag) return;
@@ -382,41 +434,6 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   };
 
   // ---------------------------------------------------------------- map layers
-
-  // The smear: the IDW grid as a canvas image over its bounding box, under the tree dots.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
-    if (!heat) {
-      if (map.getLayer("heat")) map.setLayoutProperty("heat", "visibility", "none");
-      return;
-    }
-    const { grid } = heat;
-    const canvas = document.createElement("canvas");
-    canvas.width = grid.cols;
-    canvas.height = grid.rows;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.putImageData(new ImageData(heat.rgba as unknown as Uint8ClampedArray<ArrayBuffer>, grid.cols, grid.rows), 0, 0);
-    const url = canvas.toDataURL("image/png");
-    const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
-      [grid.west, grid.north],
-      [grid.east, grid.north],
-      [grid.east, grid.south],
-      [grid.west, grid.south],
-    ];
-    const src = map.getSource("heat") as maplibregl.ImageSource | undefined;
-    if (!src) {
-      map.addSource("heat", { type: "image", url, coordinates });
-      map.addLayer(
-        { id: "heat", type: "raster", source: "heat", paint: { "raster-opacity": 1, "raster-fade-duration": 0, "raster-resampling": "linear" } },
-        map.getLayer("tree-dots") ? "tree-dots" : undefined,
-      );
-    } else {
-      src.updateImage({ url, coordinates });
-      map.setLayoutProperty("heat", "visibility", "visible");
-    }
-  }, [heat, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -463,26 +480,31 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     } as never);
   }, [picked, blocks, mapReady]);
 
-  // Triangles, Hexa outlines and visit points under the outlines; Solid blocks painted per unit.
+  // The weekly-threshold wash on blocks that have no triangles (blocks with triangles take it
+  // through their own wash, see solidBlockTones). Feature-state "w", the pest's colour at the
+  // level's intensity.
+  const weeklyPaintedRef = useRef<Map<string, string>>(new Map());
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !blocks || !field) return;
-    addFieldLayers(map, hexSet, hexaEdges(field.tri), [...hexBlocks]);
-    paintedRef.current = { units: null, blocks: null };
-    setFieldVisibility(map, { tri: showHex, hexa: showHex });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field, hexSet, blocks, mapReady]);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !map.getSource("fg-tri")) return;
-    paintFieldColors(map, hexSet, paintedRef.current.units, unitTones, { prev: paintedRef.current.blocks, next: solidBlockTones });
-    paintedRef.current = { units: unitTones, blocks: solidBlockTones };
-    (map.getSource("fg-pts") as maplibregl.GeoJSONSource | undefined)?.setData(pointFeatures(solidEntries, unitTones) as never);
-  }, [unitTones, solidBlockTones, solidEntries, hexSet, field, mapReady]);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map && mapReady) setFieldVisibility(map, { tri: showHex, hexa: showHex });
-  }, [showHex, mapReady, field]);
+    if (!map || !mapReady || !blocks || !map.getSource("blocks")) return;
+    const plain = ["!", ["in", ["get", "block"], ["literal", [...hexBlocks]]]] as never;
+    if (!map.getLayer("blocks-weekly")) {
+      map.addLayer(
+        {
+          id: "blocks-weekly",
+          type: "fill",
+          source: "blocks",
+          filter: plain,
+          paint: { "fill-color": ["coalesce", ["feature-state", "w"], "rgba(0,0,0,0)"] as never, "fill-opacity": 0.4 },
+        },
+        map.getLayer("blocks-line") ? "blocks-line" : undefined,
+      );
+    } else map.setFilter?.("blocks-weekly", plain);
+    const prev = weeklyPaintedRef.current;
+    for (const b of prev.keys()) if (!weeklyTones.has(b)) map.removeFeatureState({ source: "blocks", id: b }, "w");
+    for (const [b, w] of weeklyTones) if (prev.get(b) !== w) map.setFeatureState({ source: "blocks", id: b }, { w });
+    weeklyPaintedRef.current = new Map(weeklyTones);
+  }, [weeklyTones, hexBlocks, blocks, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -506,18 +528,13 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   // 3D: tilt and raise a sphere per scouting value; 2D: flat, no spheres.
   const spheresRef = useRef<SpheresLayer | null>(null);
   const spheres = useMemo(() => {
-    if (!view3d || !data) return [];
+    if (!view3d || !hasTrees || !data) return [];
     const centres = new Map<string, [number, number]>();
     const centreOf = (k: string): [number, number] | null => {
       const hit = centres.get(k);
       if (hit) return hit;
-      const id = hexSet.idByName.get(k);
-      const f = id == null ? null : hexSet.fc.features[id];
-      const ring = f?.geometry.coordinates[0];
-      if (!ring?.length) return null;
-      const pts = ring.slice(0, -1);
-      const c: [number, number] = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
-      centres.set(k, c);
+      const c = fieldLattice.centroid(k);
+      if (c) centres.set(k, c);
       return c;
     };
     if (!multi) return spherePoints(data.entries, obs, centreOf);
@@ -529,11 +546,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         if (!prev || p.value > prev.value) by.set(p.key, p);
       }
     return [...by.values()];
-  }, [view3d, data, obs, multi, selected, hexSet]);
+  }, [view3d, hasTrees, data, obs, multi, selected, fieldLattice.ready]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (!view3d) {
+    if (!view3d || !hasTrees) {
       if (map.getLayer("scouting-spheres")) map.removeLayer("scouting-spheres");
       spheresRef.current = null;
       if (map.getPitch() !== 0) map.easeTo({ pitch: 0, duration: 600 });
@@ -545,7 +562,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       map.addLayer(spheresRef.current);
     }
     if (map.getPitch() < TILT - 1) map.easeTo({ pitch: TILT, duration: 600 });
-  }, [view3d, spheres, obsColor, mapReady]);
+  }, [view3d, hasTrees, spheres, obsColor, mapReady]);
 
   // Fit to the farm's blocks on load / farm change.
   useEffect(() => {
@@ -605,8 +622,31 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         value={filters}
         onChange={setFilters}
         showGreenhouse={false}
-        rightSlot={
+        hideSingleFarm
+        beforeDate={
           <>
+            <BlockFilterPill
+              groups={groups}
+              selected={picked}
+              onChange={onListSelect}
+              focus={focus}
+              loading={!groups.length && plannable.size === 0 && !blocks}
+              rowExtra={(b) => {
+                const h = blockHeat.get(b.name);
+                return h ? (
+                  <span className="flex items-center gap-1 text-[0.65rem] tabular-nums text-muted-foreground">
+                    <span className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ background: h.tone }} aria-hidden />
+                    {h.name && <span className="max-w-[5rem] truncate">{h.name}</span>}
+                    {h.label}
+                  </span>
+                ) : null;
+              }}
+            />
+            <ObservationMultiPicker options={obsOptions} value={selectedKeys} onChange={onPick} />
+          </>
+        }
+        rightSlot={
+          hasTrees ? (
             <div className={`${HEADER_PILL} gap-0 overflow-hidden !p-0`} role="group" aria-label="Map view">
               {(["2D", "3D"] as const).map((v) => (
                 <button
@@ -620,68 +660,13 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
                 </button>
               ))}
             </div>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className={HEADER_PILL}>
-                  <Layers className="h-3.5 w-3.5" />
-                  Layers
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-44 p-2">
-                {(
-                  [
-                    ["Trees", showTrees, setShowTrees],
-                    ["Boundary", showBoundary, setShowBoundary],
-                    ["Triangles & Hexas", showHex, setShowHex],
-                    ["Traps", showTraps, setShowTraps],
-                  ] as const
-                ).map(([label, on, set]) => (
-                  <label key={label} className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
-                    <Checkbox checked={on} onCheckedChange={(v) => set(!!v)} />
-                    {label}
-                  </label>
-                ))}
-              </PopoverContent>
-            </Popover>
-          </>
+          ) : null
         }
       />
-
-      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground md:px-6" data-testid="heat-legend">
-        {error && !data && !loading && (
-          <span role="alert" className="text-destructive">{error}</span>
-        )}
-        <LoadProgress active={loading || loadingGeo} progress={loading ? progress : 100} />
-        <ObservationMultiPicker options={obsOptions} value={selectedKeys} onChange={onPick} />
-        {multi ? (
-          <>
-            {selected
-              .filter((o) => !multiHeat || multiHeat.share.has(obsKey(o)))
-              .slice(0, 6)
-              .map((o) => (
-                <span key={obsKey(o)} className="flex items-center gap-1.5" data-testid="legend-obs">
-                  <span className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ background: colorOfObs(o) }} /> {o.name}
-                </span>
-              ))}
-            <span>Each patch takes the colour of the worst selected observation there; stronger means higher.</span>
-          </>
-        ) : (
-          (["Low", "Medium", "High"] as const).map((label, i) => (
-            <span key={label} className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full border border-black/10" data-tone={label} style={{ background: tones[i] }} /> {label}
-            </span>
-          ))
-        )}
-        <span className="flex items-center gap-1.5">
-          <span className="h-2 w-4 rounded-full" style={{ background: `linear-gradient(90deg, ${tones[1]}, transparent)` }} />
-          Estimated (no scout within {FIELD_RADIUS_M} m)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2 w-4 rounded-sm" style={{ background: "repeating-linear-gradient(135deg, rgba(90,90,84,0.5) 0 1px, transparent 1px 3px)" }} />
-          Not scouted
-        </span>
-      </div>
+      <LoadProgress active={loading || loadingGeo} progress={loading ? progress : 100} />
+      {error && !data && !loading && (
+        <span role="alert" className="px-4 text-xs text-destructive md:px-6">{error}</span>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:px-6 md:pb-6 lg:flex-row">
         <div
@@ -699,12 +684,65 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
           <MapKpiPill>
             {first ? (
               <TextSkeleton width="24ch" />
-            ) : heat ? (
-              `${heat.samples} samples (${heat.hits} with ${obsLabel || "it"}${heat.traps ? `, ${heat.traps} traps` : ""})${view3d ? ` · ${spheres.length} spheres` : ""}`
             ) : (
-              `${unitTones.size} units scouted${view3d ? ` · ${spheres.length} spheres` : ""}`
+              `${unitTones.size} triangles with ${obsLabel || "findings"}${view3d ? ` · ${spheres.length} spheres` : ""}`
             )}
           </MapKpiPill>
+
+          {/* Layers: one icon button in the map's top-right control stack (under the zoom control). */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Layers"
+                title="Layers"
+                data-testid="map-layers-button"
+                className="absolute right-[10px] top-[112px] z-[1000] flex h-[29px] w-[29px] items-center justify-center rounded bg-white text-neutral-800 shadow-[0_0_0_2px_rgba(0,0,0,0.1)] hover:bg-neutral-100"
+              >
+                <Layers className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="left" align="start" className="w-44 p-2">
+              {(
+                [
+                  ["Trees", showTrees, setShowTrees],
+                  ["Boundary", showBoundary, setShowBoundary],
+                  ["Triangles & Hexas", showHex, setShowHex],
+                  ["Traps", showTraps, setShowTraps],
+                ] as const
+              ).map(([label, on, set]) => (
+                <label key={label} className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
+                  <Checkbox checked={on} onCheckedChange={(v) => set(!!v)} />
+                  {label}
+                </label>
+              ))}
+            </PopoverContent>
+          </Popover>
+
+          {/* The key: a small floating card at the bottom-left of the map. */}
+          <div
+            className="pointer-events-none absolute bottom-10 left-3 z-[1000] flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col gap-1 rounded-2xl border bg-card/95 px-3 py-2 text-[0.7rem] text-muted-foreground shadow-[var(--sd-shadow-1)] backdrop-blur"
+            data-testid="heat-legend"
+            title="Each triangle is filled in the colour of the pest or disease found there; stronger fill = more found"
+          >
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-3 rounded-[2px] border border-dashed border-foreground/40" />
+              No observations
+            </span>
+            {selected.slice(0, 5).map((o) => (
+              <span key={obsKey(o)} className="flex items-center gap-1.5" data-testid="legend-obs">
+                <span className="h-2.5 w-2.5 rounded-full border border-black/10" style={{ background: colorOfObs(o) }} /> {o.name}
+              </span>
+            ))}
+            <span className="flex items-center gap-1.5">
+              {(["Low", "Medium", "High"] as const).map((label, i) => (
+                <span key={label} className="flex items-center gap-1" data-tone={label}>
+                  <span className="h-2.5 w-3 rounded-[2px] border border-black/10" style={{ background: tones[i] }} />
+                  {label}
+                </span>
+              ))}
+            </span>
+          </div>
 
           {detail?.kind === "trap" ? (
             <TrapReadingCard
@@ -802,7 +840,12 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
             selected={picked}
             onSelect={onListSelect}
             focus={focus}
-            onBlocks={(gs: OpenFieldGroup[]) => setPlannable(new Set(gs.flatMap((g) => g.blocks.map((b) => b.name))))}
+            hideBlockPicker
+            onFocusBlock={(b) => { setFocus(b); flyToBlock(b); }}
+            onBlocks={(gs: OpenFieldGroup[]) => {
+              setGroups(gs);
+              setPlannable(new Set(gs.flatMap((g) => g.blocks.map((b) => b.name))));
+            }}
             rowExtra={(b) => {
               const h = blockHeat.get(b.name);
               return h ? (

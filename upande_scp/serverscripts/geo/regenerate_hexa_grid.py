@@ -65,6 +65,29 @@ def _ring(geojson):
 	return coords[0] if coords else []
 
 
+def _block_outline(block):
+	"""The block warehouse's own outline (custom_raw_geojson) in lng/lat, or None."""
+	from shapely.geometry import shape
+
+	raw = frappe.db.get_value("Warehouse", block, "custom_raw_geojson")
+	if not raw:
+		return None
+	try:
+		g = json.loads(raw) if isinstance(raw, str) else raw
+	except ValueError:
+		return None
+	feats = g.get("features") if g.get("type") == "FeatureCollection" else [g]
+	geoms = []
+	for f in feats or []:
+		geom = f.get("geometry") if f.get("type") == "Feature" else f
+		if geom and geom.get("coordinates"):
+			geoms.append(shapely.make_valid(shape(geom)))
+	if not geoms:
+		return None
+	out = unary_union(geoms)
+	return None if out.is_empty else out
+
+
 def _project(geoms, transformer):
 	def fn(xy):
 		x, y = transformer.transform(xy[:, 0], xy[:, 1])
@@ -193,9 +216,14 @@ def _plan(block, side_m=None):
 		summary["reason"] = f"Already on Hexas at {side:g} m."
 		return summary, None
 
-	if not triads:
+	if not triads and units:
 		summary["status"] = "refused"
-		summary["reason"] = "Block holds no Triads."
+		summary["reason"] = f"Block holds {len(units)} unit(s) but no Triads; a block holds one kind."
+		return summary, None
+	block_outline = None if triads else _block_outline(block)
+	if not triads and block_outline is None:
+		summary["status"] = "refused"
+		summary["reason"] = "Block holds no Triads and has no outline."
 		return summary, None
 
 	stray = [u.name for u in units if u.name not in set(old_rows)]
@@ -210,21 +238,30 @@ def _plan(block, side_m=None):
 		summary["reason"] = "Records reference this block's old Rows/Triads: " + ", ".join(refs) + "."
 		return summary, None
 
-	# Old polygons, lng/lat → UTM.
-	rings = [_ring(t.geojson) for t in triads]
-	usable = [(t, r) for t, r in zip(triads, rings) if len(r) >= 4]
-	if not usable:
-		summary["status"] = "refused"
-		summary["reason"] = "No Triad carries a polygon."
-		return summary, None
-	lng0, lat0 = usable[0][1][0][0], usable[0][1][0][1]
-	epsg = get_dynamic_utm_epsg(lat0, lng0)
-	fwd = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
-	inv = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
-	old_polys = _project([Polygon(r) for _, r in usable], fwd)
-	old_polys = shapely.make_valid(old_polys)
+	if block_outline is not None:
+		# A block with no grid yet (an orchard block): cut its own outline.
+		usable, old_polys = [], []
+		lng0, lat0 = block_outline.exterior.coords[0] if isinstance(block_outline, Polygon) else block_outline.geoms[0].exterior.coords[0]
+		epsg = get_dynamic_utm_epsg(lat0, lng0)
+		fwd = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+		inv = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
+		outline = shapely.make_valid(shapely.transform(block_outline, lambda xy: np.column_stack(fwd.transform(xy[:, 0], xy[:, 1]))))
+	else:
+		# Old polygons, lng/lat → UTM.
+		rings = [_ring(t.geojson) for t in triads]
+		usable = [(t, r) for t, r in zip(triads, rings) if len(r) >= 4]
+		if not usable:
+			summary["status"] = "refused"
+			summary["reason"] = "No Triad carries a polygon."
+			return summary, None
+		lng0, lat0 = usable[0][1][0][0], usable[0][1][0][1]
+		epsg = get_dynamic_utm_epsg(lat0, lng0)
+		fwd = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+		inv = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
+		old_polys = _project([Polygon(r) for _, r in usable], fwd)
+		old_polys = shapely.make_valid(old_polys)
 
-	outline = unary_union(old_polys).buffer(0.05).buffer(-0.05)
+		outline = unary_union(old_polys).buffer(0.05).buffer(-0.05)
 	pieces = cut(outline, side)
 
 	farm = frappe.db.get_value("Warehouse", block, "custom_farm")

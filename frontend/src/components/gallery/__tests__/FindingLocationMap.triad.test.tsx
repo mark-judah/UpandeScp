@@ -14,16 +14,14 @@ vi.mock("@/lib/scouting-api", () => ({
 // Two triangles in the block; the second is the finding's.
 vi.mock("@/lib/field-geo", async (orig) => ({
   ...(await orig<typeof import("@/lib/field-geo")>()),
-  fetchFieldLayers: vi.fn().mockResolvedValue({
-    version: "v", blocks: { type: "FeatureCollection", features: [] }, tri: {
-      q: 1e7,
-      blocks: {
-        "P1-B1 - MUT": {
-          tpl: { "1": [[0, 0], [100, 50], [0, 100]], "2": [[0, 0], [0, 100], [-100, 50]] },
-          reg: [1, 1, 366705000, 400100, 1, 2, 366705000, 400100],
-          irr: [],
-        },
-      },
+  // One hexa near (36.6705, 0.0400) with slots 1 and 2 full: lattice metres -> Web-Mercator metres.
+  fetchLatticeBlocks: vi.fn().mockResolvedValue({
+    "P1-B1 - MUT": {
+      side: 5,
+      aff: [1, 0, (36.6705 * Math.PI * 6378137) / 180, 0, 1, Math.log(Math.tan(Math.PI / 4 + (0.04 * Math.PI) / 360)) * 6378137],
+      h: [0, 0, 3 | (3 << 6)],
+      e: [],
+      x: [],
     },
   }),
 }));

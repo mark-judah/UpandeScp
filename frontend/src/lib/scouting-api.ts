@@ -953,11 +953,11 @@ export interface StalePlan {
   items?: string[];
 }
 
-export async function getStalePlans(farm?: string): Promise<StalePlan[]> {
+export async function getStalePlans(farm?: string, crop?: string): Promise<StalePlan[]> {
   return (
     (await call<StalePlan[]>(
       "upande_scp.serverscripts.spray_plan_creator.reservations.get_stale_plans",
-      { farm: farm || undefined },
+      { farm: farm || undefined, crop: crop || undefined },
     )) || []
   );
 }

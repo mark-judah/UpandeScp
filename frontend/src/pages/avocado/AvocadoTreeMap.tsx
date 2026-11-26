@@ -3,8 +3,7 @@ import { FilterSelect } from "@/components/FilterSelect";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
 import { StationCardBody } from "@/components/scouting/StationCard";
 import { captureStamp } from "@/lib/capture-time";
-import { triadCentroids } from "@/lib/hex-centroids";
-import { unitKey, POINT_PREFIX } from "@/lib/unit-key";
+import { entryPoint, unitKey, POINT_PREFIX } from "@/lib/unit-key";
 import {
   deriveStations,
   stationDays,
@@ -26,6 +25,7 @@ import { fetchBlockCrops, type BlockCrop } from "@/lib/open-field-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { ChevronDown, Layers } from "lucide-react";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapControlPanel } from "@/components/maps/MapControlPanel";
 import { MapPanelDock } from "@/components/maps/MapPanelDock";
@@ -42,8 +42,8 @@ import {
 import { HEADER_PILL } from "@/components/header-controls";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import { TreesLayer } from "../maps/TreesLayer";
-import { addFieldLayers, blockColors, paintFieldColors, pointFeatures, setFieldVisibility } from "../maps/field-layers";
-import { decodeTriads, fetchFieldLayers, hexaEdges, type FieldLayersPayload } from "@/lib/field-geo";
+import { blockColors } from "../maps/field-layers";
+import { useFieldIndex, useFieldLattice } from "../maps/use-field-lattice";
 import {
   fetchBlocksGeojson,
   fetchOrchardTreeRows,
@@ -186,8 +186,6 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     if (view.showTracks) fetchScoutLookup().then(setScoutNames);
   }, [view.showTracks]);
   const nameOf = (k: string) => scoutNames[k] || k;
-  const [field, setField] = useState<FieldLayersPayload | null>(null);
-  const paintedRef = useRef<{ units: Map<string, string> | null; blocks: Map<string, string> | null }>({ units: null, blocks: null });
 
   // Keep map + layer refs across renders so updateColors is cheap.
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -216,19 +214,14 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
       .finally(() => setLoadingGeo(false));
   }, [filters.farm]);
 
-  // Rows and hexagons (compact, versioned, cached locally) stream in off the critical path, like
-  // the trees: blocks and the map paint first.
-  useEffect(() => {
-    let alive = true;
-    const farm = filters.farm === ALL ? "" : filters.farm;
-    fetchFieldLayers(farm)
-      .then((r) => alive && setField(r))
-      .catch(() => alive && setField(null));
-    return () => {
-      alive = false;
-    };
-  }, [filters.farm]);
-  const hexSet = useMemo(() => decodeTriads(field?.tri), [field]);
+  // Hexas and triangles: an index first (per block, how many), then the whole farm's lattice in
+  // the background (useFieldLattice below), drawn instanced once zoomed in.
+  const farmKey = filters.farm === ALL ? "" : filters.farm;
+  // A single-farm crop is switched to its farm by MapHeader once the farm list is in: until then
+  // the farm is not settled and the per-farm geometry waits (no "All farms" fetch first).
+  const cropFarms = useCropFarms(filters.crop);
+  const farmSettled = filters.farm !== ALL || (!cropFarms.loading && Object.keys(cropFarms.farms).length !== 1);
+  const { index: fieldIndex, refresh: refreshFieldIndex } = useFieldIndex(farmKey, farmSettled);
 
   // Orchard trees can be huge (every tree on every avocado block), so fetch
   // them OFF the critical path — the map paints from blocks/tanks + scouting
@@ -251,7 +244,45 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   }, [filters.farm]);
 
   // Build the per-tree color map from scouting entries, per the view.
-  const treeColors = useMemo(() => view.deriveColors(data), [data, view]);
+  // A visit with no triad of its own is tied to the nearest triad by the lattice maths (once the
+  // farm's lattice is in), so every located visit colours a triangle.
+  const [nearest, setNearest] = useState<Map<string, string>>(new Map());
+  const colorData = useMemo(
+    () =>
+      data && nearest.size
+        ? { ...data, entries: data.entries.map((e) => (!e.triad && !e.tree && nearest.has(e.name) ? { ...e, triad: nearest.get(e.name) } : e)) }
+        : data,
+    [data, nearest],
+  );
+  const treeColors = useMemo(() => view.deriveColors(colorData), [colorData, view]);
+  const blockTones = useMemo(() => blockColors(colorData?.entries ?? [], treeColors), [colorData, treeColors]);
+  const pointEntries = useMemo(() => colorData?.entries ?? [], [colorData]);
+  const fieldLattice = useFieldLattice({
+    mapRef,
+    mapReady,
+    blocks,
+    farmKey,
+    index: fieldIndex,
+    onStale: refreshFieldIndex,
+    colors: treeColors,
+    perBlock: blockTones,
+    pointEntries,
+    showTri: showHex,
+    showHexa: showRows,
+    unscoutedFill: false,
+  });
+  useEffect(() => {
+    if (!fieldLattice.ready || !data) return;
+    const m = new Map<string, string>();
+    for (const e of data.entries) {
+      if (e.triad || e.tree || !e.block) continue;
+      const pt = entryPoint(e);
+      const t = pt && fieldLattice.pick(pt[0], pt[1], e.block);
+      if (t) m.set(e.name, t);
+    }
+    setNearest(m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldLattice.ready, data]);
 
   // tree_name → [lng, lat], from the lean orchard-tree points.
   const treeCoords = useMemo(() => {
@@ -353,8 +384,10 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     () => (view.deriveMarkers ? view.deriveMarkers(data) : []),
     [data, view],
   );
-  // Flat views (open-field Observations) never tilt; the rest look at the trees at 60°.
-  const tilt = view.flat || topView ? 0 : 60;
+  // The 2D/3D switch (Top view) means trees: it shows, and the map tilts, only when the farm has
+  // tree-level elements mapped. Flat views (open-field Observations) never tilt either.
+  const hasTrees = (treePoints?.names.length ?? 0) > 0;
+  const tilt = view.flat || topView || !hasTrees ? 0 : 60;
   const tiltRef = useRef(tilt);
   tiltRef.current = tilt;
 
@@ -364,15 +397,15 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   // Stations: one per tree / hexagon / visit point a scout recorded at, per scout-day-block
   // walk. A tree sits at its own position, a hexagon at its centre, a visit point (or a unit
   // with no position) at the entry's GPS.
-  const hexCentre = useMemo(() => triadCentroids(hexSet), [hexSet]);
   const allStations = useMemo<Station[]>(() => {
     if (!view.showTracks || !data?.entries?.length) return [];
     return deriveStations(data.entries, {
       keyOf: (e) => unitKey(e) || null,
-      positionOf: (k) => treeCoords.get(k) ?? hexCentre.get(k) ?? null,
+      positionOf: (k) => treeCoords.get(k) ?? fieldLattice.centroid(k),
       placeSource: "tree",
     });
-  }, [view.showTracks, data, treeCoords, hexCentre]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.showTracks, data, treeCoords, fieldLattice.ready]);
   const stationView = useMemo(
     // The server summary has no capture times (one latest row per unit): no visit numbers.
     () => stationsInScope(allStations, stationScout, stationDay, !aggregated),
@@ -543,36 +576,6 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     treesLayerRef.current?.updateColors(treeColors);
   }, [treeColors]);
 
-  // Hexagons / rows / visit points under the block outline, then coloured by the view.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !blocks || !field) return;
-    const hexBlocks = [...new Set(hexSet.fc.features.map((f) => f.properties.block))];
-    addFieldLayers(map, hexSet, hexaEdges(field.tri), hexBlocks);
-    paintedRef.current = { units: null, blocks: null };
-    setFieldVisibility(map, { tri: showHex, hexa: showRows });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field, hexSet, blocks, mapReady]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !field || !map.getSource("fg-tri")) return;
-    const perBlock = blockColors(data?.entries ?? [], treeColors);
-    paintFieldColors(map, hexSet, paintedRef.current.units, treeColors, {
-      prev: paintedRef.current.blocks,
-      next: perBlock,
-    });
-    paintedRef.current = { units: treeColors, blocks: perBlock };
-    (map.getSource("fg-pts") as maplibregl.GeoJSONSource | undefined)?.setData(
-      pointFeatures(data?.entries ?? [], treeColors) as never,
-    );
-  }, [treeColors, data, field, hexSet, mapReady]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map && mapReady) setFieldVisibility(map, { tri: showHex, hexa: showRows });
-  }, [showHex, showRows, mapReady, field]);
-
   // Optional marker overlay (e.g. trap catches), driven by the view. Each is a
   // DOM marker: the same polygon + pulse ring as the rose map (lib/trap-pulse),
   // sized by the catch count, sides from the highest single catch, colour =
@@ -659,7 +662,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
     ensureStationLayers(map);
     raiseStations(map);
     setStationData(map, stationFCRef.current);
-  }, [view.showTracks, mapReady, treePoints, field, hexSet]);
+  }, [view.showTracks, mapReady, treePoints]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !view.showTracks) return;
@@ -680,8 +683,18 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    map.easeTo({ pitch: topView || view.flat ? 0 : 60, bearing: 0, duration: 500 });
-  }, [topView, mapReady]);
+    const flat = topView || view.flat || !hasTrees;
+    // 2D: pitch locked at 0 (no tilting by drag, touch or the compass); 3D: free again.
+    map.setMaxPitch(flat ? 0 : 85);
+    if (flat) {
+      map.dragRotate.disable();
+      map.touchPitch.disable();
+    } else {
+      map.dragRotate.enable();
+      map.touchPitch.enable();
+    }
+    map.easeTo({ pitch: flat ? 0 : 60, bearing: 0, duration: 500 });
+  }, [topView, mapReady, hasTrees]);
 
   // Patch outlines (red), patch / area pins (purple, dashed) and the area being
   // drawn. MapLibre paint takes literal colours: these mirror --sd-data-red /
@@ -835,7 +848,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
   const treeCount = treePoints?.names.length || 0;
   const blockCount = blocks?.features.length || 0;
   const scoutedTreeCount = treeColors.size;
-  const hexCount = hexSet.count;
+  const hexCount = fieldIndex?.triads ?? 0;
 
   return (
     <div className="flex flex-col h-svh overflow-hidden">
@@ -894,7 +907,7 @@ export function AvocadoTreeMap({ view, crop = "Avocado" }: { view: AvocadoView; 
                     Stations
                   </label>
                 ) : null}
-                {view.flat ? null : (
+                {view.flat || !hasTrees ? null : (
                   <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted">
                     <Checkbox
                       checked={topView}

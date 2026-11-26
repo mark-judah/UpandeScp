@@ -27,6 +27,9 @@ from upande_scp.serverscripts.common.cache_utils import TTL_LONG
 Q = 10_000_000  # integer units per degree (1.1 cm)
 K_GEO_STAMP = "scp:field_geo_stamp_v1"
 K_PAYLOAD = "scp:field_geo_payload_v2"
+K_INDEX = "scp:field_geo_index_v1"
+K_VERSION = "scp:field_geo_version_v1"
+VERSION_TTL = 300  # seconds
 FORMAT_TAG = "tri1"  # bump when the payload shape changes: it is part of the version hash
 _NAME = "{block} - Hexa {hexa} - Triad {t}"
 _TOL = 1  # template tolerance, in 1e-7 degree units (one quantum)
@@ -34,6 +37,14 @@ _TOL = 1  # template tolerance, in 1e-7 degree units (one quantum)
 
 def bump_geo_version() -> None:
 	frappe.cache().set_value(K_GEO_STAMP, frappe.generate_hash(length=8))
+	# Rebuild the per-block lattice cache in the background so the next map load is a cache read.
+	try:
+		frappe.enqueue(
+			"upande_scp.serverscripts.geo.field_lattice.warm_field_lattice",
+			queue="long", timeout=1800, enqueue_after_commit=True, deduplicate=True, job_id="scp-warm-field-lattice",
+		)
+	except Exception:
+		frappe.log_error(title="warm_field_lattice enqueue failed")
 
 
 def _ring(geojson):
@@ -131,6 +142,20 @@ def _blocks_fc(farm=None):
 
 
 def _version(farm):
+	"""The data's version. The count / max(modified) scan over every Triad is seconds on a big
+	farm, so the answer is kept for a short while under the regenerate stamp; a bump (regenerate,
+	seed) changes the stamp and so the key at once."""
+	cache = frappe.cache()
+	key = f"{K_VERSION}:{farm or ''}:{cache.get_value(K_GEO_STAMP) or ''}"
+	hit = cache.get_value(key)
+	if hit:
+		return hit
+	v = _version_uncached(farm)
+	cache.set_value(key, v, expires_in_sec=VERSION_TTL)
+	return v
+
+
+def _version_uncached(farm):
 	t = frappe.db.sql("select count(*), max(modified) from `tabTriad` where (%(f)s = '' or farm = %(f)s)", {"f": farm or ""})[0]
 	w = frappe.db.sql(
 		"select count(*), max(modified) from `tabWarehouse` where custom_raw_geojson is not null and custom_raw_geojson != ''"
@@ -162,3 +187,31 @@ def get_field_layers(farm=None, have=None):
 		payload = _build(farm)
 		cache.set_value(key, payload, expires_in_sec=TTL_LONG)
 	return {"version": version, **payload}
+
+def _counts(farm):
+	"""{block: [triads, hexas]} for the farm (all farms when blank)."""
+	rows = frappe.db.sql(
+		"select block, count(*), count(distinct `row`) from `tabTriad` where (%(f)s = '' or farm = %(f)s) group by block",
+		{"f": farm or ""},
+	)
+	return {b: [int(n), int(h)] for b, n, h in rows if b}
+
+
+@frappe.whitelist()
+def get_field_index(farm=None):
+	"""Per block, how many Triads and Hexas it has - no geometry. The browser plans the farm's
+	background load from it and, from the total, how close triangles start to draw."""
+	farm = (farm or "").strip()
+	version = _version(farm)
+	cache = frappe.cache()
+	key = f"{K_INDEX}:{farm}:{version}"
+	counts = cache.get_value(key)
+	if counts is None:
+		counts = _counts(farm)
+		cache.set_value(key, counts, expires_in_sec=TTL_LONG)
+	return {
+		"version": version,
+		"counts": counts,
+		"triads": sum(c[0] for c in counts.values()),
+		"hexas": sum(c[1] for c in counts.values()),
+	}

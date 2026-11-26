@@ -187,50 +187,120 @@ const BLOCK_PLAN_ITEM: NavItem = {
 
 const STRUCTURE_ITEM: NavItem = { kind: "view", view: "structure", label: "Farm structure", icon: Network };
 
+// Spray-workflow pages every crop needs (stock, loaning, procurement, schedule).
+const SCHEDULE_ITEM: NavItem = {
+  // Plans, crews and crew leave as a calendar or a Gantt, and the weekly
+  // scout plan. The server's schedule.SCHEDULE_ROLES plus scout_plan's
+  // SCP Scouting User (who sees only the Scout plan view).
+  kind: "view",
+  view: "schedule",
+  label: "Schedule",
+  icon: CalendarDays,
+  requireRoles: [
+    "SCP Spray Plan Creator",
+    "SCP Spray Plan Approver",
+    "SCP Spray Supervisor",
+    "SCP General Manager",
+    "SCP Scouting User",
+    "System Manager",
+    "Administrator",
+  ],
+};
+
+const CHEMICAL_STOCK_ITEM: NavItem = {
+  kind: "view",
+  view: "creator-stock",
+  label: "Chemical Stock",
+  icon: Warehouse,
+  requireRoles: ["SCP Spray Plan Creator"],
+};
+
+const LOANING_ITEM: NavItem = {
+  kind: "view",
+  view: "chemical-loaning",
+  label: "Chemical Loaning",
+  icon: ArrowRightLeft,
+  requireRoles: ["SCP Spray Plan Creator", "SCP General Manager"],
+};
+
+const PROCUREMENT_ITEM: NavItem = {
+  // The store keeper is included: the general store's pool, and who is owed
+  // it, is their view of this page.
+  kind: "view",
+  view: "procurement",
+  label: "Procurement",
+  icon: Scale,
+  requireRoles: [
+    "SCP Spray Plan Creator",
+    "SCP General Manager",
+    STORE_KEEPER_ROLE,
+  ],
+};
+
+const POSTPONEMENTS_ITEM: NavItem = {
+  // Supervisors declare here and approvers decide, so both see it.
+  kind: "view",
+  view: "postponements",
+  label: "Postponements",
+  icon: CalendarClock,
+  requireRoles: [
+    "SCP Spray Supervisor",
+    "SCP Spray Plan Approver",
+    "SCP General Manager",
+  ],
+};
+
+const TANK_MIXES_ITEM: NavItem = { kind: "view", view: "tank-mixes", label: "Tank Mixes", icon: Layers };
+
+// Store-Keeper exclusive section — only role that sees it, and the ONLY section
+// visible when the user holds the Store Keeper role (every other section sets
+// hideForRoles=[STORE_KEEPER_ROLE]). Every crop has stores: roses, avocado, coffee, the rest.
+const STORES_SECTION: NavSection = {
+  label: "Stores",
+  items: [
+    {
+      kind: "view",
+      view: "spray-plan-transfers",
+      label: "Spray Plan Transfers",
+      icon: Truck,
+      requireRoles: [STORE_KEEPER_ROLE],
+    },
+    {
+      kind: "view",
+      view: "chemical-dashboard",
+      label: "Chemical Dashboard",
+      icon: Beaker,
+      requireRoles: [STORE_KEEPER_ROLE],
+    },
+    {
+      kind: "view",
+      view: "labels",
+      label: "Labels",
+      icon: QrCode,
+      requireRoles: [STORE_KEEPER_ROLE],
+    },
+    // Store keepers own the general store's pool on Procurement; their section is the
+    // only one they see, so the page is listed here for them.
+    { ...PROCUREMENT_ITEM, requireRoles: [STORE_KEEPER_ROLE] },
+    {
+      kind: "view",
+      view: "chemical-progress",
+      label: "Chemical Progress",
+      icon: Activity,
+      // Read-only for GM and creators; the server holds them to their farms.
+      requireRoles: [
+        STORE_KEEPER_ROLE,
+        "SCP General Manager",
+        "SCP Spray Plan Creator",
+        "System Manager",
+        "Administrator",
+      ],
+    },
+  ],
+};
+
 const ROSE_NAV: NavSection[] = [
-  // Store-Keeper exclusive section — only role that sees it, and the
-  // ONLY section visible when the user holds the Store Keeper role
-  // (every other section sets hideForRoles=[STORE_KEEPER_ROLE]).
-  {
-    label: "Stores",
-    items: [
-      {
-        kind: "view",
-        view: "spray-plan-transfers",
-        label: "Spray Plan Transfers",
-        icon: Truck,
-        requireRoles: [STORE_KEEPER_ROLE],
-      },
-      {
-        kind: "view",
-        view: "chemical-dashboard",
-        label: "Chemical Dashboard",
-        icon: Beaker,
-        requireRoles: [STORE_KEEPER_ROLE],
-      },
-      {
-        kind: "view",
-        view: "labels",
-        label: "Labels",
-        icon: QrCode,
-        requireRoles: [STORE_KEEPER_ROLE],
-      },
-      {
-        kind: "view",
-        view: "chemical-progress",
-        label: "Chemical Progress",
-        icon: Activity,
-        // Read-only for GM and creators; the server holds them to their farms.
-        requireRoles: [
-          STORE_KEEPER_ROLE,
-          "SCP General Manager",
-          "SCP Spray Plan Creator",
-          "System Manager",
-          "Administrator",
-        ],
-      },
-    ],
-  },
+  STORES_SECTION,
   {
     label: "Overview",
     hideForRoles: [STORE_KEEPER_ROLE],
@@ -261,65 +331,13 @@ const ROSE_NAV: NavSection[] = [
         label: "Application Floor Plan",
         icon: ClipboardList,
       },
-      {
-        // Plans, crews and crew leave as a calendar or a Gantt, and the weekly
-        // scout plan. The server's schedule.SCHEDULE_ROLES plus scout_plan's
-        // SCP Scouting User (who sees only the Scout plan view).
-        kind: "view",
-        view: "schedule",
-        label: "Schedule",
-        icon: CalendarDays,
-        requireRoles: [
-          "SCP Spray Plan Creator",
-          "SCP Spray Plan Approver",
-          "SCP Spray Supervisor",
-          "SCP General Manager",
-          "SCP Scouting User",
-          "System Manager",
-          "Administrator",
-        ],
-      },
+      SCHEDULE_ITEM,
       REENTRY_ITEM,
-      {
-        kind: "view",
-        view: "creator-stock",
-        label: "Chemical Stock",
-        icon: Warehouse,
-        requireRoles: ["SCP Spray Plan Creator"],
-      },
-      {
-        kind: "view",
-        view: "chemical-loaning",
-        label: "Chemical Loaning",
-        icon: ArrowRightLeft,
-        requireRoles: ["SCP Spray Plan Creator", "SCP General Manager"],
-      },
-      {
-        // The store keeper is included: the general store's pool, and who is owed
-        // it, is their view of this page.
-        kind: "view",
-        view: "procurement",
-        label: "Procurement",
-        icon: Scale,
-        requireRoles: [
-          "SCP Spray Plan Creator",
-          "SCP General Manager",
-          STORE_KEEPER_ROLE,
-        ],
-      },
+      CHEMICAL_STOCK_ITEM,
+      LOANING_ITEM,
+      PROCUREMENT_ITEM,
       APPROVALS_ITEM,
-      {
-        // Supervisors declare here and approvers decide, so both see it.
-        kind: "view",
-        view: "postponements",
-        label: "Postponements",
-        icon: CalendarClock,
-        requireRoles: [
-          "SCP Spray Supervisor",
-          "SCP Spray Plan Approver",
-          "SCP General Manager",
-        ],
-      },
+      POSTPONEMENTS_ITEM,
       {
         kind: "view",
         view: "settings",
@@ -334,7 +352,7 @@ const ROSE_NAV: NavSection[] = [
         label: "Historical",
         icon: History,
       },
-      { kind: "view", view: "tank-mixes", label: "Tank Mixes", icon: Layers },
+      TANK_MIXES_ITEM,
     ],
   },
   {
@@ -364,8 +382,10 @@ const ROSE_NAV: NavSection[] = [
 // It reuses the rose page components forced to the crop in the route, so the
 // crop gets its own dashboards/trends/scouting scoped to its farms.
 const AVOCADO_NAV: NavSection[] = [
+  STORES_SECTION,
   {
     label: "Overview",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
       { kind: "view", view: "trends", label: "Trends", icon: LineChart },
@@ -373,6 +393,7 @@ const AVOCADO_NAV: NavSection[] = [
   },
   {
     label: "Scouting",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
       { kind: "view", view: "observations", label: "Observations", icon: Search },
@@ -382,16 +403,24 @@ const AVOCADO_NAV: NavSection[] = [
   },
   {
     label: "Crop Protection",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       // One page to observe and plan: the pest map on the left, the blocks and a plan per
       // block on the right, sent to approval together (the old Spray Plan merged in).
       BLOCK_PLAN_ITEM,
       APPROVALS_ITEM,
       REENTRY_ITEM,
+      SCHEDULE_ITEM,
+      CHEMICAL_STOCK_ITEM,
+      LOANING_ITEM,
+      PROCUREMENT_ITEM,
+      POSTPONEMENTS_ITEM,
+      TANK_MIXES_ITEM,
     ],
   },
   {
     label: "Reports",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
       {
@@ -420,14 +449,17 @@ const AVOCADO_NAV: NavSection[] = [
 // Coffee — minimal nav for the triad tessellation test: Dashboard + the
 // (triad) Scouting map only.
 const COFFEE_NAV: NavSection[] = [
+  STORES_SECTION,
   {
     label: "Overview",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
     ],
   },
   {
     label: "Scouting",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
       { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
@@ -435,10 +467,12 @@ const COFFEE_NAV: NavSection[] = [
   },
   {
     label: "Crop Protection",
-    items: [BLOCK_PLAN_ITEM, APPROVALS_ITEM, REENTRY_ITEM],
+    hideForRoles: [STORE_KEEPER_ROLE],
+    items: [BLOCK_PLAN_ITEM, APPROVALS_ITEM, REENTRY_ITEM, SCHEDULE_ITEM, CHEMICAL_STOCK_ITEM, LOANING_ITEM, PROCUREMENT_ITEM, POSTPONEMENTS_ITEM, TANK_MIXES_ITEM],
   },
   {
     label: "Reports",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
       {
@@ -467,8 +501,10 @@ const COFFEE_NAV: NavSection[] = [
 // Generic scouting nav for any crop that isn't rose and has no bespoke nav
 // yet — so a newly-scouted crop appears with a working sidebar automatically.
 const DEFAULT_CROP_NAV: NavSection[] = [
+  STORES_SECTION,
   {
     label: "Overview",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
       { kind: "view", view: "trends", label: "Trends", icon: LineChart },
@@ -476,6 +512,7 @@ const DEFAULT_CROP_NAV: NavSection[] = [
   },
   {
     label: "Scouting",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
       { kind: "view", view: "observations", label: "Observations", icon: Search },
@@ -486,10 +523,12 @@ const DEFAULT_CROP_NAV: NavSection[] = [
   },
   {
     label: "Crop Protection",
-    items: [BLOCK_PLAN_ITEM, APPROVALS_ITEM, REENTRY_ITEM],
+    hideForRoles: [STORE_KEEPER_ROLE],
+    items: [BLOCK_PLAN_ITEM, APPROVALS_ITEM, REENTRY_ITEM, SCHEDULE_ITEM, CHEMICAL_STOCK_ITEM, LOANING_ITEM, PROCUREMENT_ITEM, POSTPONEMENTS_ITEM, TANK_MIXES_ITEM],
   },
   {
     label: "Reports",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       {
         kind: "view",
@@ -504,6 +543,7 @@ const DEFAULT_CROP_NAV: NavSection[] = [
   PERSONNEL_SECTION,
   {
     label: "Settings",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [STRUCTURE_ITEM],
   },
 ];

@@ -32,10 +32,16 @@ from upande_scp.serverscripts.common.cache_utils import (
 # which scouting screen applies. See `field_unit_automation.py`.
 _BED_FIELDS = ["name", "bed", "greenhouse", "unit_type"]
 
+# A block laid out in Hexas/Triads has nothing for the scout to pick: the entry is tied
+# to the nearest Triad from GPS on the server (create_scouting_entry). Its Hexas are
+# therefore NOT sent (a block holds ~1,500; the farm's bundle was 5 MB), only the
+# station's `layout` so the phone knows not to ask for a bed/row.
+HEXA_UNIT = "Hexa"
+
 # Bumped whenever the payload's *shape* changes. The version digest is otherwise
 # derived purely from `modified` timestamps, so a phone holding a bundle from
 # before a new field existed would never learn it was missing one.
-_BUNDLE_SCHEMA = "v4-trap-units"
+_BUNDLE_SCHEMA = "v5-hexa-layout"
 # unit_type + unit: what the trap hangs on (a Triad, an Orchard Tree or a Bed).
 _TRAP_FIELDS = ["name", "farm", "greenhouse", "trap_number", "location", "type", "unit_type", "unit"]
 _WAREHOUSE_FIELDS = [
@@ -139,6 +145,9 @@ def _with_crops(bundle: dict, crop=None) -> dict:
         out["unit_type_by_warehouse"] = {
             k: v for k, v in bundle.get("unit_type_by_warehouse", {}).items() if k in keep
         }
+        out["layout_by_warehouse"] = {
+            k: v for k, v in bundle.get("layout_by_warehouse", {}).items() if k in keep
+        }
         # Keep only the pickers that still lead to a station.
         wanted = set()
         by_name = {w["name"]: w for w in warehouses}
@@ -186,6 +195,7 @@ def _build_farm_bundle(farm: str) -> dict:
 
     beds_by_warehouse: dict[str, list] = {}
     traps_by_warehouse: dict[str, list] = {}
+    hexa_blocks: set[str] = set()
 
     if station_names:
         beds = frappe.get_all(
@@ -196,6 +206,9 @@ def _build_farm_bundle(farm: str) -> dict:
             order_by="bed asc",
         )
         for b in beds:
+            if b.unit_type == HEXA_UNIT:
+                hexa_blocks.add(b.greenhouse)
+                continue
             beds_by_warehouse.setdefault(b.greenhouse, []).append(
                 {
                     "name": b.name,
@@ -225,18 +238,30 @@ def _build_farm_bundle(farm: str) -> dict:
     unit_type_by_warehouse = {
         wh: units[0]["unit_type"] for wh, units in beds_by_warehouse.items() if units
     }
+    for wh in hexa_blocks:
+        unit_type_by_warehouse[wh] = HEXA_UNIT
+    layout_by_warehouse = {wh: "hexa" for wh in hexa_blocks}
+    # Stations carry their layout so it travels into the phone's station cache.
+    warehouses = [
+        {**dict(w), "layout": layout_by_warehouse.get(w.name) or (
+            "row" if unit_type_by_warehouse.get(w.name) == "Row"
+            else "bed" if w.name in unit_type_by_warehouse else None)}
+        if w.name in station_names else dict(w)
+        for w in warehouses
+    ]
 
     return {
         "farm": farm,
         "version": version,
         "unchanged": False,
-        "warehouses": [dict(w) for w in warehouses],
+        "warehouses": warehouses,
         "sections": sections,
         "levels": levels,
         "station_type": station_type,
         "has_sections": len(sections) > 0,
         "beds_by_warehouse": beds_by_warehouse,
         "unit_type_by_warehouse": unit_type_by_warehouse,
+        "layout_by_warehouse": layout_by_warehouse,
         "traps_by_warehouse": traps_by_warehouse,
     }
 

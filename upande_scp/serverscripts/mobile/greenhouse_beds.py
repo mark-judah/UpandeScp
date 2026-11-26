@@ -48,6 +48,10 @@ def fetchGreenhouseBeds(greenhouse_name=None):
 		order_by="bed asc",
 		limit_page_length=0,
 	)
+	if any(b.get("unit_type") == "Hexa" for b in beds):
+		# A Hexa/Triad block: nothing to pick (the Triad comes from GPS on save), and
+		# an old phone that gets no units hides the bed/row picker.
+		beds = []
 	for bed in beds:
 		bed["unit_type"] = bed.get("unit_type") or "Bed"
 

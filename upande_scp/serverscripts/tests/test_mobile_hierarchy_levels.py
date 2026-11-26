@@ -176,3 +176,22 @@ class TestHierarchyLevels(unittest.TestCase):
 			sorted(w["crop"] for w in b["warehouses"] if w["warehouse_type"] == "Block"),
 			["Avocado", "Roses"],
 		)
+
+
+class TestBundleHexaLayout(unittest.TestCase):
+	"""A Hexa/Triad block sends its layout, not its ~1,500 hexas."""
+
+	def test_hexa_blocks_carry_layout_and_no_unit_list(self):
+		from upande_scp.serverscripts.mobile.get_farm_data_bundle import _build_farm_bundle
+
+		farm = frappe.db.get_value("Bed", {"unit_type": "Hexa"}, "greenhouse")
+		farm = farm and frappe.db.get_value("Warehouse", farm, "custom_farm")
+		if not farm:
+			self.skipTest("no Hexa blocks on this site")
+		bundle = _build_farm_bundle(farm)
+		hexa = [n for n, v in bundle["layout_by_warehouse"].items() if v == "hexa"]
+		self.assertTrue(hexa)
+		for name in hexa:
+			self.assertNotIn(name, bundle["beds_by_warehouse"])
+		rows = {w["name"]: w for w in bundle["warehouses"]}
+		self.assertEqual(rows[hexa[0]]["layout"], "hexa")

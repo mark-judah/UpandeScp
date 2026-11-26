@@ -116,13 +116,24 @@ class TestFetchGreenhouseBeds(unittest.TestCase):
 	def test_every_unit_is_named(self):
 		from upande_scp.serverscripts.mobile.greenhouse_beds import fetchGreenhouseBeds
 
-		station = frappe.db.get_value("Bed", {"greenhouse": ("is", "set")}, "greenhouse")
+		station = frappe.db.get_value(
+			"Bed", {"greenhouse": ("is", "set"), "unit_type": ("!=", "Hexa")}, "greenhouse"
+		)
 		if not station:
-			self.skipTest("no beds on this site")
+			self.skipTest("no beds or rows on this site")
 		beds = fetchGreenhouseBeds(station)
 		self.assertTrue(beds)
 		for bed in beds:
 			self.assertIn(bed["unit_type"], ("Bed", "Row", "Hexa"))
+
+	def test_a_hexa_block_has_no_unit_list(self):
+		# A Hexa/Triad block asks the scout for nothing: the Triad comes from GPS on save.
+		from upande_scp.serverscripts.mobile.greenhouse_beds import fetchGreenhouseBeds
+
+		station = frappe.db.get_value("Bed", {"unit_type": "Hexa"}, "greenhouse")
+		if not station:
+			self.skipTest("no Hexa blocks on this site")
+		self.assertEqual(fetchGreenhouseBeds(station), [])
 
 	def test_more_than_a_page_of_beds_comes_back(self):
 		# The deleted Server Script used `frappe.db.get_list`, whose default
@@ -132,7 +143,7 @@ class TestFetchGreenhouseBeds(unittest.TestCase):
 
 		row = frappe.db.sql(
 			"""SELECT greenhouse, COUNT(*) n FROM `tabBed`
-			   WHERE greenhouse IS NOT NULL AND greenhouse != ''
+			   WHERE greenhouse IS NOT NULL AND greenhouse != '' AND unit_type != 'Hexa'
 			   GROUP BY greenhouse HAVING n > 20 ORDER BY n DESC LIMIT 1""",
 			as_dict=True,
 		)

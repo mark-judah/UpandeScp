@@ -17,7 +17,10 @@ import { useToast } from "@/components/Toast";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import { createLatest } from "@/lib/latest-only";
 import { readPlace, type Place } from "@/lib/places";
-import { fetchFarmStructure, type FarmStructure, type StructurePath } from "@/lib/structure-api";
+import {
+  fetchFarmStructure, setNodeCrop, type FarmStructure, type StructureNode, type StructurePath,
+} from "@/lib/structure-api";
+import { CropBadge, NodeCropEditor } from "@/components/NodeCrop";
 import {
   defaultExpanded, findPath, layoutTree, unitText,
 } from "@/lib/structure-tree";
@@ -25,7 +28,7 @@ import {
 type Tab = "paths" | "tree";
 
 const NODE_W = 214;
-const NODE_H = 56;
+const NODE_H = 70;
 const PAD = 16;
 const NUM = { fontVariantNumeric: "tabular-nums" } as const;
 const FONT = "Poppins, system-ui, sans-serif";
@@ -81,12 +84,13 @@ function Skeleton() {
 }
 
 function TreeView({
-  data, expanded, setExpanded, hit,
+  data, expanded, setExpanded, hit, onEditCrop,
 }: {
   data: FarmStructure;
   expanded: Set<string>;
   setExpanded: (next: Set<string>) => void;
   hit: string;
+  onEditCrop?: (node: StructureNode) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const { nodes, links } = useMemo(
@@ -157,6 +161,8 @@ function TreeView({
                     </g>
                   );
                 })}
+                <CropBadge crop={node.crop} x={12} y={53} maxWidth={NODE_W - 24}
+                  editable={!!onEditCrop} onEdit={() => onEditCrop?.(node)} />
                 {has && (
                   <text x={NODE_W - 12} y={18} textAnchor="end" fontSize={10.5} fontFamily={FONT}
                     fill="var(--sd-quiet)" style={NUM}>
@@ -184,13 +190,15 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
   const [search, setSearch] = useState("");
   const [hit, setHit] = useState("");
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState<StructureNode | null>(null);
+  const [saving, setSaving] = useState(false);
   const latest = useRef(createLatest());
 
   // Default to the first farm once the list is in and nothing valid is picked.
   const farm = farmNames.includes(place.farm) ? place.farm : farmNames[0] ?? "";
 
   const load = useCallback(
-    (refresh: boolean) => {
+    (refresh: boolean, keepView = false) => {
       if (!farm) return;
       const current = latest.current.start();
       setLoading(true);
@@ -199,9 +207,11 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
         .then((d) => {
           if (!current()) return;
           setData(d);
-          setExpanded(d.root ? defaultExpanded(d.root) : new Set());
-          setSearch("");
-          setHit("");
+          if (!keepView) {
+            setExpanded(d.root ? defaultExpanded(d.root) : new Set());
+            setSearch("");
+            setHit("");
+          }
         })
         .catch((e) => {
           if (!current()) return;
@@ -231,6 +241,19 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
     setExpanded((prev) => new Set([...prev, ...path.slice(0, -1)]));
     setHit(path[path.length - 1]);
   }, [search, data]);
+
+  const saveCrop = (crop: string | null) => {
+    if (!editing) return;
+    setSaving(true);
+    setNodeCrop(editing.name, crop)
+      .then(() => {
+        toast.show(crop ? `${editing.label} set to ${crop}.` : `Crop cleared on ${editing.label}.`, "ok");
+        setEditing(null);
+        load(true, true);
+      })
+      .catch((e) => toast.show("Could not save the crop.", "err", { hint: String(e?.message ?? e) }))
+      .finally(() => setSaving(false));
+  };
 
   const first = loading && !data;
   const empty = !!data && (tab === "paths" ? data.paths.length === 0 : !data.root);
@@ -295,7 +318,14 @@ export function FarmStructure({ initialCrop = "" }: { initialCrop?: string }) {
             {data.paths.map((p) => <PathRow key={p.types.join(">")} path={p} />)}
           </div>
         ) : data ? (
-          <TreeView data={data} expanded={expanded} setExpanded={setExpanded} hit={hit} />
+          <>
+            {editing && data.can_edit && (
+              <NodeCropEditor label={editing.label} current={editing.crop?.own ?? null}
+                crops={data.crops ?? []} saving={saving} onSave={saveCrop} onClose={() => setEditing(null)} />
+            )}
+            <TreeView data={data} expanded={expanded} setExpanded={setExpanded} hit={hit}
+              onEditCrop={data.can_edit ? setEditing : undefined} />
+          </>
         ) : null}
       </div>
     </div>

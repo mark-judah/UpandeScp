@@ -429,9 +429,14 @@ def get_lifecycle_summary(
     farm: str | None = None,
     greenhouse: str | None = None,
     states: str | list | None = None,
+    crop: str | None = None,
 ) -> list[dict]:
-    """Cheap batch rows for list views / stage tabs. No comment parsing."""
+    """Cheap batch rows for list views / stage tabs. No comment parsing.
+    ``crop`` keeps plans for places growing that crop; blank keeps every crop."""
     _ensure_access()
+    from upande_scp.serverscripts.common import crop_catalog
+
+    crop = crop_catalog.resolve_crop(crop)
 
     filters: dict[str, Any] = {"custom_type": AFP_TYPE, "docstatus": ("<", 2)}
     if greenhouse:
@@ -464,6 +469,8 @@ def get_lifecycle_summary(
     houses = _scoped_greenhouses()
     if houses is not None:
         rows = [r for r in rows if r.custom_greenhouse in houses]
+    if crop:
+        rows = crop_catalog.keep_crop(rows, crop)
 
     now = now_datetime()
     out = []

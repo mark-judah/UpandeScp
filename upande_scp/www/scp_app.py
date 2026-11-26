@@ -52,6 +52,12 @@ def _build_prefetch():
 	}
 
 
+def _bed_crop_slugs():
+	from upande_scp.serverscripts.common import crop_catalog
+
+	return [c.lower().replace(" ", "-") for c in crop_catalog.bed_crops()]
+
+
 def get_context(context):
 	if frappe.session.user == "Guest":
 		raise frappe.PermissionError(_("Login required"))
@@ -93,6 +99,8 @@ def get_context(context):
 			"site_name": frappe.local.site,
 			"roles": user_roles,
 			"csrf_token": csrf_token,
+			# Crops planned greenhouse -> bed; every other crop is planned by block.
+			"bed_crops": _safe_call(_bed_crop_slugs) or [],
 		}
 	)
 	context.prefetch_json = json.dumps(_build_prefetch(), default=str)

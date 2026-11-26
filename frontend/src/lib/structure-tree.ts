@@ -1,8 +1,8 @@
 /** Pure helpers for the Farm Structure mind map: layout, search, defaults. */
-import type { StructureNode as Node, UnitInfo } from "./structure-api";
+import type { NodeCrop, StructureNode as Node, UnitInfo } from "./structure-api";
 
 export const COL_W = 250;
-export const ROW_H = 64;
+export const ROW_H = 80;
 
 export type LaidNode = { node: Node; x: number; y: number; depth: number };
 export type Link = { from: string; to: string };
@@ -83,4 +83,18 @@ export function unitText(u: UnitInfo): string {
   const [a, b] = PAIR[u.kind] ?? [String(u.kind || "Unit"), "Child"];
   const base = `${plural(u.units, a)} · ${plural(u.children, b)}`;
   return u.edge > 0 ? `${base} (${u.edge} edge)` : base;
+}
+
+export type CropPillSpec = { text: string; tone: "own" | "inherited" | "cycle" | "none" };
+
+/** What a node's crop pill says: its own crop, the one inherited ("from Pivot 3"),
+ * or a live crop cycle's crop that overrides either ("Potato · crop cycle"). */
+export function cropPill(c: NodeCrop | undefined): CropPillSpec {
+  if (!c) return { text: "", tone: "none" };
+  if (c.cycle) return { text: `${c.cycle} · crop cycle`, tone: "cycle" };
+  if (c.own) return { text: c.own, tone: "own" };
+  if (c.inherited) {
+    return { text: c.inherited_from ? `${c.inherited} · from ${c.inherited_from}` : c.inherited, tone: "inherited" };
+  }
+  return { text: "", tone: "none" };
 }

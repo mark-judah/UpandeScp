@@ -7,6 +7,10 @@ export interface ScpBootstrap {
   user_image: string;
   site_name: string;
   roles: string[];
+  /** Slugs of the crops planned greenhouse -> bed (their farms hold Greenhouse
+   *  warehouses); every other crop is planned by block. `null` when the page
+   *  shell predates the field. */
+  bed_crops: string[] | null;
 }
 
 declare global {
@@ -69,7 +73,16 @@ export function bootstrap(): ScpBootstrap {
     user_image: typeof raw.user_image === "string" ? raw.user_image : "",
     site_name: typeof raw.site_name === "string" ? raw.site_name : "",
     roles: Array.isArray(raw.roles) ? (raw.roles as string[]) : [],
+    bed_crops: Array.isArray(raw.bed_crops) ? (raw.bed_crops as string[]) : null,
   };
+}
+
+/** Is this crop planned greenhouse -> bed (roses) rather than by block? Decided by
+ *  the warehouse types of the crop's farms, sent with the page. An older page shell
+ *  without the list keeps the former rule: roses only. */
+export function usesBedLayout(cropSlug: string): boolean {
+  const beds = bootstrap().bed_crops;
+  return beds ? beds.includes(cropSlug) : cropSlug === "rose";
 }
 
 /**

@@ -9,8 +9,8 @@ of the block warehouse) are exactly the greenhouse ones.
 
 Three endpoints:
 
-* ``get_open_field_blocks``   the blocks the user may plan on, grouped by pivot or
-  section, with crop, area and cost centre;
+* ``get_open_field_blocks``   the blocks the user may plan on, grouped by pivot, section or
+  phase (the nearest one above), with crop, area and cost centre;
 * ``get_block_findings``      the pests and diseases scouted on each block lately;
 * ``create_draft_plans_batch``  one draft per block, all or nothing.
 
@@ -29,7 +29,7 @@ from .drafts import _require_creator, create_draft_spray_plan
 from .scope import _resolve_user_scope
 from .validation import match_cost_center
 
-GROUP_KINDS = ("Pivot", "Section")
+GROUP_KINDS = ("Pivot", "Section", "Phase")
 _MAX_DEPTH = 8
 
 

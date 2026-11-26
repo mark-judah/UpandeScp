@@ -183,3 +183,69 @@ class TestFarmStructureEdges(FarmStructureCase):
             self.assertTrue(any(p["types"][-2:] == ["Band", "?"] for p in res["paths"]))
         finally:
             frappe.db.delete("Bed", {"name": bed.name})
+
+
+    CROP = "_Test Struct Crop"
+
+    def _crop(self):
+        if not frappe.db.exists("Crop Scouted", self.CROP):
+            frappe.get_doc({"doctype": "Crop Scouted", "crop_name": self.CROP}).insert(ignore_permissions=True)
+        return self.CROP
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        frappe.db.set_value("Warehouse", {"custom_farm": FARM}, "custom_crop", None)
+        frappe.cache.delete_value(f"scp:farm_structure:{FARM}")
+
+    def test_set_inherit_and_clear(self):
+        from upande_scp.serverscripts.geo.farm_structure import set_node_crop
+
+        pivot = frappe.db.get_value("Warehouse", {"warehouse_name": f"{PFX} Pivot"})
+        out = set_node_crop(pivot, self._crop())
+        self.assertEqual(out["crop"], self._crop())
+        root = self.get()["root"]
+        self.assertEqual(self.find(root, pivot)["crop"]["own"], self._crop())
+        kid = self.find(root, self.row_block)["crop"]
+        self.assertIsNone(kid["own"])
+        self.assertEqual((kid["inherited"], kid["inherited_from"]), (self._crop(), f"{PFX} Pivot"))
+        self.assertIn(self._crop(), self.get()["crops"])
+        set_node_crop(pivot, "")
+        self.assertIsNone(frappe.db.get_value("Warehouse", pivot, "custom_crop"))
+        self.assertIsNone(self.find(self.get()["root"], self.row_block)["crop"]["inherited"])
+
+    def test_unknown_crop_and_node_refused(self):
+        from upande_scp.serverscripts.geo.farm_structure import set_node_crop
+
+        with self.assertRaises(frappe.ValidationError):
+            set_node_crop(self.row_block, "No Such Crop")
+        with self.assertRaises(frappe.DoesNotExistError):
+            set_node_crop("No Such Warehouse", self._crop())
+        self.assertFalse(frappe.db.get_value("Warehouse", self.row_block, "custom_crop"))
+
+    def test_write_permission_required(self):
+        from upande_scp.serverscripts.geo.farm_structure import set_node_crop
+
+        email = "struct-nowrite@example.com"
+        if not frappe.db.exists("User", email):
+            frappe.get_doc(
+                {"doctype": "User", "email": email, "first_name": "NoWrite", "send_welcome_email": 0}
+            ).insert(ignore_permissions=True)
+        frappe.set_user(email)
+        with self.assertRaises(frappe.PermissionError):
+            set_node_crop(self.row_block, self._crop())
+        frappe.set_user("Administrator")
+        self.assertFalse(frappe.db.get_value("Warehouse", self.row_block, "custom_crop"))
+
+    def test_catalog_cache_invalidated(self):
+        from unittest import mock
+
+        from upande_scp.serverscripts.geo.farm_structure import set_node_crop
+
+        with mock.patch("upande_scp.serverscripts.common.crop_catalog.invalidate_catalog") as inv:
+            set_node_crop(self.row_block, self._crop())
+            inv.assert_called_once()
+            inv.reset_mock()
+            with self.assertRaises(frappe.ValidationError):
+                set_node_crop(self.row_block, "No Such Crop")
+            inv.assert_not_called()
+        set_node_crop(self.row_block, "")

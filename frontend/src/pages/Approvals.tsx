@@ -144,10 +144,10 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
 
   // ── Data loading ──────────────────────────────────────────────────
   useEffect(() => {
-    fetchFarmsAndGreenhouses()
+    fetchFarmsAndGreenhouses(crop)
       .then(setFarmsData)
       .catch(() => {});
-  }, []);
+  }, [crop]);
 
   const reload = useCallback(async (quiet = false) => {
     // A quiet (live) refresh keeps the list, selection, expansion and scroll
@@ -164,6 +164,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         farm: farm === ALL ? null : farm,
         greenhouse: greenhouse === ALL ? null : greenhouse,
         date_basis: dateBasis,
+        crop,
       });
       if (req !== reqRef.current) return;
       const { state, added } = mergeFeed(
@@ -195,6 +196,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         to_date: to || undefined,
         farm: farm === ALL ? undefined : farm,
         greenhouse: greenhouse === ALL ? undefined : greenhouse,
+        crop,
       })
         .then(setSummary)
         .catch(() => setSummary([]))
@@ -211,7 +213,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
       if (!quiet && req === reqRef.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, farm, greenhouse, dateBasis]);
+  }, [from, to, farm, greenhouse, dateBasis, crop]);
 
   // Live: a spray plan event for these dates / this place, a 30 s poll while the
   // socket is down, and a refresh on window focus.

@@ -184,14 +184,16 @@ class TestMutaraBlocks(unittest.TestCase):
 		if not frappe.db.exists("Production Crop Cycle", {"unit": "P1-B9", "item": "Maize - H513"}):
 			self.skipTest("mutara production seed data absent")
 
-	def test_maize_blocks_are_corn(self):
+	def test_maize_blocks_are_maize(self):
 		got = P.crops_for_stations(["P1-B9 - MUT", "P2-B9 - MUT"])
-		self.assertEqual(set(got.values()), {"Corn"})
+		self.assertEqual(set(got.values()), {"Maize"})
 
-	def test_phase_two_avocado_without_cycles_is_avocado(self):
-		self.assertEqual(P.crop_for_station("PH2-B4 - MUT"), "Avocado")
-		self.assertEqual(P.crop_for_station("PH2-B1 - MUT"), "Avocado")
+	def test_retired_unit_has_no_crop(self):
+		# A Retired unit grows nothing, even with a crop on the block or above it.
+		got = P.crops_for_stations(["P4-B2 - MUT", "Avocado Block A - MUT", "PH1-B10 - MUT", "PH1-B1 - MUT"])
+		for s in got:
+			self.assertIsNone(got[s], s)
 
-	def test_retired_units_resolve_to_nothing(self):
-		got = P.crops_for_stations(["P3-B1 - MUT", "P4-B2 - MUT", "Avocado Block A - MUT"])
-		self.assertEqual(set(got.values()), {None})
+	def test_live_avocado_blocks_are_avocado(self):
+		got = P.crops_for_stations(["PH1-AV1B1 - MUT", "PH1-AV10B2 - MUT", "PH1-Pivot 1 Avo - MUT"])
+		self.assertEqual(set(got.values()), {"Avocado"})

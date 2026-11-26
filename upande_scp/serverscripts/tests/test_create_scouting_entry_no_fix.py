@@ -14,7 +14,7 @@ from upande_scp.serverscripts.common import planting
 from upande_scp.serverscripts.mobile import create_scouting_entry as CSE
 
 P1_BLOCK = "P1-B1 - MUT"  # under Pivot 1 - MUT
-PH1_BLOCK = "PH1-B1 - MUT"  # under Phase 1 - MUT
+PH1_BLOCK = "PH1-AV2B1 - MUT"  # under Phase 1 - MUT
 DAY = "2026-10-01"
 SETTINGS = "Scouting and Crop Protection Settings"
 

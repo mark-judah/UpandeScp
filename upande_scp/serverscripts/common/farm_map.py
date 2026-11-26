@@ -77,7 +77,10 @@ def greenhouses_for_farm(farm: str | None) -> list:
 
 
 def greenhouses_for_farms(farms) -> list:
-	"""Greenhouse warehouses across several farms, in one query."""
+	"""Spray-plan locations (greenhouses and open-field blocks) across several farms, in one
+	query. Both kinds carry spray plans (``Work Order.custom_greenhouse``); counting only
+	greenhouses left an avocado farm with no plan locations, so a rostered approver was
+	refused as "not assigned to any farm" and a supervisor's phone listed no plans."""
 	names = [f for f in set(farms or []) if f]
 	if not names:
 		return []
@@ -85,7 +88,7 @@ def greenhouses_for_farms(farms) -> list:
 		"Warehouse",
 		filters={
 			"custom_farm": ["in", names],
-			"warehouse_type": GREENHOUSE_TYPE,
+			"warehouse_type": ["in", [GREENHOUSE_TYPE, "Block"]],
 			"disabled": 0,
 		},
 		pluck="name",

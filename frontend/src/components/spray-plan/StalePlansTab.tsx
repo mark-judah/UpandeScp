@@ -50,7 +50,7 @@ export function StalePlansTab({
     setBusy(true);
     setErr("");
     try {
-      const r = await getStalePlans(farm);
+      const r = await getStalePlans(farm, crop);
       setRows(r);
       onCount?.(r.length);
       setSel(new Set());
@@ -61,7 +61,7 @@ export function StalePlansTab({
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [farm]);
+  }, [farm, crop]);
 
   useEffect(() => {
     void load();

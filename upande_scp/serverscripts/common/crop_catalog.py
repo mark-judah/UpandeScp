@@ -77,6 +77,7 @@ def build_index(crop_names, pest_rows, disease_rows, farm_rows, house_rows) -> d
         "diseases": _lists(diseases),
         "farms": _lists(farms),
         "farm_crop": farm_crop,
+        "farms_crops": {f: sorted(c for c, fs in farms.items() if f in fs) for f in farm_crop},
         "houses": _lists(houses),
     }
 
@@ -181,7 +182,84 @@ def crop_for_greenhouse(wh) -> str | None:
         planted = planting.crop_for_station(wh)
         if planted:
             return planted
+        return block_fallback_crop(farm)
     return crop_for_farm(farm)
+
+
+def block_fallback_crop(farm) -> str | None:
+    """Crop of a block with nothing planted (no live cycle, no crop on it or above it).
+
+    A single-crop farm's blocks are that crop. On a farm several crops share (Mutara:
+    avocado phases and vegetable pivots) an empty block is no crop at all: a fallow
+    pivot block must not show up under avocado just because avocado is listed first."""
+    if not farm:
+        return None
+    if len(catalog().get("farms_crops", {}).get(farm, [])) > 1:
+        return None
+    return crop_for_farm(farm)
+
+
+def bed_crops() -> list[str]:
+    """Crops whose farms hold Greenhouse-type warehouses (greenhouse -> bed layout).
+
+    Every other crop is planned block by block (Application Floor Plan on a block
+    map), including a new crop that has no places yet. Decided from the warehouse
+    type, not from the crop's name. Greenhouses take their farm's crop (only Block
+    warehouses are resolved through planting), so this is the farm_crop of every
+    farm that has a Greenhouse."""
+    farm_crop = catalog().get("farm_crop", {})
+    if not farm_crop:
+        return []
+    farms = frappe.db.sql_list(
+        """select distinct custom_farm from `tabWarehouse`
+           where is_group = 0 and warehouse_type = 'Greenhouse'
+             and ifnull(custom_farm, '') != ''"""
+    )
+    return sorted({farm_crop[f] for f in farms if f in farm_crop})
+
+
+def crops_for_greenhouses(whs) -> dict:
+    """``{warehouse: crop or None}`` by the `crop_for_greenhouse` rule, in a fixed
+    number of queries however many warehouses (an approval list can hold hundreds)."""
+    whs = [w for w in dict.fromkeys(whs or []) if w]
+    if not whs:
+        return {}
+    rows = {
+        r.name: r
+        for r in frappe.get_all(
+            "Warehouse",
+            filters={"name": ["in", whs]},
+            fields=["name", "custom_farm", "warehouse_type"],
+            limit_page_length=0,
+        )
+    }
+    blocks = [w for w in whs if (rows.get(w) or {}).get("warehouse_type") == "Block"]
+    planted: dict = {}
+    if blocks:
+        from upande_scp.serverscripts.common import planting
+
+        planted = planting.crops_for_stations(blocks)
+    def _crop(w):
+        row = rows.get(w) or {}
+        if row.get("warehouse_type") == "Block":
+            return planted.get(w) or block_fallback_crop(row.get("custom_farm"))
+        return crop_for_farm(row.get("custom_farm"))
+
+    return {w: _crop(w) for w in whs}
+
+
+def keep_crop(rows, crop, field: str = "custom_greenhouse") -> list:
+    """The rows whose warehouse (``row[field]``) grows ``crop``. A blank crop keeps
+    everything — the back-compat "no crop section" call. Work Orders carry no crop,
+    so a plan belongs to the crop of the place it is for."""
+    rows = list(rows or [])
+    canon = canonical(crop)
+    if not (crop or "").strip():
+        return rows
+    if not canon:
+        return []
+    crops = crops_for_greenhouses(r.get(field) for r in rows)
+    return [r for r in rows if crops.get(r.get(field)) == canon]
 
 
 def entry_crop_condition(alias: str = "se") -> str:

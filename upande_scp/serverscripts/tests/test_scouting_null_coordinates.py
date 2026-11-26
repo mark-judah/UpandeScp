@@ -18,7 +18,7 @@ from upande_scp.serverscripts.scouting import get_complete_scouting_entries as G
 from upande_scp.serverscripts.scouting import tree_hot_spots as T
 from upande_scp.serverscripts.tests.test_observation_gallery import insert, scouts
 
-P1_BLOCK = "PH1-B1 - MUT"  # an Avocado (block crop) block
+P1_BLOCK = "PH1-AV2B1 - MUT"  # a live Avocado block
 FARM_DAY = "2031-12-03"  # a Wednesday; no real scouting this far out
 
 

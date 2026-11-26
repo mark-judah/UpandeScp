@@ -375,10 +375,14 @@ def _stale_filters_sql(farm):
 
 
 @frappe.whitelist()
-def get_stale_plans(farm=None):
+def get_stale_plans(farm=None, crop=None):
     """AFPs planned before the reservation window that are still live and not
-    issued: they no longer reserve stock but still clutter the approval queue."""
+    issued: they no longer reserve stock but still clutter the approval queue.
+    ``crop`` keeps plans for places growing that crop; blank keeps every crop."""
     _check_roles()
+    from upande_scp.serverscripts.common import crop_catalog
+
+    crop = crop_catalog.resolve_crop(crop)
     rows = frappe.db.sql(
         f"""
         SELECT wo.name, wo.docstatus, wo.status, wo.workflow_state,
@@ -400,6 +404,8 @@ def get_stale_plans(farm=None):
         as_dict=True,
     )
     rows = [r for r in rows if is_stale(r, _cutoff())]
+    if crop:
+        rows = crop_catalog.keep_crop(rows, crop)
     # Re-plan needs the chemicals too: one query for every stale plan's items.
     items: dict[str, list[str]] = {}
     if rows:

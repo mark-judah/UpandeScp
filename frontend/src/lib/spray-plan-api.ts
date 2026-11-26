@@ -97,6 +97,8 @@ export async function fetchPendingWorkOrders(args: {
   greenhouse?: string | null;
   /** Which date the range applies to. Omitted means the spray date, as before. */
   date_basis?: "scheduled" | "created";
+  /** The crop section the page is in: only plans for places growing it. */
+  crop?: string | null;
 }): Promise<PendingWorkOrdersResponse> {
   const r = await call<PendingWorkOrdersResponse>(ENDPOINTS.GET_WO, args);
   return r || { work_orders: [] };

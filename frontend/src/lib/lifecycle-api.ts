@@ -70,6 +70,8 @@ export async function fetchLifecycleSummary(args: {
   farm?: string;
   greenhouse?: string;
   states?: string[];
+  /** Only plans for places growing this crop; omitted keeps every crop. */
+  crop?: string;
 } = {}): Promise<LifecycleSummaryRow[]> {
   const r = await call<LifecycleSummaryRow[]>(`${NS}.get_lifecycle_summary`, {
     ...args,

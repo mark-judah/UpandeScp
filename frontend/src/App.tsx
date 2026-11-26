@@ -17,7 +17,7 @@ import {
   primeAvocadoGeo,
 } from "@/lib/scouting-api";
 import { loadObservationColors } from "@/lib/observation-colors";
-import { bootstrap } from "@/lib/frappe";
+import { bootstrap, usesBedLayout } from "@/lib/frappe";
 import { isBlockGrown, useCropProfiles } from "@/lib/crop-profile";
 
 const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
@@ -311,10 +311,12 @@ function renderView(crop: string, view: View): ReactNode {
     case "application-plan":
       // A block-grown crop's Application Plan is the heatmaps page (it kept that route when
       // it was renamed from "Jobsheet"), so a link to #/<crop>/application-plan lands there.
-      return blockGrown ? (
-        <AvocadoHeatMap initialCrop={cropName} />
-      ) : (
+      // Only crops whose farms hold Greenhouse warehouses use the bed plan; a crop with
+      // no stations yet gets the block page too.
+      return usesBedLayout(crop) ? (
         <ApplicationPlan initialCrop={cropName} />
+      ) : (
+        <AvocadoHeatMap initialCrop={cropName} />
       );
     case "chemical-dashboard":
       return <ChemicalDashboard />;
@@ -582,7 +584,7 @@ export function App() {
             const kView = k.slice(sep + 1) as View;
             const active = k === activeKey;
             const fallback =
-              kView === "application-plan" ? (
+              kView === "application-plan" && usesBedLayout(kCrop) ? (
                 <ApplicationPlanSkeleton />
               ) : (
                 <PageFallback crop={kCrop} view={kView} />

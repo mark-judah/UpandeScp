@@ -14,7 +14,8 @@ The item -> crop link is configuration on ``Crop Scouted.production_items``. An 
 not listed but is named ``<listed item> - <variety>`` (``Maize - H513`` beside ``Maize``) follows
 the item it is a variety of.
 
-Retired Production Units are ignored: their stations resolve to ``None``. A unit with no live
+A Retired Production Unit grows nothing: its station has no crop, whatever ``custom_crop``
+says on it or above it (a retired placeholder block must not show under its old crop). A unit with no live
 cycle of its own (a young orchard block whose cycles are not entered yet) is planted with its
 own ``crop`` when that names a Crop Scouted.
 """

@@ -12,7 +12,7 @@ Whitelisted endpoints:
 import frappe
 from frappe.utils import add_days, cstr, flt, now_datetime, today
 
-from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common import farm_map
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_TRANSFER
 
@@ -118,9 +118,12 @@ def _approver_allowed_greenhouses(user: str) -> list[str] | None:
 
 @frappe.whitelist()
 def get_pending_work_orders(
-    from_date=None, to_date=None, farm=None, greenhouse=None, date_basis=None
+    from_date=None, to_date=None, farm=None, greenhouse=None, date_basis=None, crop=None
 ):
     _ensure_approval_role()
+    # The crop section the page is open in (`#/avocado/approvals`): only plans for
+    # places growing that crop. Blank keeps every crop, as older callers expect.
+    crop = crop_catalog.resolve_crop(crop)
     """
     Return AFP Work Orders (Not Started, submitted) with child items
     and forwarding status (draft SE exists?).
@@ -215,6 +218,8 @@ def get_pending_work_orders(
         params,
         as_dict=1,
     )
+    if crop:
+        wos = crop_catalog.keep_crop(wos, crop)
 
     if not wos:
         return {"work_orders": [], "farms": []}

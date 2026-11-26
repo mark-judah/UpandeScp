@@ -254,3 +254,19 @@ class TestTankMixConventions(unittest.TestCase):
         before = frappe.db.count("UOM"), frappe.db.count("Item Group")
         tank_mix.ensure_tank_mix_conventions()
         self.assertEqual((frappe.db.count("UOM"), frappe.db.count("Item Group")), before)
+
+
+class TestPlanLocationsIncludeBlocks(unittest.TestCase):
+    """An open-field farm's plan locations are its blocks; counting only greenhouses made a
+    rostered approver 'not assigned to any farm' and emptied a supervisor's phone list."""
+
+    def test_blocks_are_plan_locations(self):
+        row = frappe.db.get_value(
+            "Warehouse",
+            {"warehouse_type": "Block", "custom_farm": ("is", "set"), "disabled": 0},
+            ["name", "custom_farm"],
+            as_dict=True,
+        )
+        if not row:
+            self.skipTest("no linked block on this site")
+        self.assertIn(row.name, farm_map.greenhouses_for_farms([row.custom_farm]))

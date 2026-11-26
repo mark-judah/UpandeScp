@@ -26,6 +26,7 @@ WH = {
 	"Phase 1 - MUT": {"parent_warehouse": "Mutara - MUT", "warehouse_type": "Phase"},
 	"Section A - MUT": {"parent_warehouse": "Phase 1 - MUT", "warehouse_type": "Section"},
 	"Avocado Block A - MUT": {"parent_warehouse": "Section A - MUT", "warehouse_type": "Block"},
+	"PH1-AV2B1 - MUT": {"parent_warehouse": "Phase 1 - MUT", "warehouse_type": "Block"},
 	"Loose - MUT": {"parent_warehouse": "Mutara - MUT", "warehouse_type": "Block"},
 }
 
@@ -33,6 +34,11 @@ WH = {
 class TestGrouping(unittest.TestCase):
 	def test_group_is_the_nearest_pivot_or_section(self):
 		self.assertEqual(OF.group_of("P1-B1 - MUT", WH), ("Pivot", "Pivot 1 - MUT"))
+		self.assertEqual(OF.group_of("Avocado Block A - MUT", WH), ("Section", "Section A - MUT"))
+
+	def test_a_block_straight_under_a_phase_groups_by_the_phase(self):
+		self.assertEqual(OF.group_of("PH1-AV2B1 - MUT", WH), ("Phase", "Phase 1 - MUT"))
+		# The nearest group wins: a block in a section of the phase stays in the section.
 		self.assertEqual(OF.group_of("Avocado Block A - MUT", WH), ("Section", "Section A - MUT"))
 
 	def test_a_block_with_neither_has_no_group(self):

@@ -26,13 +26,66 @@ def _cache_key(farm):
 def get_farm_structure(farm: str, refresh: int = 0) -> dict:
     frappe.has_permission("Warehouse", "read", throw=True)
     key = _cache_key(farm)
-    if not int(refresh or 0):
-        cached = frappe.cache.get_value(key)
-        if cached:
-            return cached
-    result = _build(farm)
-    frappe.cache.set_value(key, result, expires_in_sec=CACHE_TTL)
-    return result
+    result = None if int(refresh or 0) else frappe.cache.get_value(key)
+    if not result:
+        result = _build(farm)
+        frappe.cache.set_value(key, result, expires_in_sec=CACHE_TTL)
+    # Per user, so never part of the shared cache entry.
+    from upande_scp.serverscripts.common.crop_catalog import catalog
+
+    return {
+        **result,
+        "can_edit": bool(frappe.has_permission("Warehouse", "write")),
+        "crops": list(catalog().get("crops", [])),
+    }
+
+
+@frappe.whitelist()
+def set_node_crop(node: str, crop: str | None = None) -> dict:
+    """Set (or clear, with a blank `crop`) `custom_crop` on one structure node."""
+    from upande_scp.serverscripts.common.crop_catalog import invalidate_catalog
+
+    if not node or not frappe.db.exists("Warehouse", node):
+        frappe.throw(f"Unknown node: {node}.", frappe.DoesNotExistError)
+    frappe.has_permission("Warehouse", "write", doc=node, throw=True)
+    crop = (crop or "").strip() or None
+    if crop and not frappe.db.exists("Crop Scouted", crop):
+        frappe.throw(f"Unknown crop: {crop}.", frappe.ValidationError)
+    frappe.db.set_value("Warehouse", node, "custom_crop", crop)
+    invalidate_catalog()
+    farm = frappe.db.get_value("Warehouse", node, "custom_farm")
+    if farm:
+        frappe.cache.delete_value(_cache_key(farm))
+    return {"node": node, "crop": crop}
+
+
+def _crops(rows, by_name):
+    """{name: {own, inherited, inherited_from, cycle}} for every node. `cycle` is the crop a
+    live Production Crop Cycle gives when it differs from the custom_crop in force."""
+    from upande_scp.serverscripts.common import planting
+
+    effective = {}
+    out = {}
+    for r in rows:
+        own = r.get("custom_crop") or None
+        inherited = src = None
+        if not own:
+            seen, parent = {r.name}, r.parent_warehouse
+            while parent in by_name and parent not in seen:
+                seen.add(parent)
+                up = by_name[parent]
+                if up.get("custom_crop"):
+                    inherited, src = up["custom_crop"], up.warehouse_name or up.name
+                    break
+                parent = up.parent_warehouse
+        effective[r.name] = own or inherited
+        out[r.name] = {"own": own, "inherited": inherited, "inherited_from": src, "cycle": None}
+    resolved = planting.crops_for_stations([r.name for r in rows])
+    for name, crop in out.items():
+        live = resolved.get(name)
+        if live and live != effective[name]:
+            crop["cycle"] = live
+    return out
 
 
 def _unit_counts(stations):
@@ -95,7 +148,8 @@ def _build(farm):
     rows = frappe.get_all(
         "Warehouse",
         filters={"custom_farm": farm},
-        fields=["name", "warehouse_name", "parent_warehouse", "warehouse_type"],
+        fields=["name", "warehouse_name", "parent_warehouse", "warehouse_type"]
+        + (["custom_crop"] if frappe.get_meta("Warehouse").has_field("custom_crop") else []),
     )
     by_name = {r.name: r for r in rows}
     root_row = next((r for r in rows if r.warehouse_type == "Farm"), None)
@@ -108,6 +162,7 @@ def _build(farm):
             kids.setdefault(r.parent_warehouse, []).append(r)
 
     counts = _unit_counts([r.name for r in rows])
+    crops = _crops(rows, by_name)
     paths = {}
 
     def make(row, chain):
@@ -120,6 +175,7 @@ def _build(farm):
             "children": [],
             "unit": None,
             "flags": [],
+            "crop": crops[row.name],
         }
         if not row.warehouse_type:
             node["flags"].append("no type")

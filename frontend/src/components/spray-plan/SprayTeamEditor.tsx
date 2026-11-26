@@ -73,6 +73,8 @@ interface Props {
   crop?: string;
   /** yyyy-mm-dd plan date: when given, each member shows a leave badge for it */
   onDate?: string;
+  /** the team is picked elsewhere (the plan form's Spray team pill): show the roster only */
+  hidePicker?: boolean;
 }
 
 /** Same people with the same roles, in any order. "Not customised" (E3). */
@@ -86,7 +88,8 @@ export function rosterMatches(
   return plan.every((m) => want.has(key(m)));
 }
 
-function rowsOf(team: { members: CreatorSprayTeam["members"] | SprayTeam["members"] }): TeamMemberRow[] {
+/** A team's master members as a plan roster (what picking the team seeds). */
+export function rowsOf(team: { members: CreatorSprayTeam["members"] | SprayTeam["members"] }): TeamMemberRow[] {
   return (team.members || []).map((m) => ({
     employee: m.employee,
     employee_name: m.employee_name || m.employee,
@@ -118,6 +121,7 @@ export function SprayTeamEditor({
   onMembersChange,
   crop,
   onDate,
+  hidePicker = false,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // Master teams this user may edit — the server decides (E5); a refusal
@@ -248,6 +252,24 @@ export function SprayTeamEditor({
 
   return (
     <div className="flex flex-col gap-2">
+      {hidePicker ? (
+        showEdit && (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 gap-1.5 rounded-full text-[0.7rem]"
+              disabled={!editable}
+              onClick={() => setEditOpen(true)}
+              title={editable ? "Edit this team for all future plans" : "Pick a team to edit it"}
+            >
+              <Pencil className="h-3 w-3" />
+              Edit team
+            </Button>
+          </div>
+        )
+      ) : (
       <div className="flex flex-col gap-1">
         <Label className="flex items-center justify-between">
           <span className="inline-flex items-center gap-1.5">
@@ -338,6 +360,8 @@ export function SprayTeamEditor({
           </div>
         )}
       </div>
+
+      )}
 
       <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b bg-[var(--sd-bg-soft)]">

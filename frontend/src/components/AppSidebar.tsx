@@ -166,6 +166,25 @@ const REENTRY_ITEM: NavItem = {
   ],
 };
 
+// Every crop gets its own Approvals: the page is opened under the crop's route
+// and lists only plans for places growing that crop.
+const APPROVALS_ITEM: NavItem = {
+  kind: "view",
+  view: "approvals",
+  label: "Approvals",
+  icon: CheckSquare,
+  requireRoles: ["SCP General Manager", "SCP Spray Plan Approver"],
+};
+
+// Every crop has a plan page too. Block-grown crops (avocado, coffee, any new crop)
+// share this one; roses keep the greenhouse/bed Application Plan in ROSE_NAV.
+const BLOCK_PLAN_ITEM: NavItem = {
+  kind: "view",
+  view: "application-plan",
+  label: "Application Floor Plan",
+  icon: ClipboardList,
+};
+
 const STRUCTURE_ITEM: NavItem = { kind: "view", view: "structure", label: "Farm structure", icon: Network };
 
 const ROSE_NAV: NavSection[] = [
@@ -288,13 +307,7 @@ const ROSE_NAV: NavSection[] = [
           STORE_KEEPER_ROLE,
         ],
       },
-      {
-        kind: "view",
-        view: "approvals",
-        label: "Approvals",
-        icon: CheckSquare,
-        requireRoles: ["SCP General Manager", "SCP Spray Plan Approver"],
-      },
+      APPROVALS_ITEM,
       {
         // Supervisors declare here and approvers decide, so both see it.
         kind: "view",
@@ -372,7 +385,8 @@ const AVOCADO_NAV: NavSection[] = [
     items: [
       // One page to observe and plan: the pest map on the left, the blocks and a plan per
       // block on the right, sent to approval together (the old Spray Plan merged in).
-      { kind: "view", view: "application-plan", label: "Application Floor Plan", icon: ClipboardList },
+      BLOCK_PLAN_ITEM,
+      APPROVALS_ITEM,
       REENTRY_ITEM,
     ],
   },
@@ -421,7 +435,7 @@ const COFFEE_NAV: NavSection[] = [
   },
   {
     label: "Crop Protection",
-    items: [REENTRY_ITEM],
+    items: [BLOCK_PLAN_ITEM, APPROVALS_ITEM, REENTRY_ITEM],
   },
   {
     label: "Reports",
@@ -472,7 +486,7 @@ const DEFAULT_CROP_NAV: NavSection[] = [
   },
   {
     label: "Crop Protection",
-    items: [REENTRY_ITEM],
+    items: [BLOCK_PLAN_ITEM, APPROVALS_ITEM, REENTRY_ITEM],
   },
   {
     label: "Reports",
@@ -567,9 +581,9 @@ export function canOpenView(view: View, crop: string, userRoles: string[]): bool
   }
 
   // 2. Not in this crop's nav — but a restriction declared for the same view
-  //    under ANY crop still applies. Only ROSE_NAV lists `approvals`, so
-  //    without this `#/avocado/approvals` stayed open to everyone: the same
-  //    hole, one URL along. A rule declared once should not have to be
+  //    under ANY crop still applies. A view one crop's nav restricts must not
+  //    open to everyone under a crop that does not list it: the same hole,
+  //    one URL along. A rule declared once should not have to be
   //    repeated per crop to keep working.
   for (const nav of [ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV]) {
     for (const section of nav) {
@@ -627,7 +641,7 @@ export function AppSidebar({
   view: View;
   onNavigate: (next: View) => void;
 }) {
-  const { state, toggle } = useSidebar();
+  const { state, toggle, highlightCollapse } = useSidebar();
   const collapsed = state === "collapsed";
   const { unread: unreadNotifications } = useUnreadNotifications();
   const roles = bootstrap().roles || [];
@@ -824,6 +838,14 @@ export function AppSidebar({
             <SidebarMenuButton
               onClick={toggle}
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              // A page (the field planner) can point this button out: a ring that
+              // pulses, never an accent strip.
+              data-highlight={highlightCollapse && !collapsed ? "true" : undefined}
+              className={
+                highlightCollapse && !collapsed
+                  ? "ring-2 ring-foreground ring-offset-2 ring-offset-sidebar animate-pulse"
+                  : undefined
+              }
             >
               {collapsed ? (
                 <PanelLeftOpen className="h-4 w-4" />

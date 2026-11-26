@@ -1,6 +1,7 @@
 /**
  * The open-field planning column (what was the Spray Plan page): select one block or several (avocado
- * blocks, the slices of a pivot), plan each one separately — Preventive or Curative, team, tank mix —
+ * blocks, the slices of a pivot), plan each one separately — Preventive or Curative, team, tank mix,
+ * chemicals and batches, Scheduled Application (the shared spray plan form, one per block) —
  * then add the whole lot as drafts and send them for approval from the draft list below. One draft
  * Work Order per block, the same one the greenhouse plan makes.
  *
@@ -11,11 +12,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { DatePicker } from "@/components/DatePicker";
-import { TimePicker } from "@/components/TimePicker";
 import { BlockMultiPicker } from "@/components/spray-plan/BlockMultiPicker";
 import { BlockPlanPanel } from "@/components/spray-plan/BlockPlanPanel";
+import { CollapseSidebarHint } from "@/components/spray-plan/CollapseSidebarHint";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
 import { useToast } from "@/components/Toast";
 import { fetchCreatorBootstrap, type CreatorBootstrap } from "@/lib/spray-plan-creator-api";
@@ -23,11 +22,11 @@ import {
   createDraftPlansBatch, fetchBlockFindings, fetchOpenFieldBlocks, type BlockFindings,
 } from "@/lib/open-field-api";
 import {
-  effectiveArea, emptyPlan, planProblems, toDraftPayload,
+  effectiveArea, emptyPlan, planProblems, reservedElsewhere, toDraftPayload,
   type BlockPlan, type OpenFieldBlock, type OpenFieldGroup,
 } from "@/lib/open-field";
 import { asStatement, errorText } from "@/lib/errors";
-import { mergeDateTime, splitDateTime, todayAt } from "@/lib/utils";
+import { todayAt } from "@/lib/utils";
 
 export interface OpenFieldPlannerProps {
   /** The route crop: its blocks are listed and its planning data is the fallback. */
@@ -39,9 +38,13 @@ export interface OpenFieldPlannerProps {
   rowExtra?: (block: OpenFieldBlock) => ReactNode;
   /** The plannable blocks, once loaded (the map only picks these). */
   onBlocks?: (groups: OpenFieldGroup[]) => void;
+  /** Leave out the block list: the page offers the same picker as a filter above the map. */
+  hideBlockPicker?: boolean;
+  /** A block picked in the panel's Jump to block: the page brings it into view on its map. */
+  onFocusBlock?: (block: string) => void;
 }
 
-export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, onBlocks }: OpenFieldPlannerProps) {
+export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, onBlocks, hideBlockPicker, onFocusBlock }: OpenFieldPlannerProps) {
   const toast = useToast();
   const [groups, setGroups] = useState<OpenFieldGroup[]>([]);
   const [loadingBlocks, setLoadingBlocks] = useState(true);
@@ -49,8 +52,15 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
   const [bootByCrop, setBootByCrop] = useState<Record<string, CreatorBootstrap | null>>({});
   const [plans, setPlans] = useState<Record<string, BlockPlan>>({});
   const [findings, setFindings] = useState<Record<string, BlockFindings>>({});
-  const [sprayDate, setSprayDate] = useState(todayAt("06:00"));
+  // The Scheduled Application a block's plan starts with; each block sets its own.
+  const [sprayDate] = useState(todayAt("06:00"));
   const [busy, setBusy] = useState(false);
+  // Set by a submit attempt with blocks still incomplete: every missing required field
+  // is then outlined. Cleared when the selection empties (a new batch).
+  const [attempted, setAttempted] = useState(false);
+  useEffect(() => {
+    if (!selected.length) setAttempted(false);
+  }, [selected.length]);
 
   useEffect(() => {
     setLoadingBlocks(true);
@@ -111,8 +121,30 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
+  /** After a tank mix is made from a block's form: reload the planning data so it is
+   *  in every block's picker (the form then selects it on its block). */
+  const refreshBoot = async () => {
+    const crops = Object.keys(bootByCrop);
+    const [route, ...per] = await Promise.all([
+      fetchCreatorBootstrap(crop).catch(() => null),
+      ...crops.map((c) => fetchCreatorBootstrap(c).catch(() => null)),
+    ]);
+    if (route) setBoot(route);
+    setBootByCrop((m) => {
+      const next = { ...m };
+      crops.forEach((c, i) => {
+        if (per[i]) next[c] = per[i];
+      });
+      return next;
+    });
+  };
+
   const planOf = (n: string) => plans[n] ?? emptyPlan();
-  const incomplete = blocks.filter((b) => planProblems(planOf(b.name), effectiveArea(b, planOf(b.name))).length);
+  // The roses gates per block: a missing batch, or a row its store cannot cover once the
+  // other selected blocks' quantities are counted, keeps the whole batch from going.
+  const incomplete = blocks.filter(
+    (b) => planProblems(planOf(b.name), effectiveArea(b, planOf(b.name)), reservedElsewhere(b.name, blocks, shownPlans)).length,
+  );
 
   const submit = async () => {
     if (!blocks.length || incomplete.length) return;
@@ -141,7 +173,8 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
 
   return (
     <div className="flex flex-col gap-3" data-testid="open-field-planner">
-      <section className="rounded-2xl border bg-card p-3">
+      <CollapseSidebarHint />
+      {!hideBlockPicker && <section className="rounded-2xl border bg-card p-3">
         <div className="mb-2 flex items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold">Blocks</h2>
           <span className="text-xs text-muted-foreground">
@@ -156,22 +189,7 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
           focus={focus}
           rowExtra={rowExtra}
         />
-      </section>
-
-      {blocks.length > 0 && (
-        <section className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3">
-          <Label className="text-xs">Scheduled application</Label>
-          <DatePicker
-            variant="field"
-            value={splitDateTime(sprayDate).date}
-            onChange={(d) => setSprayDate(mergeDateTime(d, splitDateTime(sprayDate).time))}
-          />
-          <TimePicker
-            value={splitDateTime(sprayDate).time}
-            onChange={(t) => setSprayDate(mergeDateTime(splitDateTime(sprayDate).date, t))}
-          />
-        </section>
-      )}
+      </section>}
 
       <BlockPlanPanel
         blocks={blocks}
@@ -181,6 +199,10 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
         bootByCrop={bootByCrop}
         findings={findings}
         when={sprayDate}
+        onTankMixCreated={refreshBoot}
+        onJump={onFocusBlock}
+        onRemove={(n) => onSelect(selected.filter((x) => x !== n))}
+        showErrors={attempted}
       />
       {blocks.length > 0 && (
         <div className="flex flex-wrap items-center justify-end gap-3">
@@ -189,10 +211,28 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
               Still to plan: {incomplete.map((b) => b.label).join(", ")}
             </span>
           )}
-          <Button onClick={submit} disabled={busy || incomplete.length > 0} className="rounded-full">
-            {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-            Create {blocks.length} draft plan{blocks.length === 1 ? "" : "s"}
-          </Button>
+          <span className="relative inline-flex">
+            <Button onClick={submit} disabled={busy || incomplete.length > 0} className="rounded-full">
+              {busy && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Create {blocks.length} draft plan{blocks.length === 1 ? "" : "s"}
+            </Button>
+            {/* A disabled button takes no clicks; this catches the attempt so the
+                missing required fields of every block are outlined. */}
+            {!busy && incomplete.length > 0 && (
+              <span
+                aria-hidden
+                data-testid="create-attempt"
+                className="absolute inset-0 cursor-not-allowed rounded-full"
+                onClick={() => {
+                  setAttempted(true);
+                  toast.show(
+                    asStatement(`Still to plan: ${incomplete.map((b) => b.label).join(", ")}. The missing fields are outlined.`),
+                    "warn",
+                  );
+                }}
+              />
+            )}
+          </span>
         </div>
       )}
 

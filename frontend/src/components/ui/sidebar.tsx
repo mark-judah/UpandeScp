@@ -25,9 +25,17 @@ type SidebarContextValue = {
   setOpenMobile: (v: boolean) => void;
   isMobile: boolean;
   toggle: () => void;
+  /** a page asks for the Collapse button to be pointed out (ring + pulse) */
+  highlightCollapse: boolean;
+  setHighlightCollapse: (v: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextValue | null>(null);
+
+/** The sidebar, or null outside a <SidebarProvider /> (a page rendered on its own). */
+export function useOptionalSidebar(): SidebarContextValue | null {
+  return React.useContext(SidebarContext);
+}
 
 export function useSidebar() {
   const ctx = React.useContext(SidebarContext);
@@ -58,6 +66,7 @@ export const SidebarProvider = React.forwardRef<
     const isMobile = useIsMobile();
     const [openMobile, setOpenMobile] = React.useState(false);
     const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
+    const [highlightCollapse, setHighlightCollapse] = React.useState(false);
     const open = openProp ?? internalOpen;
     const setOpen = React.useCallback(
       (v: boolean) => {
@@ -81,8 +90,10 @@ export const SidebarProvider = React.forwardRef<
         setOpenMobile,
         isMobile,
         toggle,
+        highlightCollapse,
+        setHighlightCollapse,
       }),
-      [open, setOpen, openMobile, isMobile, toggle],
+      [open, setOpen, openMobile, isMobile, toggle, highlightCollapse],
     );
 
     return (

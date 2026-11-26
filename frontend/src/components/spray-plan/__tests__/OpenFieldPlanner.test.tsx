@@ -17,14 +17,23 @@ vi.mock("@/components/spray-plan/DraftBatchPanel", () => ({ DraftBatchPanel: () 
 // The panel is covered by its own test; here it just completes plans on demand.
 vi.mock("@/components/spray-plan/BlockPlanPanel", () => ({
   BlockPlanPanel: (p: any) => (
-    <div>
+    <div data-show-errors={p.showErrors ? "true" : "false"} data-testid="panel">
+      {p.blocks.map((b: any) => (
+        <span key={`x-${b.name}`}>
+          <button onClick={() => p.onJump?.(b.name)}>jump {b.label}</button>
+          <button onClick={() => p.onRemove?.(b.name)}>remove {b.label}</button>
+        </span>
+      ))}
       {p.blocks.map((b: any) => (
         <button
           key={b.name}
           onClick={() =>
             p.onPlanChange(b.name, {
               classification: "Curative", reason: "", team: "T", kit: "", bom: "BOM-1", targets: ["Thrips"], area: "",
-              chemicals: [{ item_code: "X", rate: 1, source: "S" }],
+              chemicals: b.label === (window as any).__shortBlock
+                ? [{ item_code: "X", item_name: "Xchem", basis: "Water", rate: 5, source: "S", stock_free: 1 }]
+                : [{ item_code: "X", rate: 1, source: "S" }],
+              water: "1000",
             })
           }
         >
@@ -40,9 +49,9 @@ import { ToastProvider } from "@/components/Toast";
 import { OpenFieldPlanner } from "@/components/spray-plan/OpenFieldPlanner";
 
 /** The planner's selection belongs to its page (the Application Plan): hold it here. */
-function Page({ crop = "Potato" }: { crop?: string }) {
+function Page({ crop = "Potato", onFocusBlock }: { crop?: string; onFocusBlock?: (b: string) => void }) {
   const [selected, setSelected] = useState<string[]>([]);
-  return <OpenFieldPlanner crop={crop} selected={selected} onSelect={setSelected} />;
+  return <OpenFieldPlanner crop={crop} selected={selected} onSelect={setSelected} onFocusBlock={onFocusBlock} />;
 }
 
 const blk = (n: string) => ({ name: `${n} - MUT`, label: n, farm: "Mutara", crop: "Potato", crop_label: "Potato", area_ha: 2, cost_center: `${n} - MUT` });
@@ -74,6 +83,48 @@ describe("OpenFieldPlanner", () => {
     expect(payloads.map((p: any) => p.custom_greenhouse)).toEqual(["P1-B1 - MUT", "P1-B2 - MUT"]);
     expect(payloads[0].custom_area).toBe(2);
     expect(await screen.findByText(/2 draft plans created/)).toBeInTheDocument();
+  });
+});
+
+describe("OpenFieldPlanner stock gate", () => {
+  it("refuses the batch while any block is short on stock", async () => {
+    (window as any).__shortBlock = "P1-B2";
+    try {
+      const user = userEvent.setup();
+      render(<ToastProvider><Page /></ToastProvider>);
+      await user.click(await screen.findByRole("checkbox", { name: "Select all of Pivot 1" }));
+      const create = await screen.findByRole("button", { name: /Create 2 draft plans/ });
+      await user.click(screen.getByText("complete P1-B1"));
+      await user.click(screen.getByText("complete P1-B2"));
+      expect(create).toBeDisabled();
+      expect(screen.getByText(/Still to plan: P1-B2$/)).toBeInTheDocument();
+    } finally {
+      delete (window as any).__shortBlock;
+    }
+  });
+});
+
+describe("OpenFieldPlanner jump, remove, submit attempt", () => {
+  it("Jump to block hands the block to the page, and the X takes it out of the selection", async () => {
+    const onFocusBlock = vi.fn();
+    const user = userEvent.setup();
+    render(<ToastProvider><Page onFocusBlock={onFocusBlock} /></ToastProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "Select all of Pivot 1" }));
+    await user.click(await screen.findByText("jump P1-B2"));
+    expect(onFocusBlock).toHaveBeenCalledWith("P1-B2 - MUT");
+    await user.click(screen.getByText("remove P1-B1"));
+    expect(await screen.findByRole("button", { name: /Create 1 draft plan$/ })).toBeInTheDocument();
+    expect(screen.queryByText("remove P1-B1")).toBeNull();
+  });
+
+  it("trying to submit an incomplete batch outlines the missing fields and sends nothing", async () => {
+    const user = userEvent.setup();
+    render(<ToastProvider><Page /></ToastProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "Select all of Pivot 1" }));
+    expect(screen.getByTestId("panel")).toHaveAttribute("data-show-errors", "false");
+    await user.click(await screen.findByTestId("create-attempt"));
+    expect(screen.getByTestId("panel")).toHaveAttribute("data-show-errors", "true");
+    expect(createDraftPlansBatch).not.toHaveBeenCalled();
   });
 });
 

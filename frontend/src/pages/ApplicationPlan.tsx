@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SearchInput } from "@/components/SearchInput";
-import { AlertTriangle, Loader2, Plus, Trash2, Maximize2, FilePlus2, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Loader2, Maximize2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -18,16 +17,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { PlacePicker } from "@/components/PlacePicker";
 import { farmOf } from "@/lib/places";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CurativeAlerts, alertLinkFor } from "@/components/spray-plan/CurativeAlerts";
 import { ghActionBadge, type CreatorAlert } from "@/lib/scouting-alerts-api";
 import { PageHeader } from "@/components/PageHeader";
-import { BomPicker } from "@/components/BomPicker";
-import { DatePicker } from "@/components/DatePicker";
-import { TimePicker } from "@/components/TimePicker";
 import { useToast, type ToastItem } from "@/components/Toast";
 import { parseReplanParams, pendingNote, resolveReplan } from "./replanPrefill";
 import {
@@ -55,33 +50,26 @@ import {
   type ZoneGeoLike,
 } from "./maps/bed-projection";
 import {
-  createBom,
   fetchBedsAndZones,
   fetchBedsByGreenhouse,
-  fetchBomDetails,
-  fetchChemicalBalances,
   fetchZonesByGreenhouse,
-  getItemAvailability,
-  type ItemAvailability,
-  type BatchAvailability,
   searchChemicalItems,
   type BedAreaRow,
-  type BomChemical,
-  type BomDetails,
   type ChemicalItem,
   type RateLimit,
   type VarietyNode,
 } from "@/lib/scouting-api";
-import { availableStock, itemNeedsBatch } from "@/lib/stock-availability";
-import { SuggestedPill, SuggestedProductsCard } from "@/components/spray-plan/SuggestedProducts";
+import { SuggestedProductsCard } from "@/components/spray-plan/SuggestedProducts";
 import { ActiveIngredients } from "@/components/spray-plan/ActiveIngredients";
-import { fmtQty, fromStockQty } from "@/lib/uom";
 import {
   createDraftSprayPlan,
   fetchCreatorBootstrap,
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
+import { SprayPlanForm } from "@/components/spray-plan/plan-form/SprayPlanForm";
+import { useSprayPlanForm, type PlanChemical } from "@/components/spray-plan/plan-form/useSprayPlanForm";
+import { newBomRateError, rateLimitError, type NewBomChem } from "@/components/spray-plan/plan-form/plan-form-utils";
 import { SprayCheckCard } from "@/components/spray-plan/SprayCheckCard";
 import { OverrideDialog } from "@/components/spray-plan/OverrideDialog";
 import {
@@ -89,8 +77,6 @@ import {
   eligibleBoms,
   eligibleProducts,
   mixIngredients,
-  pickerFilters,
-  pickerState,
   saveGate,
   type BomEligibility,
   type CheckResult,
@@ -100,14 +86,14 @@ import {
   type SuggestedProduct,
 } from "@/lib/spray-compliance-api";
 import { WeatherCard } from "@/components/WeatherCard";
-import { Bar, LoadProgress, RowsSkeleton, TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
+import { Bar, LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import {
   SprayTeamEditor,
   type TeamMemberRow,
 } from "@/components/spray-plan/SprayTeamEditor";
 import { FrappeError } from "@/lib/frappe";
 import { asStatement, errorText, explainError } from "@/lib/errors";
-import { mergeDateTime, splitDateTime, todayAt, ymd } from "@/lib/utils";
+import { mergeDateTime, splitDateTime, ymd } from "@/lib/utils";
 import {
   pestColor,
   diseaseColor,
@@ -209,61 +195,11 @@ interface DiagnoseFilters {
   section: string;
 }
 
-interface ChemRow extends BomChemical {
-  /** Stable id so React doesn't re-mount unrelated rows when items change. */
-  rowId: string;
-  source?: string;
-  /** Operator-editable per-1000 L Tank-Mix rate. Seeded from the BOM's
-   *  per-1000 L value and free for the operator to override. ``stock_qty``
-   *  (the total qty actually needed for this spray) is always derived
-   *  from this rate as ``rate × waterVolumeL / 1000`` and is never
-   *  edited directly. */
-  rate: number;
-  /** Batch reserved for this row (custom_batch_no on the Work Order Item). */
-  batch_no?: string;
-}
+/** A tank-mix row of the plan (the shared plan form's row). */
+type ChemRow = PlanChemical & { rowId: string };
 
-/** Return a human message when ``rate`` (per 1000 L) falls outside the limits
- *  for ``itemCode``, or ``null`` when it's in range / no limits are configured.
- *  Pure so the same function can drive both the inline warning under the
- *  rate input and the pre-submit guard. Note: limits are per-1000 L, so the
- *  caller must pass the rate value, not the computed total qty. */
-function rateLimitError(
-  itemCode: string | undefined,
-  rate: number | undefined,
-  limits: Record<string, RateLimit>,
-): string | null {
-  if (!itemCode || !rate || rate <= 0) return null;
-  const lim = limits[itemCode];
-  if (!lim) return null;
-  if (lim.lower != null && rate < lim.lower) {
-    return `Below lower limit of ${lim.lower} per 1000L.`;
-  }
-  if (lim.upper != null && rate > lim.upper) {
-    return `Above upper limit of ${lim.upper} per 1000L.`;
-  }
-  return null;
-}
-
-/** A chemical staged in the "create tank mix" dialog. The dose is held as the
- *  raw input string so a half-typed "0." doesn't collapse to 0 mid-keystroke;
- *  it is parsed once, at submit. */
-export type NewBomChem = ChemicalItem & { rate?: string };
-
-/** Rows whose dose the server would reject, with the reason.
- *
- *  `create_bom.createBOM` requires `custom_application_rate > 0` on every row
- *  and fails the whole call on the first bad one. Checking here means the
- *  operator sees which row is wrong, inline, instead of a single
- *  "Rate must be > 0 for 'X' (row #1)" toast after a round-trip. */
-export function newBomRateError(chem: NewBomChem): string | null {
-  const raw = (chem.rate ?? "").trim();
-  if (!raw) return "Dose required.";
-  const rate = Number(raw);
-  if (!Number.isFinite(rate)) return "Not a number.";
-  if (rate <= 0) return "Must be greater than 0.";
-  return null;
-}
+// Moved to the shared plan form; re-exported for the dose-validation tests.
+export { newBomRateError, type NewBomChem };
 
 export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) {
   const [bootstrap, setBootstrap] = useState<CreatorBootstrap | null>(null);
@@ -303,26 +239,12 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   // the hook here ensures the diagnose plot redraws after the fetch.
   useObservationColors();
 
-  // Spray + BOM state
-  // Holds a full datetime string ("YYYY-MM-DD HH:mm:ss"); defaults to today 06:00.
-  const [sprayDate, setSprayDate] = useState<string>(todayAt("06:00"));
+  // Spray state. The plan itself (classification, Scheduled Application, team,
+  // kit, tank mix, chemicals, water) lives in the shared plan form's hook below.
   const [sprayType, setSprayType] = useState<string>("");
   const [scope, setScope] = useState<string>("");
-  const [bom, setBom] = useState<string>("");
-  const [kit, setKit] = useState<string>("");
-  const [classification, setClassification] = useState<"" | "Curative" | "Preventive">("");
-  const [preventiveReason, setPreventiveReason] = useState<string>("");
-  const [waterPh, setWaterPh] = useState<string>("");
-  const [waterHardness, setWaterHardness] = useState<string>("");
-  const [waterVolume, setWaterVolume] = useState<string>("");
-  const [chemRows, setChemRows] = useState<ChemRow[]>([]);
   const [suggestedCodes, setSuggestedCodes] = useState<string[]>([]);
-  const [bomLoading, setBomLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
-  // Why the load failed, if it did. Without this the panel just went blank and
-  // the operator had no way to tell a broken endpoint from an empty tank mix.
-  const [bomError, setBomError] = useState<string | null>(null);
 
   // Cost-center override. Defaults to the auto-resolved value for the
   // picked greenhouse (read from bootstrap.greenhouses[].cost_center).
@@ -342,35 +264,11 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   );
   const [bedNumbers, setBedNumbers] = useState<string>("");
   const [area, setArea] = useState<string>("");
-  const [sprayTeam, setSprayTeam] = useState<string>("");
   // Per-plan team roster. Seeded from a picked Spray Team but editable
   // without mutating the master `Spray Team Details`. Submitted as the
   // WO's `custom_spray_plan_team_members` child table.
   const [teamMembers, setTeamMembers] = useState<TeamMemberRow[]>([]);
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
-
-  // Add-chemical dialog
-  const [addOpen, setAddOpen] = useState(false);
-  const [addQuery, setAddQuery] = useState("");
-  const [addResults, setAddResults] = useState<ChemicalItem[]>([]);
-  const [addNotice, setAddNotice] = useState<string>("");
-  const addTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // BOM creation dialog
-  const [bomDialogOpen, setBomDialogOpen] = useState(false);
-  const [newBomItem, setNewBomItem] = useState<string>("");
-  const [newBomPh, setNewBomPh] = useState<string>("7");
-  const [newBomHardness, setNewBomHardness] = useState<string>("100");
-  const [newBomChems, setNewBomChems] = useState<NewBomChem[]>([]);
-  const [newBomSearch, setNewBomSearch] = useState<string>("");
-  const [newBomCatalogLoaded, setNewBomCatalogLoaded] = useState(false);
-  const [newBomSearchResults, setNewBomSearchResults] = useState<ChemicalItem[]>(
-    [],
-  );
-  const [creatingBom, setCreatingBom] = useState(false);
-  const newBomSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
 
   // Heatmap fullscreen modal
   const [heatmapModal, setHeatmapModal] = useState(false);
@@ -471,121 +369,45 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     return bootstrap?.farm_stores?.[greenhouseFarm] || null;
   }, [greenhouseFarm, bootstrap]);
 
-  // BOM details loader. Note: waterVolume is owned by the area-calc
-  // effect below — we deliberately don't seed it here so the BOM
-  // loader (which runs whenever ``bom`` changes) can't race with the
-  // scope-driven auto-calc and clobber a freshly computed value.
-  useEffect(() => {
-    if (!bom) {
-      setBomDetails(null);
-      setBomError(null);
-      setChemRows([]);
-      setWaterPh("");
-      setWaterHardness("");
-      return;
-    }
-    let cancelled = false;
-    setBomLoading(true);
-    setBomError(null);
-    // Pass the picked greenhouse so a farm-mapped store already collapses
-    // the returned warehouse lists (and balances) server-side (Task 6).
-    fetchBomDetails(bom, greenhouse)
-      .then((d) => {
-        if (cancelled || !d) return;
-        setBomDetails(d);
-        setWaterPh(d.custom_water_ph?.toString() || "");
-        setWaterHardness(d.custom_water_hardness?.toString() || "");
-        setChemRows(
-          d.chemicals.map((c, i) => {
-            const balances = c.balances || {};
-            const first = Object.entries(balances).find(([, v]) => v > 0);
-            const fallback = c.is_fertilizer
-              ? d.fertilizer_warehouses
-              : d.chemical_warehouses;
-            // ``c.stock_qty`` from the BOM is the per-1000 L Tank-Mix rate.
-            // It becomes the row's editable ``rate``; the displayed total
-            // (``stock_qty``) is always derived from rate × waterVol / 1000
-            // by the effect below, so we seed it to 0 here and let that
-            // effect populate it on the next render.
-            const bomRate = Number(c.stock_qty) || 0;
-            // Store lock (Task 9): when the farm has a mapped store for
-            // this chemical's group, the source isn't a free choice.
-            const forcedSource = c.is_fertilizer
-              ? mappedStores?.fertilizer_store
-              : mappedStores?.chemical_store;
-            return {
-              ...c,
-              rowId: `${c.item_code}-${i}`,
-              source:
-                forcedSource || first?.[0] || (fallback?.length ? fallback[0] : ""),
-              rate: bomRate,
-              stock_qty: 0,
-            };
-          }),
-        );
-      })
-      .catch((e: any) => {
-        if (cancelled) return;
-        setBomDetails(null);
-        setChemRows([]);
-        setBomError(
-          errorText(e, "Could not load this tank mix's chemicals. Try again, or pick another mix."),
-        );
-      })
-      .finally(() => !cancelled && setBomLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [bom, greenhouse, mappedStores]);
-
-  // Safety net: if bootstrap resolves (or the greenhouse/farm mapping
-  // changes) after chemRows are already populated, snap any locked
-  // group's source back to the mapped store instead of leaving a stale
-  // pick from before the mapping was known.
-  useEffect(() => {
-    if (!mappedStores) return;
-    setChemRows((prev) => {
-      let changed = false;
-      const next = prev.map((c) => {
-        const forced = c.is_fertilizer
-          ? mappedStores.fertilizer_store
-          : mappedStores.chemical_store;
-        if (!forced || c.source === forced) return c;
-        changed = true;
-        return { ...c, source: forced };
-      });
-      return changed ? next : prev;
-    });
-  }, [mappedStores]);
-
-  // Add-chemical search debounce.
-  useEffect(() => {
-    if (!addOpen) return;
-    if (addTimerRef.current) clearTimeout(addTimerRef.current);
-    addTimerRef.current = setTimeout(() => {
-      searchChemicalItems(addQuery).then(setAddResults);
-    }, 200);
-    return () => {
-      if (addTimerRef.current) clearTimeout(addTimerRef.current);
-    };
-  }, [addQuery, addOpen]);
-
-  // BOM-creation chemical search debounce.
-  useEffect(() => {
-    if (!bomDialogOpen) return;
-    if (newBomSearchTimerRef.current)
-      clearTimeout(newBomSearchTimerRef.current);
-    newBomSearchTimerRef.current = setTimeout(() => {
-      searchChemicalItems(newBomSearch)
-        .then(setNewBomSearchResults)
-        .catch(() => setNewBomSearchResults([]))
-        .finally(() => setNewBomCatalogLoaded(true));
-    }, 200);
-    return () => {
-      if (newBomSearchTimerRef.current)
-        clearTimeout(newBomSearchTimerRef.current);
-    };
-  }, [newBomSearch, bomDialogOpen]);
+  // The plan form: tank mix, chemicals, stock, batches, water and the plan's own
+  // fields (components/spray-plan/plan-form), shared with the field planner.
+  const form = useSprayPlanForm({
+    place: greenhouse,
+    placeKind: "greenhouse",
+    crop: initialCrop,
+    farm: greenhouseFarm,
+    areaHa: parseFloat(area) || 0,
+    stores: mappedStores,
+    rateLimits,
+  });
+  const {
+    scheduledAt: sprayDate,
+    setScheduledAt: setSprayDate,
+    bom,
+    setBom,
+    bomDetails,
+    bomLoading,
+    kit,
+    classification,
+    setClassification,
+    reason: preventiveReason,
+    team: sprayTeam,
+    setTeam: setSprayTeam,
+    waterPh,
+    waterHardness,
+    water: waterVolume,
+    setWater: setWaterVolume,
+    setChemicals: setChemRows,
+    rowAvailable,
+    batchMissingRows,
+    stockShortRows,
+    stockShortById,
+    makeChemRow,
+    addChemical,
+    setSource,
+  } = form;
+  // The form gives every row a rowId (tank-mix rows and added ones alike).
+  const chemRows = form.chemicals as ChemRow[];
 
   // Reset scope-detail extras when the scope or greenhouse changes.
   useEffect(() => {
@@ -777,29 +599,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     }
     setArea("");
   }, [scope, areaHa, waterVolumeL, bomDetails]);
-
-  // Auto-derive each chemical's total ``stock_qty`` from its per-1000-L
-  // ``rate`` scaled by the current water volume. The chain is:
-  //   scope → areaHa → waterVolumeL → stock_qty (per row)
-  // The rate is the operator's source of truth; this effect just keeps
-  // the displayed total in sync whenever the water volume changes. When
-  // the operator edits the rate directly, ``updateChemRate`` writes both
-  // ``rate`` and ``stock_qty`` together so the matrix updates instantly
-  // without waiting for an effect.
-  useEffect(() => {
-    const wv = parseFloat(waterVolume) || 0;
-    if (wv <= 0) return;
-    const ratio = wv / WATER_VOLUME_RATE; // 1 = BOM batch is "per 1000 L"
-    setChemRows((prev) =>
-      prev.map((c) => {
-        const rate = Number(c.rate ?? 0);
-        if (!rate) return c;
-        const next = Math.round(rate * ratio * 10000) / 10000;
-        if (next === c.stock_qty) return c;
-        return { ...c, stock_qty: next };
-      }),
-    );
-  }, [waterVolume]);
 
   const zonesInGh: ZoneGeoLike[] = useMemo(() => {
     if (!greenhouse) return [];
@@ -996,8 +795,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [checkLoading, setCheckLoading] = useState(false);
   const [productInfo, setProductInfo] = useState<Record<string, ProductEligibility>>({});
-  const [addEligRows, setAddEligRows] = useState<ProductEligibility[]>([]);
-  const [addShowAll, setAddShowAll] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [pendingOverrides, setPendingOverrides] = useState<OverrideInput[] | null>(null);
   const targetsArr = useMemo(() => Array.from(selectedTargets).sort(), [selectedTargets]);
@@ -1095,43 +892,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     return out;
   }, [check]);
 
-  // Add-chemical: rank the search results by how well they suit this plan.
-  useEffect(() => {
-    if (!addOpen || !greenhouse || !addResults.length) {
-      setAddEligRows([]);
-      return;
-    }
-    let cancelled = false;
-    eligibleProducts({
-      greenhouse,
-      targets: targetsArr,
-      items: mixItems,
-      candidates: addResults.map((r) => r.item_code),
-      when: sprayDate,
-    })
-      .then((rows) => !cancelled && setAddEligRows(rows))
-      .catch(() => !cancelled && setAddEligRows([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [addOpen, greenhouse, targetsArr, mixItems, addResults, sprayDate]);
-
-  /** Search results in the server's suitability order; products not registered
-   *  for the targets hidden unless "Show all" is on, other rule-breakers greyed
-   *  (see `pickerState`). Unranked results keep their search order after the
-   *  ranked ones. */
-  const addElig = useMemo(
-    () => Object.fromEntries(addEligRows.map((r) => [r.item, r])) as Record<string, ProductEligibility>,
-    [addEligRows],
-  );
-  const addShown = useMemo(() => {
-    const order = new Map(addEligRows.map((r, i) => [r.item, i]));
-    const rank = (i: ChemicalItem) => order.get(i.item_code) ?? order.size;
-    return [...addResults]
-      .sort((a, b) => rank(a) - rank(b))
-      .filter((it) => pickerState(addElig[it.item_code], addShowAll) !== "hidden");
-  }, [addResults, addElig, addEligRows, addShowAll]);
-
   const kitList = useMemo(
     () =>
       (bootstrap?.kits || []).map((k) => ({
@@ -1152,213 +912,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       return (wh || "").toLowerCase().includes(greenhouseFarm.toLowerCase());
     },
     [greenhouseFarm],
-  );
-
-  // ── Draft-aware availability (Task 9) ──────────────────────────────
-  // ``reserved`` holds server-side reservations from *other* still-open
-  // Application Floor Plan work orders, keyed by "<source>::<item_code>"
-  // so two rows that happen to pick different stores for the same item
-  // aren't conflated. Refetched whenever the plan's (source, item) pairs
-  // change, or a draft is just added to the batch — the existing
-  // "spray-plan:draft-added" event (dispatched by ``submit`` below and
-  // already consumed by DraftBatchPanel) also bumps a tick here so the
-  // *next* plan in the session sees the shrinking number.
-  const [reserved, setReserved] = useState<Record<string, number>>({});
-  // Full per-item availability (ledger, reservations, per-batch), keyed
-  // "<source>::<item_code>".
-  const [availability, setAvailability] = useState<Record<string, ItemAvailability>>({});
-  const [batchTouched, setBatchTouched] = useState<Set<string>>(new Set());
-  const [reservedRefreshTick, setReservedRefreshTick] = useState(0);
-
-  useEffect(() => {
-    const handler = () => setReservedRefreshTick((t) => t + 1);
-    window.addEventListener("spray-plan:draft-added", handler);
-    return () => window.removeEventListener("spray-plan:draft-added", handler);
-  }, []);
-
-  // Stable string key so the reservation fetch only re-runs when the set
-  // of (source, item) pairs actually changes, not on every rate keystroke.
-  const sourceItemKey = useMemo(
-    () =>
-      chemRows
-        .filter((c) => c.source && c.item_code)
-        .map((c) => `${c.source}::${c.item_code}`)
-        .sort()
-        .join(","),
-    [chemRows],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    const bySource = new Map<string, Set<string>>();
-    for (const pair of sourceItemKey ? sourceItemKey.split(",") : []) {
-      const [source, item] = pair.split("::");
-      if (!source || !item) continue;
-      if (!bySource.has(source)) bySource.set(source, new Set());
-      bySource.get(source)!.add(item);
-    }
-    if (!bySource.size) {
-      setReserved({});
-      setAvailability({});
-      return;
-    }
-    Promise.all(
-      Array.from(bySource.entries()).map(([source, codes]) =>
-        getItemAvailability(source, Array.from(codes)).then((res) => ({
-          source,
-          res,
-        })),
-      ),
-    ).then((results) => {
-      if (cancelled) return;
-      const merged: Record<string, number> = {};
-      const full: Record<string, ItemAvailability> = {};
-      for (const { source, res } of results) {
-        for (const [item, a] of Object.entries(res)) {
-          merged[`${source}::${item}`] = a.reserved;
-          full[`${source}::${item}`] = a;
-        }
-      }
-      setReserved(merged);
-      setAvailability(full);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sourceItemKey, reservedRefreshTick]);
-
-  /** Per-row "other rows in this form" usage of the same item+source —
-   *  catches double-adding the same chemical in one plan before it's
-   *  ever saved as a draft (the reservations query above only sees
-   *  *saved* work orders). */
-  const draftUsageByRowId = useMemo(() => {
-    const out = new Map<string, number>();
-    for (const c of chemRows) {
-      if (!c.source || !c.item_code) {
-        out.set(c.rowId, 0);
-        continue;
-      }
-      let sum = 0;
-      for (const other of chemRows) {
-        if (other.rowId === c.rowId) continue;
-        if (other.item_code === c.item_code && other.source === c.source) {
-          sum += Number(other.stock_qty || 0);
-        }
-      }
-      out.set(c.rowId, sum);
-    }
-    return out;
-  }, [chemRows]);
-
-  /** Reservation- and draft-aware available qty for one row: on-hand
-   *  minus every other still-open work order's reservation at the same
-   *  store, minus other rows in *this* form drawing the same item from
-   *  the same store. This — not raw on-hand — is what gates Submit; raw
-   *  on-hand alone is what produced the "5kg on hand but 60kg planned"
-   *  bug when several plans queued against the same store in a row. */
-  const rowAvailable = useCallback(
-    (c: ChemRow): number => {
-      const source = c.source || "";
-      const onHand = Number(c.balances?.[source] ?? 0);
-      const reservedQty =
-        source && c.item_code
-          ? Number(reserved[`${source}::${c.item_code}`] ?? 0)
-          : 0;
-      const draftUsage = draftUsageByRowId.get(c.rowId) ?? 0;
-      return availableStock({
-        onHand,
-        reservedFromServer: reservedQty,
-        draftFormUsage: draftUsage,
-      });
-    },
-    [reserved, draftUsageByRowId],
-  );
-
-  /** Both remaining figures for a row's item at its source: after this
-   *  plan (other SUBMITTED plans only), and if every pending draft is also
-   *  approved. Unfloored: a negative number is the shortfall. */
-  const remainingFor = useCallback(
-    (c: ChemRow) => {
-      const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
-      if (!a) return null;
-      const mine = chemRows
-        .filter((o) => o.item_code === c.item_code && o.source === c.source)
-        .reduce((n, o) => n + Number(o.stock_qty || 0), 0);
-      return {
-        after: a.ledger - a.reserved_submitted - mine,
-        ifAll: a.ledger - a.reserved - mine,
-        a,
-      };
-    },
-    [availability, chemRows],
-  );
-
-  /** green = this batch alone covers the row, amber = partial, grey = none. */
-  const batchTone = (b: BatchAvailability, need: number) =>
-    b.expired || b.zero_valued || b.available <= 0
-      ? "text-muted-foreground"
-      : b.available >= need
-        ? "text-[var(--sd-data-green)]"
-        : "text-amber-700 dark:text-amber-300";
-
-  // Pre-select the best green batch once availability lands; drop a batch that
-  // no longer belongs to the row's item/store. A hand-picked batch is kept.
-  useEffect(() => {
-    setChemRows((prev) => {
-      let changed = false;
-      const next = prev.map((c) => {
-        const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
-        if (!a || !itemNeedsBatch(a)) return c;
-        if (c.batch_no && !a.batches.some((b) => b.batch_no === c.batch_no)) {
-          changed = true;
-          return { ...c, batch_no: undefined };
-        }
-        if (c.batch_no || batchTouched.has(c.rowId) || !c.stock_qty) return c;
-        const best = a.batches.find((b) => !b.expired && !b.zero_valued && b.available >= c.stock_qty!);
-        if (!best) return c;
-        changed = true;
-        return { ...c, batch_no: best.batch_no };
-      });
-      return changed ? next : prev;
-    });
-  }, [availability, batchTouched, chemRows.map((c) => `${c.rowId}:${c.stock_qty}:${c.source}`).join("|")]);
-
-  /** Batch-tracked rows with no batch confirmed block submission. */
-  const batchMissingRows = useMemo(
-    () =>
-      chemRows.filter((c) => {
-        const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
-        return !!a && itemNeedsBatch(a) && !c.batch_no;
-      }),
-    [chemRows, availability],
-  );
-
-  /** Rows whose picked source warehouse has less *adjusted* availability
-   *  than the computed total. Drives the Submit-button disable, its
-   *  tooltip, and the red highlight on the TOTAL cell in the Chemical
-   *  Stock matrix. A row with no source picked yet is treated as "short"
-   *  so submission is blocked until the operator picks one. */
-  const stockShortRows = useMemo(() => {
-    const out: { rowId: string; name: string; source: string; avail: number; need: number }[] = [];
-    for (const c of chemRows) {
-      if (!c.stock_qty || c.stock_qty <= 0) continue;
-      const source = c.source || "";
-      const avail = rowAvailable(c);
-      if (!source || avail < c.stock_qty) {
-        out.push({
-          rowId: c.rowId,
-          name: c.item_name || c.item_code,
-          source,
-          avail,
-          need: c.stock_qty,
-        });
-      }
-    }
-    return out;
-  }, [chemRows, rowAvailable]);
-  const stockShortById = useMemo(
-    () => new Set(stockShortRows.map((s) => s.rowId)),
-    [stockShortRows],
   );
 
   /** Per-row visual warning level for the Chemical Stock matrix:
@@ -1396,91 +949,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     return out;
   }, [chemRows, warehouseMatchesFarm, mappedStores, rowAvailable]);
 
-  const updateChem = (rowId: string, patch: Partial<ChemRow>) =>
-    setChemRows((prev) =>
-      prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)),
-    );
-  /** Operator-edited rate. Recomputes the derived total in the same
-   *  setState so the Chemical Stock matrix's TOTAL column updates without
-   *  waiting for the water-volume effect to flush on the next render. */
-  const updateChemRate = (rowId: string, nextRate: number) => {
-    const wv = parseFloat(waterVolume) || 0;
-    const ratio = wv > 0 ? wv / WATER_VOLUME_RATE : 0;
-    setChemRows((prev) =>
-      prev.map((r) =>
-        r.rowId === rowId
-          ? {
-              ...r,
-              rate: nextRate,
-              stock_qty: ratio
-                ? Math.round(nextRate * ratio * 10000) / 10000
-                : 0,
-            }
-          : r,
-      ),
-    );
-  };
-  const removeChem = (rowId: string) =>
-    setChemRows((prev) => prev.filter((r) => r.rowId !== rowId));
-
-  const addChemical = async (item: ChemicalItem, defaultRate?: number | null, fromStore?: string) => {
-    if (chemRows.some((r) => r.item_code === item.item_code)) {
-      // Inline notice inside the dialog instead of a floating toast — the
-      // operator's eye is already on the modal, so the feedback has to land
-      // there, not at the page edge.
-      setAddNotice(
-        `${item.item_name || item.item_code} is already in your chemical plan.`,
-      );
-      return;
-    }
-    setAddNotice("");
-    setAddOpen(false);
-    setAddQuery("");
-    const row = await makeChemRow(item, defaultRate, fromStore, chemRows.length);
-    setChemRows((prev) => (prev.some((r) => r.item_code === item.item_code) ? prev : [...prev, row]));
-  };
-
-  /** A new tank-mix row for `item`: real per-warehouse balances, the farm's store lock,
-   *  and, for a suggested product, its default (lower-limit) rate with the total taken
-   *  from the plan's water volume exactly as updateChemRate does. */
-  const makeChemRow = async (
-    item: ChemicalItem,
-    defaultRate: number | null | undefined,
-    fromStore: string | undefined,
-    position: number,
-  ): Promise<ChemRow> => {
-    const fallbackList = item.is_fertilizer
-      ? bomDetails?.fertilizer_warehouses
-      : bomDetails?.chemical_warehouses;
-    // Pull real per-warehouse balances so the Chemical Stock matrix doesn't
-    // render zeros for an item that's actually in stock. The BOM-load path
-    // gets this from ``get_bom_details``; ad-hoc adds need an explicit fetch.
-    const balancesByCode = await fetchChemicalBalances([item.item_code]);
-    const balances = balancesByCode[item.item_code] || {};
-    const firstWithStock = Object.entries(balances).find(([, v]) => v > 0);
-    // Store lock (Task 9): ad-hoc adds go through the same lock as
-    // BOM-exploded rows when the farm has a mapped store for this group.
-    const forcedSource = item.is_fertilizer
-      ? mappedStores?.fertilizer_store
-      : mappedStores?.chemical_store;
-    const startRate = defaultRate && defaultRate > 0 ? defaultRate : 0;
-    const wvNow = parseFloat(waterVolume) || 0;
-    const startQty = startRate && wvNow > 0 ? Math.round(startRate * (wvNow / WATER_VOLUME_RATE) * 10000) / 10000 : 0;
-    return {
-      item_code: item.item_code,
-      item_name: item.item_name,
-      stock_uom: item.stock_uom,
-      uoms: item.uoms,
-      item_group: item.item_group,
-      is_fertilizer: item.is_fertilizer,
-      rowId: `${item.item_code}-${Date.now()}-${position}`,
-      source: forcedSource || fromStore || firstWithStock?.[0] || fallbackList?.[0] || "",
-      balances,
-      rate: startRate,
-      stock_qty: startQty,
-    };
-  };
-
   // Items queued by a Re-plan link join the tank mix once one is loaded (picking
   // a tank mix replaces the rows, so they cannot go in earlier).
   useEffect(() => {
@@ -1489,7 +957,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     setReplanPending([]);
     void (async () => {
       const have = new Set(chemRows.map((r) => r.item_code));
-      const rows: ChemRow[] = [];
+      const rows: PlanChemical[] = [];
       for (const it of queue) {
         if (have.has(it.item_code)) continue;
         rows.push(
@@ -1708,22 +1176,14 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       // farm/greenhouse). Anything tied to the previous greenhouse would
       // mislead the operator if it lingered.
       setGreenhouse("");
-      setSprayDate(todayAt("06:00"));
+      // The plan form's own fields: Scheduled Application back to today 06:00, tank
+      // mix, kit, team, classification, reason, water and chemicals cleared.
+      form.reset();
       setSprayType("");
       setScope("");
-      setBom("");
-      setBomDetails(null);
-      setKit("");
-      setClassification("");
-      setPreventiveReason("");
-      setWaterPh("");
-      setWaterHardness("");
-      setWaterVolume("");
-      setChemRows([]);
       setSelectedVarieties(new Set());
       setBedNumbers("");
       setArea("");
-      setSprayTeam("");
       setTeamMembers([]);
       setSelectedTargets(new Set());
       setCostCenterOverride("");
@@ -1737,93 +1197,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       pushError(e, "The spray plan could not be added to your batch.");
     } finally {
       setBusy(false);
-    }
-  };
-
-  // ── BOM creation ────────────────────────────────────────────────
-  const addNewBomChem = (it: ChemicalItem) => {
-    if (newBomChems.some((c) => c.item_code === it.item_code)) {
-      pushToast(
-        "warn",
-        `${it.item_name || it.item_code} is already in this tank mix.`,
-      );
-      return;
-    }
-    // Seed the dose from the chemical's own configured lower limit. It is the
-    // lowest rate the server will accept for this product, so it is both a safe
-    // default and one the operator can only revise upward — never a number this
-    // page invented.
-    const seeded = rateLimits[it.item_code]?.lower ?? null;
-    setNewBomChems((prev) => [
-      ...prev,
-      { ...it, rate: seeded != null && seeded > 0 ? String(seeded) : "" },
-    ]);
-    setNewBomSearch("");
-  };
-  const removeNewBomChem = (code: string) =>
-    setNewBomChems((prev) => prev.filter((c) => c.item_code !== code));
-  const updateNewBomChemRate = (code: string, rate: string) =>
-    setNewBomChems((prev) =>
-      prev.map((c) => (c.item_code === code ? { ...c, rate } : c)),
-    );
-
-  const submitNewBom = async () => {
-    if (!newBomItem.trim()) {
-      pushToast("err", "Tank mix name is required.");
-      return;
-    }
-    if (!newBomChems.length) {
-      pushToast("err", "Add at least one chemical to the tank mix.");
-      return;
-    }
-    // Every row needs a dose the server will accept. Report the first offender
-    // by name — the server would too, but only after a round-trip.
-    const bad = newBomChems.find((c) => newBomRateError(c));
-    if (bad) {
-      pushToast(
-        "err",
-        `${bad.item_name || bad.item_code}: ${newBomRateError(bad)}`,
-      );
-      return;
-    }
-    setCreatingBom(true);
-    const loaderId = pushToast("loading", "Creating tank mix…", 0);
-    try {
-      const r = await createBom({
-        item: newBomItem.trim(),
-        custom_water_ph: parseFloat(newBomPh) || 0,
-        custom_water_hardness: parseFloat(newBomHardness) || 0,
-        items: newBomChems.map((c) => ({
-          item_code: c.item_code,
-          item_name: c.item_name,
-          // The BOM is defined per 1000 L, so the dose IS the quantity. `qty`
-          // was hardcoded to 1 here while the rate was never sent at all.
-          qty: Number(c.rate),
-          custom_application_rate: Number(c.rate),
-          stock_uom: c.stock_uom,
-        })),
-        custom_greenhouse: greenhouse || undefined,
-      });
-      dismissToast(loaderId);
-      if (r.status === "success" && r.bom_name) {
-        pushToast("ok", `Created tank mix ${r.bom_name}.`);
-        // Refresh bootstrap so the new BOM appears in the dropdown,
-        // then auto-select it.
-        const fresh = await fetchCreatorBootstrap(initialCrop);
-        setBootstrap(fresh);
-        setBom(r.bom_name);
-        setBomDialogOpen(false);
-        setNewBomItem("");
-        setNewBomChems([]);
-        setNewBomSearch("");
-      } else {
-        pushError(r.message, "The tank mix could not be created.");
-      }
-    } catch (e: any) {
-      dismissToast(loaderId);
-      pushError(e, "The tank mix could not be created.");
-    } finally {
-      setCreatingBom(false);
     }
   };
 
@@ -2188,298 +1561,238 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-[35fr_65fr] gap-3">
-          <Card className="p-4">
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Spray Details</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1 col-span-2">
-                <Label>Classification</Label>
-                <div className="flex gap-2">
-                  {(["Curative", "Preventive"] as const).map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setClassification(c)}
-                      className={
-                        "px-3 py-1.5 rounded-md border text-xs transition-colors " +
-                        (classification === c
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-muted hover:bg-muted/70")
-                      }
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {classification === "Preventive" && (
-                <div className="flex flex-col gap-1 col-span-2">
-                  <Label className="flex items-center justify-between">
-                    <span>Preventive Reason</span>
-                    <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                      required (min 20 chars)
-                    </span>
-                  </Label>
-                  <textarea
-                    value={preventiveReason}
-                    onChange={(e) => setPreventiveReason(e.target.value)}
-                    placeholder="Why does this routine spray make sense without an observation trigger?"
-                    rows={3}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-xs"
-                  />
-                </div>
-              )}
-
-              <div className="flex flex-col gap-1 col-span-2">
-                <Label>Scheduled Application</Label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <DatePicker
-                    variant="field"
-                    value={splitDateTime(sprayDate).date}
-                    onChange={(d) =>
-                      setSprayDate(mergeDateTime(d, splitDateTime(sprayDate).time))
-                    }
-                  />
-                  <TimePicker
-                    value={splitDateTime(sprayDate).time}
-                    onChange={(t) =>
-                      setSprayDate(mergeDateTime(splitDateTime(sprayDate).date, t))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label>Spray Type</Label>
-                <Select value={sprayType} onValueChange={setSprayType}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SPRAY_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label>Scope</Label>
-                <Select value={scope} onValueChange={setScope}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Scope" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SCOPES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {scope === "Specific Variety" && (
-                <div className="flex flex-col gap-1 col-span-2">
-                  <Label>Varieties</Label>
-                  {varietiesInGh.length ? (
-                    <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2 max-h-40 overflow-auto">
-                      {varietiesInGh.map((v) => {
-                        const on = selectedVarieties.has(v);
-                        return (
-                          <button
-                            key={v}
-                            type="button"
-                            onClick={() =>
-                              setSelectedVarieties((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(v)) next.delete(v);
-                                else next.add(v);
-                                return next;
-                              })
-                            }
-                            className={
-                              "px-2 py-0.5 rounded-full text-[0.7rem] border transition-colors " +
-                              (on
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-muted hover:bg-muted/70")
-                            }
-                          >
-                            {v}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      No varieties recorded for this greenhouse.
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {scope === "Specific Bed(s)" && (
-                <div className="flex flex-col gap-1 col-span-2">
-                  <Label>Bed Numbers</Label>
-                  <Input
-                    value={bedNumbers}
-                    onChange={(e) => setBedNumbers(e.target.value)}
-                    placeholder="e.g. 1-5, 7, 9"
-                    className="h-9"
-                  />
-                  <span className="text-[0.65rem] text-muted-foreground">
-                    Use ranges with hyphens and commas — same format as the
-                    legacy spray-plan page.
-                  </span>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-1">
-                <Label className="flex items-center justify-between">
-                  <span>Area (Ha)</span>
-                  {areaHa > 0 && (
-                    <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                      auto
-                    </span>
-                  )}
-                </Label>
-                <Input
-                  value={area}
-                  onChange={(e) => setArea(e.target.value)}
-                  type="number"
-                  step="any"
-                  min={0}
-                  placeholder={
-                    areaHa > 0 ? areaHa.toFixed(4) : "Pick scope to compute"
-                  }
-                  className="h-9 tabular-nums"
-                />
-              </div>
-              <div className="col-span-2">
-                <SprayTeamEditor
-                  teams={bootstrap?.spray_teams || []}
-                  team={sprayTeam}
-                  onTeamChange={setSprayTeam}
-                  members={teamMembers}
-                  onMembersChange={setTeamMembers}
-                  crop={initialCrop}
-                  onDate={(sprayDate || "").slice(0, 10) || undefined}
-                />
-              </div>
-
-              <div className="flex flex-col gap-1 col-span-2">
-                <Label>Kit</Label>
-                <Select value={kit} onValueChange={setKit}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Pick a kit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {kitList.map((k) => (
-                      <SelectItem key={k.kit} value={k.kit}>
-                        {k.kit}
-                        {k.warehouse ? ` · ${k.warehouse}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-2">
-                <Label className="flex items-center justify-between">
-                  <span>Targets</span>
-                  <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                    {selectedTargets.size} selected
-                  </span>
-                </Label>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {(() => {
-                    const sourceList =
-                      classification === "Preventive"
-                        ? [
-                            ...(bootstrap?.pest_catalog || []).map((p) => p.name),
-                            ...(bootstrap?.disease_catalog || []).map((d) => d.name),
-                          ]
-                        : (diagnose?.targets ?? []);
-                    if (!sourceList.length) {
-                      return (
-                        <span className="text-xs text-muted-foreground">
-                          {classification === "Preventive"
-                            ? "No pests or diseases are linked to this crop yet — add them under Crop Scouted in Desk."
-                            : classification === "Curative"
-                              ? "No pest/disease observations in the chosen greenhouse yet."
-                              : "Pick Classification first."}
-                        </span>
-                      );
-                    }
-                    return sourceList.sort().map((t) => {
-                      const on = selectedTargets.has(t);
-                      return (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() =>
-                            setSelectedTargets((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(t)) next.delete(t);
-                              else next.add(t);
-                              return next;
-                            })
-                          }
-                          className={
-                            "px-2 py-0.5 rounded-full text-[0.7rem] border transition-colors " +
-                            (on
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-muted hover:bg-muted/70")
-                          }
-                        >
+          <SprayPlanForm
+            state={form}
+            kits={kitList}
+            teamSlot={
+              <SprayTeamEditor
+                teams={bootstrap?.spray_teams || []}
+                team={sprayTeam}
+                onTeamChange={setSprayTeam}
+                members={teamMembers}
+                onMembersChange={setTeamMembers}
+                crop={initialCrop}
+                onDate={(sprayDate || "").slice(0, 10) || undefined}
+              />
+            }
+            boms={bomList}
+            bomEligibility={bomElig}
+            bomDisabled={!selectedTargets.size}
+            bomHint={
+              !selectedTargets.size ? (
+                <span className="text-[0.65rem] text-muted-foreground">Pick targets first.</span>
+              ) : null
+            }
+            onTankMixCreated={async () => {
+              // Refresh the bootstrap so the new tank mix is in the picker; the form
+              // then selects it.
+              const fresh = await fetchCreatorBootstrap(initialCrop);
+              setBootstrap(fresh);
+            }}
+            targets={targetsArr}
+            suggestedCodes={suggestedCodes}
+            flagged={flaggedItems}
+            renderInfo={(c) => (
+              <>
+                {(() => {
+                  const info = productInfo[c.item_code];
+                  if (!info) return null;
+                  const hits = info.targets.filter((t) => targetsArr.includes(t));
+                  if (!hits.length && !info.codes.length) return null;
+                  return (
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {hits.map((t) => (
+                        <Badge key={t} variant="outline" className="text-[0.6rem] px-1.5 py-0">
                           {t}
-                        </button>
-                      );
-                    });
-                  })()}
+                        </Badge>
+                      ))}
+                      {info.codes.map((code) => (
+                        <Badge
+                          key={code}
+                          variant="outline"
+                          className="text-[0.6rem] px-1.5 py-0 text-muted-foreground"
+                        >
+                          {code}
+                        </Badge>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <ActiveIngredients items={mixIngr[c.item_code]?.ingredients} />
+              </>
+            )}
+            detailsSlot={
+              <>
+                <div className="flex flex-col gap-1">
+                  <Label>Spray Type</Label>
+                  <Select value={sprayType} onValueChange={setSprayType}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SPRAY_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="flex flex-col gap-1">
+                  <Label>Scope</Label>
+                  <Select value={scope} onValueChange={setScope}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Scope" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SCOPES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
+                {scope === "Specific Variety" && (
+                  <div className="flex flex-col gap-1 col-span-2">
+                    <Label>Varieties</Label>
+                    {varietiesInGh.length ? (
+                      <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2 max-h-40 overflow-auto">
+                        {varietiesInGh.map((v) => {
+                          const on = selectedVarieties.has(v);
+                          return (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() =>
+                                setSelectedVarieties((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(v)) next.delete(v);
+                                  else next.add(v);
+                                  return next;
+                                })
+                              }
+                              className={
+                                "px-2 py-0.5 rounded-full text-[0.7rem] border transition-colors " +
+                                (on
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "bg-muted hover:bg-muted/70")
+                              }
+                            >
+                              {v}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        No varieties recorded for this greenhouse.
+                      </span>
+                    )}
+                  </div>
+                )}
 
-          <Card className="p-4">
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Tank Mix</CardTitle>
-              <CardDescription>
-                {bomList.length} active tank mixes (bills of materials)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0 flex flex-col gap-3">
-              <div className="flex items-end gap-2">
-                <div className="flex-1 flex flex-col gap-1">
-                  <Label>Tank Mix</Label>
-                  <BomPicker
-                    boms={bomList}
-                    value={bom}
-                    onValueChange={setBom}
-                    disabled={!selectedTargets.size}
-                    eligibility={bomElig}
+                {scope === "Specific Bed(s)" && (
+                  <div className="flex flex-col gap-1 col-span-2">
+                    <Label>Bed Numbers</Label>
+                    <Input
+                      value={bedNumbers}
+                      onChange={(e) => setBedNumbers(e.target.value)}
+                      placeholder="e.g. 1-5, 7, 9"
+                      className="h-9"
+                    />
+                    <span className="text-[0.65rem] text-muted-foreground">
+                      Use ranges with hyphens and commas — same format as the
+                      legacy spray-plan page.
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1">
+                  <Label className="flex items-center justify-between">
+                    <span>Area (Ha)</span>
+                    {areaHa > 0 && (
+                      <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+                        auto
+                      </span>
+                    )}
+                  </Label>
+                  <Input
+                    value={area}
+                    onChange={(e) => setArea(e.target.value)}
+                    type="number"
+                    step="any"
+                    min={0}
+                    placeholder={
+                      areaHa > 0 ? areaHa.toFixed(4) : "Pick scope to compute"
+                    }
+                    className="h-9 tabular-nums"
                   />
-                  {!selectedTargets.size && (
-                    <span className="text-[0.65rem] text-muted-foreground">Pick targets first.</span>
-                  )}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-1"
-                  onClick={() => setBomDialogOpen(true)}
-                >
-                  <FilePlus2 className="h-3.5 w-3.5" />
-                  New
-                </Button>
+              </>
+            }
+            targetsSlot={
+              <>
+              <Label className="flex items-center justify-between">
+                <span>Targets</span>
+                <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+                  {selectedTargets.size} selected
+                </span>
+              </Label>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {(() => {
+                  const sourceList =
+                    classification === "Preventive"
+                      ? [
+                          ...(bootstrap?.pest_catalog || []).map((p) => p.name),
+                          ...(bootstrap?.disease_catalog || []).map((d) => d.name),
+                        ]
+                      : (diagnose?.targets ?? []);
+                  if (!sourceList.length) {
+                    return (
+                      <span className="text-xs text-muted-foreground">
+                        {classification === "Preventive"
+                          ? "No pests or diseases are linked to this crop yet — add them under Crop Scouted in Desk."
+                          : classification === "Curative"
+                            ? "No pest/disease observations in the chosen greenhouse yet."
+                            : "Pick Classification first."}
+                      </span>
+                    );
+                  }
+                  return sourceList.sort().map((t) => {
+                    const on = selectedTargets.has(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() =>
+                          setSelectedTargets((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(t)) next.delete(t);
+                            else next.add(t);
+                            return next;
+                          })
+                        }
+                        className={
+                          "px-2 py-0.5 rounded-full text-[0.7rem] border transition-colors " +
+                          (on
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted hover:bg-muted/70")
+                        }
+                      >
+                        {t}
+                      </button>
+                    );
+                  });
+                })()}
               </div>
-
+              </>
+            }
+            suggestionsSlot={
               <SuggestedProductsCard
                 embedded
+                collapsible
                 targets={targetsArr}
                 greenhouses={greenhouse ? [greenhouse] : []}
                 sourceWarehouse={
@@ -2509,541 +1822,210 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                   )
                 }
               />
-
-              {bomLoading && (
-                // The tank mix's own frame — water fields, the chemicals table
-                // heading — with the values and rows pulsing.
-                <div className="flex flex-col gap-3" aria-busy="true" data-skeleton="bom">
-                  <div className="grid grid-cols-3 gap-2">
-                    {["Water pH", "Hardness", "Water Volume (L)"].map((l) => (
-                      <div key={l} className="flex flex-col gap-1">
-                        <Label className="text-[0.65rem]">{l}</Label>
-                        <Bar className="h-8" />
-                      </div>
-                    ))}
-                  </div>
+            }
+            afterChemicals={
+              <>
+                {chemRows.length ? (
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <Label>Chemicals (per 1000 L)</Label>
+                      <Label>Chemical Stock</Label>
+                      {stockShortRows.length ? (
+                        <span className="text-[0.65rem] text-[var(--sd-data-red)] tabular-nums">
+                          {stockShortRows.length} row{stockShortRows.length === 1 ? "" : "s"} short — Submit disabled
+                        </span>
+                      ) : null}
                     </div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Chemical</TableHead>
-                          <TableHead className="text-right">Rate / 1000 L</TableHead>
-                          <TableHead>UoM</TableHead>
-                          <TableHead className="text-right">Available</TableHead>
-                          <TableHead className="w-8" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        <TableRowsSkeleton cols={5} rows={4} />
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-
-              {bomError && !bomLoading && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
-                  {bomError}
-                </div>
-              )}
-
-              {bomDetails && !bomLoading && (
-                <>
-                  <div className="grid grid-cols-3 gap-2">
-                    <NumInput label="Water pH" value={waterPh} onChange={setWaterPh} />
-                    <NumInput
-                      label="Hardness"
-                      value={waterHardness}
-                      onChange={setWaterHardness}
-                    />
-                    <NumInput
-                      label="Water Volume (L)"
-                      value={waterVolume}
-                      onChange={setWaterVolume}
-                    />
-                  </div>
-
-                  {/* Block A: Chemicals (per 1000 L) — operator-editable rate
-                       is the source of truth. The total qty (rate × waterVol/
-                       1000) is derived and shown in the Chemical Stock matrix
-                       below; the matrix is the only place that displays totals
-                       and per-warehouse availability. */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <Label>Chemicals (per 1000 L)</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-[0.7rem]"
-                        onClick={() => setAddOpen(true)}
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add chemical
-                      </Button>
-                    </div>
-                    {chemRows.length ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Chemical</TableHead>
-                            <TableHead className="text-right">Rate / 1000 L</TableHead>
-                            <TableHead>UoM</TableHead>
-                            <TableHead className="text-right">Available</TableHead>
-                            <TableHead className="w-8" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {chemRows.map((c) => {
-                            const limitErr = rateLimitError(
-                              c.item_code,
-                              c.rate,
-                              rateLimits,
-                            );
-                            const lim = rateLimits[c.item_code || ""];
-                            const hintParts: string[] = [];
-                            if (lim?.lower != null) hintParts.push(`min ${lim.lower}`);
-                            if (lim?.upper != null) hintParts.push(`max ${lim.upper}`);
-                            const hint = hintParts.length ? hintParts.join(" · ") : "";
-                            return (
-                              <TableRow key={c.rowId}>
-                                <TableCell className="text-xs">
-                                  <div className="font-medium flex flex-wrap items-center gap-1.5">
-                                    {flaggedItems.has(c.item_code) && (
-                                      <ShieldAlert
-                                        className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400"
-                                        aria-label="Named by the spray check"
-                                      />
-                                    )}
-                                    {c.item_name || c.item_code}
-                                    <Badge
-                                      variant="outline"
-                                      className={
-                                        c.is_fertilizer
-                                          ? "h-4 px-1.5 text-[0.6rem] uppercase border-[var(--sd-data-green)] text-[var(--sd-data-green)]"
-                                          : "h-4 px-1.5 text-[0.6rem] uppercase border-[var(--sd-data-cyan)] text-[var(--sd-data-cyan)]"
-                                      }
-                                    >
-                                      {c.is_fertilizer ? "Fertilizer" : "Chemical"}
-                                    </Badge>
-                                  </div>
-                                  {(() => {
-                                    const info = productInfo[c.item_code];
-                                    if (!info) return null;
-                                    const hits = info.targets.filter((t) => targetsArr.includes(t));
-                                    if (!hits.length && !info.codes.length) return null;
-                                    return (
-                                      <div className="mt-0.5 flex flex-wrap gap-1">
-                                        {hits.map((t) => (
-                                          <Badge key={t} variant="outline" className="text-[0.6rem] px-1.5 py-0">
-                                            {t}
-                                          </Badge>
-                                        ))}
-                                        {info.codes.map((code) => (
-                                          <Badge
-                                            key={code}
-                                            variant="outline"
-                                            className="text-[0.6rem] px-1.5 py-0 text-muted-foreground"
-                                          >
-                                            {code}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    );
-                                  })()}
-                                  <ActiveIngredients items={mixIngr[c.item_code]?.ingredients} />
-                                  <div className="text-[0.65rem] text-muted-foreground font-mono">
-                                    {c.item_code}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Input
-                                    value={c.rate?.toString() || ""}
-                                    onChange={(e) =>
-                                      updateChemRate(c.rowId, Number(e.target.value))
-                                    }
-                                    type="number"
-                                    step="any"
-                                    min={0}
-                                    aria-invalid={!!limitErr}
-                                    className={
-                                      limitErr
-                                        ? "h-7 text-xs text-right tabular-nums w-24 ml-auto border-[var(--sd-data-red)] focus-visible:ring-[var(--sd-data-red)]"
-                                        : "h-7 text-xs text-right tabular-nums w-24 ml-auto"
-                                    }
-                                  />
-                                  {limitErr ? (
-                                    <div className="text-[0.65rem] text-[var(--sd-data-red)] mt-0.5 max-w-[10rem] ml-auto text-right">
-                                      {limitErr}
-                                    </div>
-                                  ) : hint ? (
-                                    <div className="text-[0.6rem] text-muted-foreground mt-0.5 text-right tabular-nums">
-                                      {hint}
-                                    </div>
-                                  ) : null}
-                                </TableCell>
-                                <TableCell className="text-xs">
-                                  {/* UoM options come from ERPNext's own UOM
-                                      Conversion Detail rows on the Item, so an
-                                      operator can order in bottles or grams and
-                                      the factor is whatever the Item says — this
-                                      app holds no conversion table. Falls back
-                                      to plain text when only the stock UOM
-                                      applies. */}
-                                  {(c.uoms?.length ?? 0) > 1 ? (
-                                    <Select
-                                      value={c.stock_uom || ""}
-                                      onValueChange={(v) =>
-                                        setChemRows((rows) =>
-                                          rows.map((r) =>
-                                            r.rowId === c.rowId
-                                              ? { ...r, stock_uom: v }
-                                              : r,
-                                          ),
-                                        )
-                                      }
-                                    >
-                                      <SelectTrigger className="h-7 w-24 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {c.uoms!.map((u) => (
-                                          <SelectItem key={u.uom} value={u.uom}>
-                                            {u.uom}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <span className="text-muted-foreground">
-                                      {c.stock_uom || ""}
-                                    </span>
-                                  )}
-                                </TableCell>
-                                {/* Available at the picked source, in the row's
-                                    CHOSEN unit — a bottle-stocked item shown
-                                    beside a gram rate would otherwise read as
-                                    50 when it is 25,000. Draft-aware: it nets
-                                    off other queued plans, which is what the
-                                    Submit gate uses. */}
-                                <TableCell className="text-right text-xs tabular-nums">
-                                  {c.source ? (
-                                    <span
-                                      className={
-                                        c.stock_qty && rowAvailable(c) < c.stock_qty
-                                          ? "font-medium text-[var(--sd-data-red)]"
-                                          : "text-muted-foreground"
-                                      }
-                                      title={`${fmtQty(rowAvailable(c))} ${c.uoms?.[0]?.uom ?? ""} on hand at ${c.source}, net of other draft plans`}
-                                    >
-                                      {fmtQty(
-                                        fromStockQty(
-                                          rowAvailable(c),
-                                          c.uoms,
-                                          c.stock_uom,
-                                        ),
-                                      )}
-                                      <span className="ml-1 text-[0.65rem] text-muted-foreground">
-                                        {c.stock_uom || ""}
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground">—</span>
-                                  )}
-                                  {(() => {
-                                    const rem = remainingFor(c);
-                                    if (!rem) return null;
-                                    const need = Number(c.stock_qty || 0);
-                                    const fig = (n: number) => (
-                                      <span className={n < 0 ? "font-medium text-[var(--sd-data-red)]" : ""}>
-                                        {fmtQty(n)}
-                                      </span>
-                                    );
-                                    return (
-                                      <div className="mt-1 space-y-0.5 text-[0.6rem] text-muted-foreground text-right">
-                                        <div title="On hand, less submitted plans in the reservation window, less this plan">
-                                          After this plan: {fig(rem.after)}
-                                        </div>
-                                        <div title="Also counting every draft and pending plan">
-                                          If all pending approved: {fig(rem.ifAll)}
-                                        </div>
-                                        {rem.a.no_batches ? (
-                                          <div
-                                            className="pt-0.5 text-amber-700 dark:text-amber-300"
-                                            data-testid="no-batches-note"
-                                          >
-                                            No batches in {c.source}
-                                          </div>
-                                        ) : itemNeedsBatch(rem.a) ? (
-                                          <div className="pt-0.5">
-                                            <Select
-                                              value={c.batch_no || ""}
-                                              onValueChange={(v) => {
-                                                setBatchTouched((t) => new Set(t).add(c.rowId));
-                                                setChemRows((rows) =>
-                                                  rows.map((r) =>
-                                                    r.rowId === c.rowId ? { ...r, batch_no: v } : r,
-                                                  ),
-                                                );
-                                              }}
-                                            >
-                                              <SelectTrigger
-                                                aria-label={`Batch for ${c.item_name || c.item_code}`}
-                                                className={`h-7 w-44 ml-auto text-xs ${c.batch_no ? "" : "border-amber-500"}`}
-                                              >
-                                                <SelectValue placeholder="Pick a batch" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {rem.a.batches.map((b) => (
-                                                  <SelectItem key={b.batch_no} value={b.batch_no} disabled={!!b.zero_valued}>
-                                                    <span className={batchTone(b, need)}>
-                                                      {b.batch_no} · {fmtQty(b.available)} free
-                                                      {b.zero_valued ? " · No valuation rate — can't be issued" : b.expired ? " · expired" : b.placeholder ? " · opening stock" : b.expiry_date ? ` · exp ${b.expiry_date}` : ""}
-                                                    </span>
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })()}
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6 text-muted-foreground"
-                                    onClick={() => removeChem(c.rowId)}
-                                    title="Remove"
+                    {(["chemical", "fertilizer"] as const).map((group) => {
+                      const rows = chemRows.filter(
+                        (c) => !!c.is_fertilizer === (group === "fertilizer"),
+                      );
+                      if (!rows.length) return null;
+                      const whs =
+                        group === "fertilizer"
+                          ? bomDetails?.fertilizer_warehouses ?? []
+                          : bomDetails?.chemical_warehouses ?? [];
+                      // Store lock (Task 9): when the greenhouse's farm
+                      // maps a store for this group, the source is fixed
+                      // — no dropdown, and (since get_bom_details already
+                      // restricted ``whs`` to just this store) a single
+                      // stock column. Unmapped farms keep the picker.
+                      const forcedStore =
+                        group === "fertilizer"
+                          ? mappedStores?.fertilizer_store || null
+                          : mappedStores?.chemical_store || null;
+                      return (
+                        <div key={group} className="mb-3 last:mb-0 overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-[0.65rem] uppercase">
+                                  {group === "fertilizer" ? "Fertilizer" : "Chemical"}
+                                </TableHead>
+                                {whs.map((w) => (
+                                  <TableHead
+                                    key={w}
+                                    className="text-center text-[0.65rem] uppercase tabular-nums whitespace-nowrap"
+                                    title={w}
                                   >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <div className="text-xs text-muted-foreground py-2">
-                        This tank mix has no chemicals yet. Add one with the button above.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Block B: Chemical Stock — per-warehouse availability matrix
-                       with picked source and derived total. The TOTAL column
-                       (= rate × waterVol / 1000) is the read-only source of
-                       truth for what the spray will draw. Cells colour-coded:
-                       green ≥ total, red < total, neutral when the row has no
-                       total yet (water volume unset). */}
-                  {chemRows.length ? (
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <Label>Chemical Stock</Label>
-                        {stockShortRows.length ? (
-                          <span className="text-[0.65rem] text-[var(--sd-data-red)] tabular-nums">
-                            {stockShortRows.length} row{stockShortRows.length === 1 ? "" : "s"} short — Submit disabled
-                          </span>
-                        ) : null}
-                      </div>
-                      {(["chemical", "fertilizer"] as const).map((group) => {
-                        const rows = chemRows.filter(
-                          (c) => !!c.is_fertilizer === (group === "fertilizer"),
-                        );
-                        if (!rows.length) return null;
-                        const whs =
-                          group === "fertilizer"
-                            ? bomDetails.fertilizer_warehouses
-                            : bomDetails.chemical_warehouses;
-                        // Store lock (Task 9): when the greenhouse's farm
-                        // maps a store for this group, the source is fixed
-                        // — no dropdown, and (since get_bom_details already
-                        // restricted ``whs`` to just this store) a single
-                        // stock column. Unmapped farms keep the picker.
-                        const forcedStore =
-                          group === "fertilizer"
-                            ? mappedStores?.fertilizer_store || null
-                            : mappedStores?.chemical_store || null;
-                        return (
-                          <div key={group} className="mb-3 last:mb-0 overflow-x-auto">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead className="text-[0.65rem] uppercase">
-                                    {group === "fertilizer" ? "Fertilizer" : "Chemical"}
+                                    {w.replace(/\s*-\s*[A-Z]{2,}\s*$/, "").split(/\s+/).slice(-1)[0]}
                                   </TableHead>
-                                  {whs.map((w) => (
-                                    <TableHead
-                                      key={w}
-                                      className="text-center text-[0.65rem] uppercase tabular-nums whitespace-nowrap"
-                                      title={w}
-                                    >
-                                      {w.replace(/\s*-\s*[A-Z]{2,}\s*$/, "").split(/\s+/).slice(-1)[0]}
-                                    </TableHead>
-                                  ))}
-                                  <TableHead className="text-[0.65rem] uppercase">Source</TableHead>
-                                  <TableHead className="text-right text-[0.65rem] uppercase">Total</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {rows.map((c) => {
-                                  const balances = c.balances || {};
-                                  const need = c.stock_qty || 0;
-                                  const isShort = stockShortById.has(c.rowId);
-                                  const warn = rowWarnById.get(c.rowId);
-                                  // Soft amber: source not picked yet, or
-                                  // picked source isn't from the greenhouse's
-                                  // farm. Tints the whole row so the operator
-                                  // can spot the row at a glance without
-                                  // hunting through the warehouse columns.
-                                  const rowClass =
-                                    warn === "red"
-                                      ? "bg-[var(--sd-data-red)]/5"
-                                      : warn === "amber"
-                                        ? "bg-amber-50 dark:bg-amber-950/30"
-                                        : "";
-                                  const triggerClass =
-                                    warn === "red"
-                                      ? "h-7 text-xs min-w-40 border-[var(--sd-data-red)]"
-                                      : warn === "amber"
-                                        ? "h-7 text-xs min-w-40 border-amber-500"
-                                        : "h-7 text-xs min-w-40";
-                                  // Locked (mapped-store) rows skip the
-                                  // farm-mismatch heuristic entirely — the
-                                  // mapped store is correct by definition,
-                                  // regardless of whether its name happens
-                                  // to contain the farm's name substring.
-                                  const sourceMismatch =
-                                    !forcedStore &&
-                                    !!c.source &&
-                                    !warehouseMatchesFarm(c.source);
-                                  return (
-                                    <TableRow key={c.rowId} className={rowClass}>
-                                      <TableCell className="text-xs font-medium whitespace-nowrap">
-                                        <div className="flex items-center gap-1.5">
-                                          {warn === "amber" && (
-                                            <span
-                                              title={
-                                                !c.source
-                                                  ? "Pick a source warehouse"
-                                                  : `Source isn't in ${greenhouseFarm}`
-                                              }
-                                              className="inline-flex"
-                                            >
-                                              <AlertTriangle className="h-3 w-3 text-amber-500" />
-                                            </span>
-                                          )}
-                                          <span>{c.item_name || c.item_code}</span>
-                                        </div>
-                                        {sourceMismatch && (
-                                          <div className="text-[0.6rem] text-amber-700 dark:text-amber-300 mt-0.5">
-                                            Source not in {greenhouseFarm}
-                                          </div>
-                                        )}
-                                        {!c.source && need > 0 && (
-                                          <div className="text-[0.6rem] text-amber-700 dark:text-amber-300 mt-0.5">
-                                            Pick a chemical store
-                                          </div>
-                                        )}
-                                      </TableCell>
-                                      {whs.map((w) => {
-                                        const bal = Number(balances[w] || 0);
-                                        const sufficient = need > 0 && bal >= need;
-                                        const insufficient = need > 0 && bal < need;
-                                        const cls = sufficient
-                                          ? "text-[var(--sd-data-green)]"
-                                          : insufficient
-                                            ? "text-[var(--sd-data-red)]"
-                                            : "text-muted-foreground";
-                                        const picked = c.source === w;
-                                        return (
-                                          <TableCell
-                                            key={w}
-                                            className={`text-center text-xs tabular-nums ${cls} ${picked ? "bg-muted/60 font-semibold" : ""}`}
-                                          >
-                                            {bal.toFixed(2)}
-                                            {picked && (
-                                              <div className="text-[0.6rem] font-normal text-muted-foreground">
-                                                {rowAvailable(c).toFixed(2)} avail
-                                              </div>
-                                            )}
-                                          </TableCell>
-                                        );
-                                      })}
-                                      <TableCell>
-                                        {forcedStore ? (
+                                ))}
+                                <TableHead className="text-[0.65rem] uppercase">Source</TableHead>
+                                <TableHead className="text-right text-[0.65rem] uppercase">Total</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rows.map((c) => {
+                                const balances = c.balances || {};
+                                const need = c.stock_qty || 0;
+                                const isShort = stockShortById.has(c.rowId);
+                                const warn = rowWarnById.get(c.rowId);
+                                // Soft amber: source not picked yet, or
+                                // picked source isn't from the greenhouse's
+                                // farm. Tints the whole row so the operator
+                                // can spot the row at a glance without
+                                // hunting through the warehouse columns.
+                                const rowClass =
+                                  warn === "red"
+                                    ? "bg-[var(--sd-data-red)]/5"
+                                    : warn === "amber"
+                                      ? "bg-amber-50 dark:bg-amber-950/30"
+                                      : "";
+                                const triggerClass =
+                                  warn === "red"
+                                    ? "h-7 text-xs min-w-40 border-[var(--sd-data-red)]"
+                                    : warn === "amber"
+                                      ? "h-7 text-xs min-w-40 border-amber-500"
+                                      : "h-7 text-xs min-w-40";
+                                // Locked (mapped-store) rows skip the
+                                // farm-mismatch heuristic entirely — the
+                                // mapped store is correct by definition,
+                                // regardless of whether its name happens
+                                // to contain the farm's name substring.
+                                const sourceMismatch =
+                                  !forcedStore &&
+                                  !!c.source &&
+                                  !warehouseMatchesFarm(c.source);
+                                return (
+                                  <TableRow key={c.rowId} className={rowClass}>
+                                    <TableCell className="text-xs font-medium whitespace-nowrap">
+                                      <div className="flex items-center gap-1.5">
+                                        {warn === "amber" && (
                                           <span
-                                            className="text-xs font-medium truncate block max-w-40"
-                                            title={`${forcedStore} — locked to this greenhouse's farm-mapped store`}
-                                          >
-                                            {forcedStore}
-                                          </span>
-                                        ) : (
-                                          <Select
-                                            value={c.source || ""}
-                                            onValueChange={(v) =>
-                                              updateChem(c.rowId, { source: v })
+                                            title={
+                                              !c.source
+                                                ? "Pick a source warehouse"
+                                                : `Source isn't in ${greenhouseFarm}`
                                             }
+                                            className="inline-flex"
                                           >
-                                            <SelectTrigger
-                                              className={triggerClass}
-                                            >
-                                              <SelectValue placeholder="-- Select Source --" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {whs.map((w) => {
-                                                const bal = Number(balances[w] || 0);
-                                                return (
-                                                  <SelectItem key={w} value={w}>
-                                                    <span className="truncate">{w}</span>{" "}
-                                                    <span className="text-muted-foreground tabular-nums">
-                                                      · {bal.toFixed(2)}
-                                                    </span>
-                                                  </SelectItem>
-                                                );
-                                              })}
-                                            </SelectContent>
-                                          </Select>
+                                            <AlertTriangle className="h-3 w-3 text-amber-500" />
+                                          </span>
                                         )}
-                                      </TableCell>
-                                      <TableCell
-                                        className={
-                                          isShort
-                                            ? "text-right text-xs tabular-nums font-semibold text-[var(--sd-data-red)]"
-                                            : "text-right text-xs tabular-nums font-semibold"
-                                        }
-                                      >
-                                        {need > 0 ? need.toFixed(2) : "—"}
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+                                        <span>{c.item_name || c.item_code}</span>
+                                      </div>
+                                      {sourceMismatch && (
+                                        <div className="text-[0.6rem] text-amber-700 dark:text-amber-300 mt-0.5">
+                                          Source not in {greenhouseFarm}
+                                        </div>
+                                      )}
+                                      {!c.source && need > 0 && (
+                                        <div className="text-[0.6rem] text-amber-700 dark:text-amber-300 mt-0.5">
+                                          Pick a chemical store
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    {whs.map((w) => {
+                                      const bal = Number(balances[w] || 0);
+                                      const sufficient = need > 0 && bal >= need;
+                                      const insufficient = need > 0 && bal < need;
+                                      const cls = sufficient
+                                        ? "text-[var(--sd-data-green)]"
+                                        : insufficient
+                                          ? "text-[var(--sd-data-red)]"
+                                          : "text-muted-foreground";
+                                      const picked = c.source === w;
+                                      return (
+                                        <TableCell
+                                          key={w}
+                                          className={`text-center text-xs tabular-nums ${cls} ${picked ? "bg-muted/60 font-semibold" : ""}`}
+                                        >
+                                          {bal.toFixed(2)}
+                                          {picked && (
+                                            <div className="text-[0.6rem] font-normal text-muted-foreground">
+                                              {rowAvailable(c).toFixed(2)} avail
+                                            </div>
+                                          )}
+                                        </TableCell>
+                                      );
+                                    })}
+                                    <TableCell>
+                                      {forcedStore ? (
+                                        <span
+                                          className="text-xs font-medium truncate block max-w-40"
+                                          title={`${forcedStore} — locked to this greenhouse's farm-mapped store`}
+                                        >
+                                          {forcedStore}
+                                        </span>
+                                      ) : (
+                                        <Select
+                                          value={c.source || ""}
+                                          onValueChange={(v) =>
+                                            setSource(c.rowId || c.item_code, v)
+                                          }
+                                        >
+                                          <SelectTrigger
+                                            className={triggerClass}
+                                          >
+                                            <SelectValue placeholder="-- Select Source --" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {whs.map((w) => {
+                                              const bal = Number(balances[w] || 0);
+                                              return (
+                                                <SelectItem key={w} value={w}>
+                                                  <span className="truncate">{w}</span>{" "}
+                                                  <span className="text-muted-foreground tabular-nums">
+                                                    · {bal.toFixed(2)}
+                                                  </span>
+                                                </SelectItem>
+                                              );
+                                            })}
+                                          </SelectContent>
+                                        </Select>
+                                      )}
+                                    </TableCell>
+                                    <TableCell
+                                      className={
+                                        isShort
+                                          ? "text-right text-xs tabular-nums font-semibold text-[var(--sd-data-red)]"
+                                          : "text-right text-xs tabular-nums font-semibold"
+                                      }
+                                    >
+                                      {need > 0 ? need.toFixed(2) : "—"}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
 
-                  {chemRows.length ? (
-                    <SprayCheckCard
-                      result={check}
-                      loading={checkLoading}
-                      names={Object.fromEntries(chemRows.map((c) => [c.item_code, c.item_name || c.item_code]))}
-                    />
-                  ) : null}
-                </>
-              )}
-              {/* Add-to-batch lives at the foot of the BOM card so it sits
-                   right next to the chemicals it'll commit. Disabled when
-                   any row is short on stock; an inline summary line above
-                   explains why so the operator doesn't hunt the tooltip. */}
+                {chemRows.length ? (
+                  <SprayCheckCard
+                    result={check}
+                    loading={checkLoading}
+                    names={Object.fromEntries(chemRows.map((c) => [c.item_code, c.item_name || c.item_code]))}
+                  />
+                ) : null}
+              </>
+            }
+            footer={
+              <>
               {bomDetails && (
                 <div className="flex items-center justify-end gap-3 pt-2 border-t">
                   {stockShortRows.length ? (
@@ -3095,8 +2077,9 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                   </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
+              </>
+            }
+          />
         </div>
 
         {/* Draft batch sits below the two top blocks at full width so the
@@ -3132,106 +2115,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
         </DialogContent>
       </Dialog>
 
-      {/* Add-chemical popup */}
-      <Dialog
-        open={addOpen}
-        onOpenChange={(open) => {
-          setAddOpen(open);
-          // Clear the inline "already added" notice every time the modal
-          // (re)opens or closes — stale messages from a previous attempt
-          // would confuse the operator on the next add.
-          setAddNotice("");
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add chemical</DialogTitle>
-            <DialogDescription>
-              Search by item name or code. Restricted to chemical and fertilizer
-              item groups so the source-warehouse picker stays valid.
-            </DialogDescription>
-          </DialogHeader>
-          <SearchInput
-            value={addQuery}
-            onChange={(v) => {
-              setAddQuery(v);
-              if (addNotice) setAddNotice("");
-            }}
-            placeholder="Search…"
-            autoFocus
-          />
-          {addNotice && (
-            <div className="rounded-md border border-amber-500/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 mt-[1px] shrink-0" />
-              <span>{addNotice}</span>
-            </div>
-          )}
-          {(addShowAll || pickerFilters(addEligRows)) && (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Checkbox
-                checked={addShowAll}
-                onCheckedChange={(v) => setAddShowAll(v === true)}
-              />
-              Show all (including products not registered for the targets)
-            </label>
-          )}
-          <div className="max-h-72 overflow-auto flex flex-col gap-1">
-            {addShown.map((it) => {
-              const e = addElig[it.item_code];
-              const state = pickerState(e, addShowAll);
-              const blocked = state === "blocked";
-              return (
-              <button
-                key={it.item_code}
-                type="button"
-                disabled={blocked}
-                onClick={() => addChemical(it)}
-                className={
-                  "text-left px-3 py-2 rounded-md border bg-card transition-colors " +
-                  (blocked
-                    ? "opacity-60 cursor-not-allowed"
-                    : state === "greyed"
-                      ? "opacity-60 hover:opacity-100 hover:bg-muted"
-                      : "hover:bg-muted") +
-                  (suggestedCodes.includes(it.item_code) ? " border-primary/40 bg-primary/5" : "")
-                }
-              >
-                <div className="flex items-center gap-1.5 text-xs font-medium">
-                  {it.item_name || it.item_code}
-                  {suggestedCodes.includes(it.item_code) && <SuggestedPill />}
-                </div>
-                <div className="text-[0.65rem] text-muted-foreground font-mono">
-                  {it.item_code} · {it.stock_uom || ""}
-                  {it.is_fertilizer ? (
-                    <span className="ml-1 text-[var(--sd-data-green)]">
-                      · Fertilizer Store
-                    </span>
-                  ) : (
-                    <span className="ml-1 text-[var(--sd-data-cyan)]">
-                      · Chemical Store
-                    </span>
-                  )}
-                </div>
-                {e && !e.eligible && e.reasons[0] && (
-                  <div className="text-[0.65rem] text-muted-foreground mt-0.5">{e.reasons[0]}</div>
-                )}
-              </button>
-              );
-            })}
-            {!addResults.length && (
-              <div className="text-xs text-muted-foreground py-3 text-center">
-                Type to search.
-              </div>
-            )}
-            {addResults.length > 0 && !addShown.length && (
-              <div className="text-xs text-muted-foreground py-3 text-center">
-                No result is registered for the targets. Turn on “Show all” to see them.
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <OverrideDialog
         open={overrideOpen}
         onOpenChange={setOverrideOpen}
@@ -3242,184 +2125,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           void submit(o);
         }}
       />
-
-      {/* Create-BOM dialog (legacy parity) */}
-      <Dialog open={bomDialogOpen} onOpenChange={setBomDialogOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Create a new tank mix</DialogTitle>
-            <DialogDescription>
-              The mix is created here and selected straight away. It is stored as
-              an ERPNext bill of materials, which is what you will see in Desk.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <Label>Tank Mix Name</Label>
-              <Input
-                value={newBomItem}
-                onChange={(e) => setNewBomItem(e.target.value)}
-                placeholder="e.g. Botrytis Mix · Greenhouse 12"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <NumInput
-                label="Water pH"
-                value={newBomPh}
-                onChange={setNewBomPh}
-              />
-              <NumInput
-                label="Water Hardness"
-                value={newBomHardness}
-                onChange={setNewBomHardness}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label>Add chemical</Label>
-              <SearchInput
-                value={newBomSearch}
-                onChange={setNewBomSearch}
-                placeholder="Search…"
-              />
-              {/* Listed as soon as the dialog opens, not only once something is
-                *  typed: the search runs with a blank query too, and an empty
-                *  panel read as "there are no chemicals" rather than "start
-                *  typing". */}
-              {newBomSearchResults.length > 0 ? (
-                <div className="rounded-md border bg-card max-h-40 overflow-auto">
-                  {newBomSearchResults.map((it) => (
-                    <button
-                      key={it.item_code}
-                      type="button"
-                      onClick={() => addNewBomChem(it)}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted border-b last:border-b-0"
-                    >
-                      <span className="font-medium">
-                        {it.item_name || it.item_code}
-                      </span>
-                      <span className="ml-2 text-[0.65rem] text-muted-foreground font-mono">
-                        {it.item_code}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : newBomSearch ? (
-                <p className="px-1 py-2 text-xs text-muted-foreground">
-                  Nothing matches "{newBomSearch}".
-                </p>
-              ) : !newBomCatalogLoaded ? (
-                // The catalogue's first page has not landed: its list box, pulsing.
-                <div className="rounded-md border bg-card max-h-40 overflow-hidden" aria-busy="true">
-                  <RowsSkeleton rows={4} className="gap-0" />
-                </div>
-              ) : (
-                <p className="px-1 py-2 text-xs text-muted-foreground">No chemicals found.</p>
-              )}
-            </div>
-            {newBomChems.length > 0 && (
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Chemical</TableHead>
-                      <TableHead className="w-32">Dose / 1000 L</TableHead>
-                      <TableHead>UoM</TableHead>
-                      <TableHead className="w-8" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {newBomChems.map((c) => {
-                      const rateErr = newBomRateError(c);
-                      const limit = rateLimits[c.item_code];
-                      const outOfRange = rateLimitError(
-                        c.item_code,
-                        Number(c.rate),
-                        rateLimits,
-                      );
-                      return (
-                      <TableRow key={c.item_code}>
-                        <TableCell className="text-xs">
-                          <div className="font-medium">
-                            {c.item_name || c.item_code}
-                          </div>
-                          <div className="text-[0.65rem] text-muted-foreground font-mono">
-                            {c.item_code}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="any"
-                            inputMode="decimal"
-                            className="h-7 text-xs"
-                            aria-label={`Dose per 1000 L for ${c.item_name || c.item_code}`}
-                            aria-invalid={rateErr ? true : undefined}
-                            value={c.rate ?? ""}
-                            placeholder="0.00"
-                            onChange={(e) =>
-                              updateNewBomChemRate(c.item_code, e.target.value)
-                            }
-                          />
-                          {rateErr ? (
-                            <p className="mt-0.5 text-[0.65rem] text-destructive">
-                              {rateErr}
-                            </p>
-                          ) : outOfRange ? (
-                            <p className="mt-0.5 text-[0.65rem] text-amber-600">
-                              {outOfRange}
-                            </p>
-                          ) : limit?.lower != null || limit?.upper != null ? (
-                            <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
-                              {limit.lower ?? "—"} – {limit.upper ?? "—"}
-                            </p>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {c.stock_uom || ""}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground"
-                            onClick={() => removeNewBomChem(c.item_code)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            <div className="flex justify-end gap-2 pt-1">
-              <Button
-                variant="ghost"
-                onClick={() => setBomDialogOpen(false)}
-                disabled={creatingBom}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={submitNewBom}
-                disabled={
-                  creatingBom ||
-                  !newBomChems.length ||
-                  newBomChems.some((c) => newBomRateError(c))
-                }
-              >
-                {creatingBom ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : null}
-                Create tank mix
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
     </div>
   );
@@ -3456,29 +2161,6 @@ function NoFarmsGate() {
           </CardDescription>
         </CardHeader>
       </Card>
-    </div>
-  );
-}
-
-function NumInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <Label className="text-[0.65rem]">{label}</Label>
-      <Input
-        type="number"
-        step="any"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 text-xs tabular-nums"
-      />
     </div>
   );
 }

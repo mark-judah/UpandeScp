@@ -67,7 +67,7 @@ describe("AppSidebar crop-scoped nav", () => {
     withRoles(["SCP General Manager"]);
     renderSidebar("macadamia");
     expect(screen.getByText("Scouting Map")).toBeInTheDocument();
-    // No crop-specific extras (job sheets / application plan) for a new crop.
+    // No crop-specific extras (job sheets) for a new crop.
     expect(screen.queryByText("Job Sheets")).toBeNull();
   });
 });
@@ -113,5 +113,32 @@ describe("Personnel group and Coverage (personnel spec P1–P3)", () => {
     renderSidebar("rose");
     expect(personnel()).toBeNull();
     expect(screen.getByText("Coverage")).toBeInTheDocument();
+  });
+
+  it("lists Approvals under every crop for an approver, and for nobody else", () => {
+    for (const crop of ["rose", "avocado", "coffee", "potato", "passion-fruit"]) {
+      withRoles(["SCP Spray Plan Approver"]);
+      const r = renderSidebar(crop);
+      expect(screen.getByText("Approvals")).toBeInTheDocument();
+      r.unmount();
+      withRoles(["SCP Spray Plan Creator"]);
+      const c = renderSidebar(crop);
+      expect(screen.queryByText("Approvals")).toBeNull();
+      c.unmount();
+    }
+  });
+
+  it("lists an application plan under every crop", () => {
+    withRoles(["SCP Spray Plan Creator"]);
+    for (const [crop, label] of [
+      ["rose", "Application Floor Plan"],
+      ["avocado", "Application Floor Plan"],
+      ["coffee", "Application Floor Plan"],
+      ["potato", "Application Floor Plan"],
+    ]) {
+      const r = renderSidebar(crop);
+      expect(screen.getByText(label)).toBeInTheDocument();
+      r.unmount();
+    }
   });
 });

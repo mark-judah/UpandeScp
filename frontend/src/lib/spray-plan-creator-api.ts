@@ -152,6 +152,7 @@ export interface DraftPayload {
   custom_scope: string;
   custom_scope_details?: string;
   custom_kit?: string | null;
+  custom_method_of_application?: string | null;
   custom_spray_team?: string | null;
   /** Per-plan team roster. Empty list = fall back to the master team's
    *  members at material-issue time. */
@@ -235,6 +236,7 @@ export interface DraftPlanDetail {
   custom_scope: string;
   custom_scope_details?: string;
   custom_kit?: string | null;
+  custom_method_of_application?: string | null;
   custom_spray_team?: string | null;
   custom_water_ph?: number;
   custom_water_hardness?: number;

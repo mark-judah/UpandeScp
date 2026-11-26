@@ -4,7 +4,7 @@
  * hands a tapped product back to the page, which adds it with its default rate.
  */
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, Layers, Loader2, Plus, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Layers, Loader2, Plus, Sparkles } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -57,6 +57,7 @@ export function SuggestedProductsCard({
   when,
   canAdd = true,
   embedded = false,
+  collapsible = false,
   onAdd,
   onAddMix,
   onSuggested,
@@ -70,6 +71,8 @@ export function SuggestedProductsCard({
   canAdd?: boolean;
   /** Render as a section inside a host card (the tank mix card) instead of a card of its own. */
   embedded?: boolean;
+  /** Closed by default behind a "Suggested products (N)" pill, so it never takes the panel. */
+  collapsible?: boolean;
   onAdd: (p: SuggestedProduct) => void;
   /** Add a whole proposed tank mix (replacing the rows, once confirmed). */
   onAddMix?: (products: SuggestedProduct[]) => void;
@@ -164,9 +167,23 @@ export function SuggestedProductsCard({
 
   const covered = data?.covered ?? [];
   const remaining = data?.remaining_targets ?? targets;
+  const [open, setOpen] = useState(false);
+
+  if (collapsible && !open) {
+    return (
+      <div data-testid="suggested-products">
+        <SuggestedToggle open={false} count={rows.length} loading={loading} onClick={() => setOpen(true)} />
+      </div>
+    );
+  }
 
   return (
     <Frame embedded={embedded}>
+      {collapsible && (
+        <div className="mb-2">
+          <SuggestedToggle open count={rows.length} loading={loading} onClick={() => setOpen(false)} />
+        </div>
+      )}
       <CardHeader className="p-0 pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-sm">
@@ -418,6 +435,28 @@ function MixPanel({
         ))
       )}
     </div>
+  );
+}
+
+/** The pill that opens and closes the collapsible suggestions. */
+function SuggestedToggle({
+  open, count, loading, onClick,
+}: { open: boolean; count: number; loading: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1 text-xs font-medium shadow-[var(--sd-shadow-1)] hover:shadow-[var(--sd-shadow-2)]"
+    >
+      <Sparkles className="h-3.5 w-3.5" />
+      Suggested products ({count})
+      {loading ? (
+        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+      ) : (
+        <ChevronDown className={"h-3.5 w-3.5 opacity-60 transition-transform " + (open ? "rotate-180" : "")} />
+      )}
+    </button>
   );
 }
 

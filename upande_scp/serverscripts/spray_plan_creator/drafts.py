@@ -281,11 +281,22 @@ def _derive_plan_company(payload: dict) -> str:
     return company
 
 
+DEFAULT_METHOD = "Spraying (foliar)"
+
+
+def _apply_method_default(payload: dict) -> dict:
+    """Copy of ``payload`` with a method of application (blank -> the default)."""
+    out = dict(payload)
+    if not out.get("custom_method_of_application"):
+        out["custom_method_of_application"] = DEFAULT_METHOD
+    return out
+
+
 def _apply_payload(wo, payload: dict) -> None:
     pass_fields = [
         "custom_greenhouse", "custom_classification", "custom_preventive_reason",
         "custom_spray_type", "custom_scope", "custom_scope_details",
-        "custom_kit", "custom_spray_team",
+        "custom_kit", "custom_method_of_application", "custom_spray_team",
         "custom_water_ph", "custom_water_hardness", "custom_water_volume", "custom_area",
         "custom_scheduled_application_time",
     ]
@@ -414,6 +425,22 @@ def _compliance_payload(wo, payload: dict) -> dict:
     }
 
 
+def _mix_needs_water(payload: dict, chems: list[dict]) -> bool:
+    """A water volume is required only when some product's dose is per an amount of water.
+
+    A block (open field) plan whose products are all dosed per area carries no water
+    volume; greenhouse plans keep requiring it.
+    """
+    from ..common.spray_rates import needs_water
+
+    gh = payload.get("custom_greenhouse")
+    is_block = bool(gh) and frappe.db.get_value("Warehouse", gh, "warehouse_type") == "Block"
+    if not is_block:
+        return True
+    codes = [c.get("item_code") for c in chems if c.get("item_code")]
+    return needs_water(codes, crop_catalog.crop_for_greenhouse(gh), prefer_area=True)
+
+
 def _validate_payload(payload: dict, scope: dict) -> None:
     classification = payload.get("custom_classification") or ""
     validate_preventive_reason(classification, payload.get("custom_preventive_reason"))
@@ -433,7 +460,7 @@ def _validate_payload(payload: dict, scope: dict) -> None:
     chems = payload.get("chemicals") or []
     if not chems and not payload.get("_allow_zero_chems"):
         frappe.throw("Add at least one chemical to the plan.")
-    if flt(payload.get("custom_water_volume")) <= 0:
+    if flt(payload.get("custom_water_volume")) <= 0 and _mix_needs_water(payload, chems):
         frappe.throw("Water volume (L) is required and must be greater than zero.")
     _reject_untargeted(chems)
     limits = {}
@@ -548,7 +575,7 @@ def create_draft_spray_plan(payload):
     wo.fg_warehouse = payload["custom_greenhouse"]
     if wip_warehouse:
         wo.wip_warehouse = wip_warehouse
-    _apply_payload(wo, payload)
+    _apply_payload(wo, _apply_method_default(payload))
     block_groups.apply_blocks(wo, block_rows)
     compliance_result = compliance.enforce_on_save(_compliance_payload(wo, payload), wo)
 
@@ -782,6 +809,7 @@ def _expand_wo(wo) -> dict:
         "custom_scope": wo.custom_scope,
         "custom_scope_details": wo.custom_scope_details,
         "custom_kit": wo.custom_kit,
+        "custom_method_of_application": wo.custom_method_of_application,
         "custom_spray_team": wo.custom_spray_team,
         "custom_water_ph": wo.custom_water_ph,
         "custom_water_hardness": wo.custom_water_hardness,

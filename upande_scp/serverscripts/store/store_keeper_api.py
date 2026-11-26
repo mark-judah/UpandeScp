@@ -21,6 +21,7 @@ freshness server-side and write the result into each SE's
 """
 
 import json
+import re
 import os
 from datetime import timedelta
 
@@ -37,6 +38,21 @@ from upande_scp.serverscripts.store.batch_stock import (
     zero_valued_batches,
     zero_valued_stock,
 )
+
+
+def _error_text(e: Exception) -> str:
+    """What to show for a failed row. A ``frappe.PermissionError`` (and some other
+    raised-by-msgprint errors) carries no text of its own — the reason sits in the message
+    log — so ``str(e)`` was an empty string and the storesman saw a blank failure."""
+    text = str(e).strip()
+    if text:
+        return text
+    for m in reversed(frappe.local.message_log or []):
+        msg = m.get("message") if isinstance(m, dict) else m
+        if msg:
+            return re.sub(r"<[^>]+>", "", str(msg)).strip()
+    return e.__class__.__name__
+
 
 
 # ----------------------------------------------------------------------
@@ -736,7 +752,7 @@ def bulk_assign_employee(names: str | list, employee: str) -> dict:
             results.append({"name": name, "ok": True, "error": None})
         except Exception as e:
             failed_count += 1
-            results.append({"name": name, "ok": False, "error": str(e)})
+            results.append({"name": name, "ok": False, "error": _error_text(e)})
             frappe.db.rollback()
 
     frappe.db.commit()
@@ -1422,7 +1438,7 @@ def submit_with_biometric(names: str | list, run: str | None = None) -> dict:
             )
         except Exception as e:
             failed_count += 1
-            results.append({"name": name, "ok": False, "error": str(e),
+            results.append({"name": name, "ok": False, "error": _error_text(e),
                             "docstatus": _real_docstatus(name)})
             # Rollback the failed save attempt; the loop continues on
             # the remaining SEs without leaving a half-saved doc behind.
@@ -1540,7 +1556,7 @@ def submit_without_biometric(names: str | list) -> dict:
             )
         except Exception as e:
             failed_count += 1
-            results.append({"name": name, "ok": False, "error": str(e),
+            results.append({"name": name, "ok": False, "error": _error_text(e),
                             "docstatus": _real_docstatus(name)})
             frappe.db.rollback()
 

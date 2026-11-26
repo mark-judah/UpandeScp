@@ -30,7 +30,7 @@ SCP_FIELDS = {
         "custom_scheduled_application_time", "custom_reentry_time", "custom_scope",
         "custom_scope_details", "custom_area", "custom_blocks", "custom_water_volume", "custom_water_ph",
         "custom_water_hardness", "custom_variety", "custom_spray_type", "custom_kit",
-        "custom_targets", "custom_spray_team", "custom_spray_plan_team_members",
+        "custom_method_of_application", "custom_targets", "custom_spray_team", "custom_spray_plan_team_members",
         "custom_chemical_scans", "custom_spray_application_logsheet",
     ],
     "Warehouse": [

@@ -14,6 +14,7 @@ import {
   ChevronRight,
   UserPlus,
   Search,
+  FileText,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
@@ -70,6 +71,7 @@ import {
   type TransferItem,
   type TransferRow,
 } from "@/lib/store-keeper-api";
+import { SprayTicketDialog } from "@/components/spray-plan/SprayTicketDialog";
 import { PlannedChemicalsPanel } from "@/components/PlannedChemicalsPanel";
 import { cn } from "@/lib/utils";
 
@@ -102,6 +104,7 @@ export function SprayPlanTransfers() {
   const [result, setResult] = useState<BiometricSubmitResp | null>(null);
   const [allowManual, setAllowManual] = useState(false);
   const [confirmManual, setConfirmManual] = useState(false);
+  const [ticketWo, setTicketWo] = useState<string | null>(null);
 
   // Per-row chemical expansion — fetched on demand the first time a row
   // is opened, cached in this map so subsequent opens are instant.
@@ -894,7 +897,24 @@ export function SprayPlanTransfers() {
                             </Badge>
                           </td>
                           <td className="px-3 py-2 font-mono text-[0.7rem] text-muted-foreground">
-                            {r.work_order}
+                            <div className="flex items-center gap-1.5">
+                              {r.work_order}
+                              {r.work_order && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 gap-1 rounded-full px-2 font-sans text-[0.65rem]"
+                                  title="Preview the spray ticket"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTicketWo(r.work_order);
+                                  }}
+                                >
+                                  <FileText className="h-3 w-3" />
+                                  Preview
+                                </Button>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-[0.7rem] text-muted-foreground">
                             <div className="truncate max-w-56">
@@ -993,6 +1013,8 @@ export function SprayPlanTransfers() {
           toDate={toDate || undefined}
         />
       </div>
+
+      <SprayTicketDialog workOrder={ticketWo} onClose={() => setTicketWo(null)} />
 
       <Dialog open={confirmManual} onOpenChange={setConfirmManual}>
         <DialogContent className="max-w-md">

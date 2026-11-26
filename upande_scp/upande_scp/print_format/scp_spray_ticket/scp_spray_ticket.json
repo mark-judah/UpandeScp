@@ -1,0 +1,21 @@
+{
+ "doctype": "Print Format",
+ "name": "SCP Spray Ticket",
+ "doc_type": "Work Order",
+ "module": "Upande Scp",
+ "standard": "Yes",
+ "custom_format": 1,
+ "print_format_type": "Jinja",
+ "disabled": 0,
+ "print_format_builder": 0,
+ "font_size": 11,
+ "margin_top": 12.0,
+ "margin_bottom": 12.0,
+ "margin_left": 12.0,
+ "margin_right": 12.0,
+ "align_labels_right": 0,
+ "line_breaks": 0,
+ "show_section_headings": 0,
+ "default_print_language": "en",
+ "html": "{% set t = ticket_for_print(doc.name) %}\n{% set L = t.by_key %}\n<style>\n  .sst { font-family: 'Poppins', Arial, sans-serif; font-size: 11px; color: #000; background: #fff; max-width: 780px; margin: 0 auto; position: relative; }\n  .sst h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .02em; }\n  .sst .meta { font-size: 11px; margin-top: 2px; }\n  .sst table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }\n  .sst th, .sst td { border: 1px solid #000; padding: 4px 6px; text-align: left; vertical-align: top; }\n  .sst th { font-weight: 600; background: #fff; }\n  .sst .lab { width: 22%; font-weight: 600; }\n  .sst .box { min-height: 16px; white-space: pre-line; }\n  .sst h2 { font-size: 12px; margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .04em; }\n  .sst .banner { border: 2px solid #000; text-align: center; font-weight: 700; font-size: 18px; padding: 6px; margin-bottom: 10px; letter-spacing: .06em; }\n  .sst .foot { margin-top: 14px; font-size: 10px; text-align: right; }\n</style>\n<div class=\"sst\">\n  {% if not t.printable %}\n  <div class=\"banner\">{% if t.percent < 100 %}INCOMPLETE — {{ t.percent }}%{% else %}STOPPED PLAN — NOT FOR ISSUE{% endif %}</div>\n  {% endif %}\n  <h1>Spray Application Ticket (MOLFM27)</h1>\n  <div class=\"meta\"><strong>Work Order:</strong> {{ doc.name }} &nbsp;&nbsp; <strong>Week:</strong> {{ L.app_week.value or \"\" }}</div>\n  <br>\n  <table>\n    <tr><td class=\"lab\">Block</td><td class=\"box\">{{ L.block.value or \"\" }}</td><td class=\"lab\">Farm</td><td class=\"box\">{{ L.farm.value or \"\" }}</td></tr>\n    <tr><td class=\"lab\">Location</td><td class=\"box\">{{ L.location.value or \"\" }}</td><td class=\"lab\">Area (ha)</td><td class=\"box\">{{ L.area_ha.value or \"\" }}</td></tr>\n    <tr><td class=\"lab\">Crop</td><td class=\"box\">{{ L.crop.value or \"\" }}</td><td class=\"lab\">Variety</td><td class=\"box\">{{ L.variety.value or \"\" }}</td></tr>\n    <tr><td class=\"lab\">Crop stage</td><td class=\"box\">{{ L.crop_stage.value or \"\" }}</td><td class=\"lab\">Operator</td><td class=\"box\">{{ L.operator.value or \"\" }}</td></tr>\n  </table>\n\n  <h2>Products</h2>\n  <table>\n    <thead><tr><th>Product</th><th>Composition</th><th>Quantity</th><th>Rate</th></tr></thead>\n    <tbody>\n    {% for p in t.products %}\n      <tr>\n        <td class=\"box\">{{ p.item_name }}</td>\n        <td class=\"box\">{{ p.ingredients | join(\", \") }}</td>\n        <td class=\"box\">{{ p.qty }} {{ p.uom }}</td>\n        <td class=\"box\">{{ p.rate or \"\" }}</td>\n      </tr>\n    {% else %}\n      <tr><td class=\"box\">&nbsp;</td><td class=\"box\"></td><td class=\"box\"></td><td class=\"box\"></td></tr>\n    {% endfor %}\n    </tbody>\n  </table>\n\n  <table>\n    <tr><td class=\"lab\">Equipment</td><td class=\"box\">{{ L.equipment.value or \"\" }}</td><td class=\"lab\">Method of application</td><td class=\"box\">{{ L.method.value or \"\" }}</td></tr>\n    <tr><td class=\"lab\">Water and dilution</td><td class=\"box\" colspan=\"3\">{{ L.water.value or \"\" }}</td></tr>\n  </table>\n\n  <h2>Sign-off</h2>\n  <table>\n    <thead><tr><th>Role</th><th>Name</th><th>Date / time</th></tr></thead>\n    <tbody>\n    {% for key in [\"prepared\", \"authorized\", \"issued\", \"collected\", \"applied\"] %}\n      {% set line = L[key] %}\n      <tr>\n        <td class=\"lab\">{{ line.label }}</td>\n        <td class=\"box\">{% if line.filled %}{{ line.value.split(\" · \")[0] if \" · \" in line.value else \"\" }}{% endif %}</td>\n        <td class=\"box\">{% if line.filled %}{{ line.value.split(\" · \")[1] if \" · \" in line.value else line.value }}{% endif %}</td>\n      </tr>\n    {% endfor %}\n    </tbody>\n  </table>\n\n  <div class=\"foot\">Field/FSQM/2</div>\n</div>"
+}

@@ -311,10 +311,18 @@ def _base_field_spec() -> dict:
 				"hidden": 1,
 			},
 			{
+				"fieldname": "custom_method_of_application",
+				"label": "Method of Application",
+				"fieldtype": "Select",
+				"options": "Spraying (foliar)\nDusting\nChemigation",
+				"insert_after": "custom_kit",
+				"hidden": 1,
+			},
+			{
 				"fieldname": "custom_targets",
 				"label": "Target(s)",
 				"fieldtype": "Code",
-				"insert_after": "custom_kit",
+				"insert_after": "custom_method_of_application",
 				"hidden": 1,
 			},
 			{

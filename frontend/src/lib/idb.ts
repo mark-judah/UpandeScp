@@ -131,16 +131,39 @@ function normalize(e: Record<string, any>): IdbEntry {
   };
 }
 
+/** Entries per IndexedDB write. Each ``put`` structured-clones its entry on the main thread
+ *  (an entry carries its pest / disease rows), so a week of a big farm in one transaction was a
+ *  multi-second freeze; slices of this size stay well under a frame budget's worth of long task. */
+export const PUT_SLICE = 200;
+
+const yieldToPage = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/** ``write`` each slice of ``items`` in turn, letting the page run (paint, input, the map)
+ *  between slices. Pure apart from ``write`` / ``pause``. */
+export async function writeInSlices<T>(
+  items: T[],
+  size: number,
+  write: (slice: T[]) => Promise<void>,
+  pause: () => Promise<void> = yieldToPage,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    if (i) await pause();
+    await write(items.slice(i, i + size));
+  }
+}
+
 export async function putEntries(entries: Record<string, any>[]): Promise<void> {
   if (!entries.length) return;
   const db = await open();
-  await new Promise<void>((resolve, reject) => {
-    const t = db.transaction(STORE_ENTRIES, "readwrite");
-    const s = t.objectStore(STORE_ENTRIES);
-    entries.forEach((raw) => s.put(normalize(raw)));
-    t.oncomplete = () => resolve();
-    t.onerror = () => reject(t.error);
-  });
+  await writeInSlices(entries, PUT_SLICE, (slice) =>
+    new Promise<void>((resolve, reject) => {
+      const t = db.transaction(STORE_ENTRIES, "readwrite");
+      const s = t.objectStore(STORE_ENTRIES);
+      slice.forEach((raw) => s.put(normalize(raw)));
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+    }),
+  );
 }
 
 export async function deleteByName(names: string[]): Promise<void> {

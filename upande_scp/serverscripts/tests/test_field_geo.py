@@ -92,7 +92,8 @@ class TestVersion(unittest.TestCase):
 		self.assertEqual(again, {"version": r["version"], "unchanged": True})
 
 	def test_version_depends_on_format_tag(self):
-		before = G._version("Mutara")
+		# the uncached hash: _version itself answers from Redis for VERSION_TTL
+		before = G._version_uncached("Mutara")
 		with unittest.mock.patch.object(G, "FORMAT_TAG", "tri-next"):
-			self.assertNotEqual(G._version("Mutara"), before)
+			self.assertNotEqual(G._version_uncached("Mutara"), before)
 		self.assertTrue(G.K_PAYLOAD.endswith("_v2"))

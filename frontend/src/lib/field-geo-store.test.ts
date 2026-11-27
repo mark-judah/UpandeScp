@@ -9,7 +9,15 @@ vi.mock("@/lib/idb", () => ({
   setPayload: (...a: unknown[]) => setPayload(...a),
 }));
 
-import { StaleFieldIndex, fetchFieldIndex, loadLatticeBlocks, resetFieldIndexCache, type LatticeBlock } from "@/lib/field-geo";
+import {
+  StaleFieldIndex,
+  fetchFieldIndex,
+  loadLatticeBlocks,
+  prefetchFarmLattice,
+  prefetchGroups,
+  resetFieldIndexCache,
+  type LatticeBlock,
+} from "@/lib/field-geo";
 
 const blk = (c: number): LatticeBlock => ({ side: 5, aff: [1, 0, 0, 0, 1, 0], h: [0, c, 1 | (1 << 6)], e: [], x: [] });
 
@@ -53,5 +61,49 @@ describe("fetchFieldIndex", () => {
     const r = await fetchFieldIndex("F");
     expect(call).toHaveBeenCalledTimes(1);
     expect(r.triads).toBe(6);
+  });
+});
+
+describe("the lattice prefetch", () => {
+  beforeEach(() => {
+    call.mockReset();
+    getPayload.mockReset();
+    setPayload.mockClear();
+    resetFieldIndexCache();
+  });
+  it("a later load reuses the prefetch's request instead of asking again", async () => {
+    getPayload.mockResolvedValue(null);
+    let release: (v: unknown) => void = () => undefined;
+    call.mockImplementation(() => new Promise((r) => (release = r)));
+    prefetchFarmLattice("F", { version: "v1", counts: { A: [6, 1], B: [6, 1], Empty: [0, 0] }, triads: 12, hexas: 2 });
+    const later = loadLatticeBlocks("F", "v1", ["B", "A"]);
+    await vi.waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(call.mock.calls[0][1].blocks)).toEqual(["A", "B"]); // blocks without triangles are not asked for
+    release({ blocks: { A: blk(1), B: blk(2) } });
+    const got = await later;
+    expect(got.get("B")!.h[1]).toBe(2);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+  it("a failed request is forgotten, so the next load asks again", async () => {
+    getPayload.mockResolvedValue(null);
+    call.mockRejectedValueOnce(new Error("502"));
+    await expect(loadLatticeBlocks("F", "v1", ["A"])).rejects.toThrow("502");
+    call.mockResolvedValueOnce({ blocks: { A: blk(3) } });
+    expect((await loadLatticeBlocks("F", "v1", ["A"])).get("A")!.h[1]).toBe(3);
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+  it("another version is another request", async () => {
+    getPayload.mockResolvedValue(null);
+    call.mockResolvedValue({ blocks: { A: blk(1) } });
+    await loadLatticeBlocks("F", "v1", ["A"]);
+    await loadLatticeBlocks("F", "v2", ["A"]);
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+  it("splits a farm into two requests, at most 60 blocks each, at least 8", () => {
+    const names = (n: number) => Array.from({ length: n }, (_, i) => `B${i}`);
+    expect(prefetchGroups([])).toEqual([]);
+    expect(prefetchGroups(names(5)).map((g) => g.length)).toEqual([5]);
+    expect(prefetchGroups(names(62)).map((g) => g.length)).toEqual([31, 31]);
+    expect(prefetchGroups(names(200)).map((g) => g.length)).toEqual([60, 60, 60, 20]);
   });
 });

@@ -277,6 +277,7 @@ export function fetchFieldIndex(farm = ""): Promise<FieldIndex> {
 
 export function resetFieldIndexCache(): void {
   indexMemory.clear();
+  latticeMemory.clear();
 }
 
 export class StaleFieldIndex extends Error {
@@ -298,7 +299,7 @@ export async function fetchLatticeBlocks(blocks: string[], farm = ""): Promise<R
 
 /** Blocks at ``version``: from the local copy (IndexedDB, per block) when it has them, else the
  *  server; what the server sends is kept locally for the next visit. */
-export async function loadLatticeBlocks(farm: string, version: string, blocks: string[]): Promise<Map<string, LatticeBlock>> {
+async function fetchLatticeBlocksAt(farm: string, version: string, blocks: string[]): Promise<Map<string, LatticeBlock>> {
   const out = new Map<string, LatticeBlock>();
   const fromNet: string[] = [];
   await Promise.all(
@@ -326,6 +327,52 @@ export async function loadLatticeBlocks(farm: string, version: string, blocks: s
     }
   }
   return out;
+}
+
+/** In-flight / loaded blocks of this page session, per farm + version + block: the index hook
+ *  starts the farm's lattice download as soon as the index arrives (prefetchFarmLattice), and
+ *  the map picks the same promises up when it is ready, so the download overlaps the map's
+ *  start-up instead of queueing behind it. A failed request is forgotten (retried next time). */
+const latticeMemory = new Map<string, Promise<LatticeBlock>>();
+const latticeKey = (farm: string, version: string, block: string) => `${farm}\u0000${version}\u0000${block}`;
+
+/** Blocks at ``version`` (see fetchLatticeBlocksAt), sharing requests already in flight. */
+export async function loadLatticeBlocks(farm: string, version: string, blocks: string[]): Promise<Map<string, LatticeBlock>> {
+  const need = blocks.filter((b) => !latticeMemory.has(latticeKey(farm, version, b)));
+  if (need.length) {
+    const req = fetchLatticeBlocksAt(farm, version, need);
+    for (const b of need) {
+      const key = latticeKey(farm, version, b);
+      const p = req.then((m) => m.get(b) ?? EMPTY_BLOCK);
+      p.catch(() => {
+        if (latticeMemory.get(key) === p) latticeMemory.delete(key);
+      });
+      latticeMemory.set(key, p);
+    }
+  }
+  const got = await Promise.all(blocks.map(async (b) => [b, await latticeMemory.get(latticeKey(farm, version, b))!] as const));
+  return new Map(got);
+}
+
+/** Blocks per prefetch request: the farm in two halves (the server encodes a cold block set in
+ *  two workers at once), at most PREFETCH_MAX_BLOCKS per request. Pure. */
+export const PREFETCH_MAX_BLOCKS = 60;
+export function prefetchGroups(blocks: string[], max = PREFETCH_MAX_BLOCKS): string[][] {
+  if (!blocks.length) return [];
+  const per = Math.min(max, Math.max(8, Math.ceil(blocks.length / 2)));
+  const out: string[][] = [];
+  for (let i = 0; i < blocks.length; i += per) out.push(blocks.slice(i, i + per));
+  return out;
+}
+
+/** Start downloading every block of the index (no map needed). Errors are left to the map's own
+ *  load, which asks again. */
+export function prefetchFarmLattice(farm: string, index: FieldIndex): void {
+  const blocks = Object.entries(index.counts)
+    .filter(([, c]) => c[0] > 0)
+    .map(([b]) => b)
+    .sort();
+  for (const group of prefetchGroups(blocks)) loadLatticeBlocks(farm, index.version, group).catch(() => undefined);
 }
 
 /** Split blocks into chunks of at most ``max`` triangles (a bigger block is a chunk of its own),

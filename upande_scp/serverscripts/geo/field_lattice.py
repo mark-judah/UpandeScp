@@ -171,7 +171,8 @@ def encode_block(block, rows):
 	# outline's NW corner (how regenerate_hexa_grid cut it) or a stored centre, then fit o and G to
 	# every stored full-triangle centre: a block cut in a slightly different frame (some blocks
 	# drift ~10 cm over their length against the outline) is still matched to the stored data.
-	o0 = _outline_origin(block, fwd)
+	o_cut = _outline_origin(block, fwd)  # one outline read per block (it is a DB read + a union)
+	o0 = o_cut
 	near = lambda o: all(  # noqa: E731
 		abs((o[1] - cy) / dy - round((o[1] - cy) / dy)) < 0.1 for cx, cy in list(centres.values())[:50]
 	)
@@ -194,7 +195,6 @@ def encode_block(block, rows):
 	# When the outline's corner and the nominal side already put every stored centre on the lattice
 	# (within the stored rounding), use exactly that: it is hexa_grid.cut's own frame.
 	exact = False
-	o_cut = _outline_origin(block, fwd)
 	if o_cut:
 		Ac = A.copy()
 		dev = max(np.abs(o_cut[0] + Ac[:, 1] - cx_).max(), np.abs(o_cut[1] + Ac[:, 2] - cy_).max())
@@ -329,18 +329,46 @@ def _encode_blocks(names):
 	return out
 
 
+def _lattice_key(version, block):
+	return f"{K_LATTICE}:{FORMAT}:{version}:{block}"
+
+
+def _cached_lattice(version, block):
+	"""Redis, else the durable copy on disk (which then refills Redis). None when neither has it."""
+	if not version:
+		return None
+	cache = frappe.cache()
+	hit = cache.get_value(_lattice_key(version, block))
+	if hit is None:
+		from upande_scp.serverscripts.geo import field_store
+
+		hit = field_store.get("lattice", f"{FORMAT}_{version}", block)
+		if hit is not None:
+			cache.set_value(_lattice_key(version, block), hit, expires_in_sec=TTL_LONG)
+	return hit
+
+
+def _store_lattice(version, block, enc):
+	from upande_scp.serverscripts.geo import field_store
+
+	frappe.cache().set_value(_lattice_key(version, block), enc, expires_in_sec=TTL_LONG)
+	field_store.put("lattice", f"{FORMAT}_{version}", block, enc)
+
+
 @frappe.whitelist()
 def get_field_lattice(blocks, version=None, farm=None):
 	"""The lattice encoding of the named blocks (see module doc). ``version`` is the one
-	``field_geo.get_field_index`` gave; a stale one is answered ``{stale: true, version}``."""
+	``field_geo.get_field_index`` gave; a stale one is answered ``{stale: true, version}``.
+
+	Served from Redis, else from the durable copy on disk (field_store), and only encoded when
+	neither has it: a cache clear costs file reads, not the tens of seconds of a rebuild."""
 	if isinstance(blocks, str):
 		blocks = frappe.parse_json(blocks)
 	names = [str(b) for b in (blocks or []) if b][:MAX_BLOCKS_PER_CALL]
 	farm = (farm or "").strip()
-	cache = frappe.cache()
 	out, missing = {}, []
 	for b in names:
-		hit = cache.get_value(f"{K_LATTICE}:{FORMAT}:{version}:{b}") if version else None
+		hit = _cached_lattice(version, b)
 		if hit is None:
 			missing.append(b)
 		else:
@@ -349,25 +377,62 @@ def get_field_lattice(blocks, version=None, farm=None):
 		current = _version(farm)
 		if version and version != current:
 			return {"stale": True, "version": current}
-		version = current
-		for b, enc in _encode_blocks(missing).items():
+		if not version:
+			version = current
+			still = []
+			for b in missing:
+				hit = _cached_lattice(version, b)
+				if hit is None:
+					still.append(b)
+				else:
+					out[b] = hit
+			missing = still
+		for b, enc in (_encode_blocks(missing) if missing else {}).items():
 			out[b] = enc
-			cache.set_value(f"{K_LATTICE}:{FORMAT}:{version}:{b}", enc, expires_in_sec=TTL_LONG)
+			_store_lattice(version, b, enc)
 	return {"version": version, "format": FORMAT, "blocks": out}
 
 
 def warm_field_lattice(farm=None):
-	"""Encode and cache every block's lattice for the farm's current version (all farms when blank),
-	so the first map load after a regenerate or a cache expiry reads Redis instead of encoding
-	(about half a minute for Mutara). Run it with
+	"""Encode and store (Redis + the durable copy) every block's lattice and the index, so no map
+	load ever encodes: the first load after a regenerate, a cache clear or an expiry reads Redis or
+	disk. Blank ``farm`` = every farm that has Triads plus "all farms" (the browser asks per farm,
+	and each farm has its own version, so warming only the all-farms version warmed nothing it
+	read). Each block is encoded once and stored under every version that lists it. Old versions'
+	files are pruned. Run it with
 	``bench --site <site> execute upande_scp.serverscripts.geo.field_lattice.warm_field_lattice``."""
-	from upande_scp.serverscripts.geo.field_geo import _counts
+	from upande_scp.serverscripts.geo import field_store
+	from upande_scp.serverscripts.geo.field_geo import _durable_counts
 
 	farm = (farm or "").strip()
-	version = _version(farm)
-	cache = frappe.cache()
-	todo = [b for b in _counts(farm) if cache.get_value(f"{K_LATTICE}:{FORMAT}:{version}:{b}") is None]
-	for i in range(0, len(todo), 8):
-		for b, enc in _encode_blocks(todo[i : i + 8]).items():
-			cache.set_value(f"{K_LATTICE}:{FORMAT}:{version}:{b}", enc, expires_in_sec=TTL_LONG)
-	return {"version": version, "warmed": len(todo)}
+	farms = [farm] if farm else [""] + [
+		f for (f,) in frappe.db.sql("select distinct farm from `tabTriad` where farm is not null and farm != ''")
+	]
+	keep, todo = set(), {}
+	for f in farms:
+		version = _version(f)
+		keep |= {version, f"{FORMAT}_{version}"}
+		for b in _durable_counts(f, version):
+			if _cached_lattice(version, b) is None:
+				todo.setdefault(b, []).append(version)
+	names = sorted(todo)
+	for i in range(0, len(names), 8):
+		for b, enc in _encode_blocks(names[i : i + 8]).items():
+			for version in todo[b]:
+				_store_lattice(version, b, enc)
+	pruned = 0 if farm else field_store.prune(keep)
+	return {"farms": farms, "warmed": len(names), "pruned": pruned}
+
+
+def warm_after_migrate():
+	"""after_migrate: rebuild the durable copies in the background when they are missing (a fresh
+	site, or a FORMAT bump in this release). Cheap when they are present."""
+	try:
+		if not frappe.db.table_exists("Triad") or not frappe.db.sql("select 1 from `tabTriad` limit 1"):
+			return
+		frappe.enqueue(
+			"upande_scp.serverscripts.geo.field_lattice.warm_field_lattice",
+			queue="long", timeout=1800, deduplicate=True, job_id="scp-warm-field-lattice",
+		)
+	except Exception:
+		frappe.log_error(title="warm_field_lattice after_migrate failed")

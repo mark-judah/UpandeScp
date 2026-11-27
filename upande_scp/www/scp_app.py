@@ -46,10 +46,30 @@ def _build_prefetch():
 
 	return {
 		"plan_bootstrap": _safe_call(api.get_application_plan_bootstrap),
-		"beds_by_gh": _safe_call(api.get_beds_by_greenhouse, active_only=1),
+		"beds_by_gh": _greenhouse_beds(_safe_call(api.get_beds_by_greenhouse, active_only=1)),
 		"farms_and_warehouses": _safe_call(api.get_farms_and_warehouses),
 		"map_settings": _safe_call(api.get_map_settings),
 	}
+
+
+# Bed units that are cells of a block's Hexa → Triad grid, not greenhouse beds.
+_GRID_UNIT_TYPES = frozenset({"Hexa"})
+
+
+def _greenhouse_beds(beds):
+	"""The prefetched bed list without the Hexa grid cells of block-grown crops. Only the
+	greenhouse bed plan (ApplicationPlan) reads ``beds_by_gh``, and block-grown crops are planned
+	by block (their Application Plan is the block heatmap page); on a farm surveyed into Hexas
+	(Mutara: ~70k of them) the cells made this inline JSON 7.5 MB, shipped and parsed on every
+	page load. ``get_beds_by_greenhouse`` itself is unchanged."""
+	if not isinstance(beds, dict):
+		return beds
+	out = {}
+	for gh, rows in beds.items():
+		kept = [r for r in rows or [] if (r or {}).get("unit_type") not in _GRID_UNIT_TYPES]
+		if kept:
+			out[gh] = kept
+	return out
 
 
 def _bed_crop_slugs():

@@ -159,6 +159,31 @@ async function clearLegacyMonthsRegistry(): Promise<void> {
   }
 }
 
+/** Week requests in flight at once. All of a range used to go at once: a quarter is 13 heavy
+ *  requests, and on a server with a couple of web workers they queued every request behind them —
+ *  a map's small geometry and index calls waited seconds. A few at a time keeps the server busy
+ *  without starving the rest of the page. */
+export const WEEK_FETCH_CONCURRENCY = 4;
+
+/** Run ``fn`` over ``items`` with at most ``limit`` running at once, in order. Rejects with the
+ *  first failure (no new item starts after it). */
+export async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const item = items[next++];
+      try {
+        await fn(item);
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+}
+
 /**
  * Make sure every ISO week touching [from, to] is fully present in IDB.
  * Skips weeks we've already fully loaded (the loaded_weeks registry).
@@ -180,8 +205,10 @@ export async function hydrateRange(
   if (!missing.length) return;
 
   let done = 0;
-  await Promise.all(
-    missing.map(async (w) => {
+  await mapLimit(
+    missing,
+    WEEK_FETCH_CONCURRENCY,
+    async (w) => {
       try {
         const resp = await call<ChunkResp>(
           "upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
@@ -202,7 +229,7 @@ export async function hydrateRange(
       }
       done += 1;
       onProgress?.(done, missing.length, w.key);
-    }),
+    },
   );
 }
 
@@ -334,8 +361,10 @@ export async function refreshRecentWeeks(
       weeksBetween(ymd(start), ymd(today)).map((w) => w.key),
     );
     const weeks = weeksBetween(from, to).filter((w) => recentKeys.has(w.key));
-    await Promise.all(
-      weeks.map(async (w) => {
+    await mapLimit(
+      weeks,
+      WEEK_FETCH_CONCURRENCY,
+      async (w) => {
         try {
           const resp = await call<ChunkResp>(
             "upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
@@ -355,7 +384,7 @@ export async function refreshRecentWeeks(
         } catch (err) {
           console.error("[scouting-sync] recent refresh failed", w.key, err);
         }
-      }),
+      },
     );
   }
   try {

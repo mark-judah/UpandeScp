@@ -164,6 +164,9 @@ after_migrate = [
 	# units are Bands, so SCP appends that option itself rather than editing another
 	# app's doctype. Append-only, so a site's own options survive.
 	"upande_scp.serverscripts.geo.field_unit_types.after_migrate",
+	# The block-grown crops' map geometry (index + per-block lattices) on disk, so a cache clear
+	# or a deploy never makes a map load rebuild ~400k triangles (field_store).
+	"upande_scp.serverscripts.geo.field_lattice.warm_after_migrate",
 	# Scout capture defaults (photos / comments on, max count 15) as real rows on
 	# the Single: a missing Check row is cast to 0 on load, so a farm that never
 	# opened the settings page would otherwise be switched off by its first save.

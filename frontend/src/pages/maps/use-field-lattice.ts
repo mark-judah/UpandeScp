@@ -19,6 +19,7 @@ import {
   fetchFieldIndex,
   geometryBBox,
   loadLatticeBlocks,
+  prefetchFarmLattice,
   resetFieldIndexCache,
   type BBox,
   type FieldIndex,
@@ -86,8 +87,9 @@ export interface FieldLattice {
   centroid: (name: string) => [number, number] | null;
 }
 
-/** The farm's per-block triangle counts (no geometry), off the critical path. ``farmSettled`` is
- *  false while the farm is still being decided (no "All farms" fetch first). */
+/** The farm's per-block triangle counts (no geometry), off the critical path, and the start of
+ *  the farm's lattice download. ``farmSettled`` is false while the farm is still being decided
+ *  (no "All farms" fetch first). */
 export function useFieldIndex(farmKey: string, farmSettled = true): { index: FieldIndex | null; refresh: () => void } {
   const [index, setIndex] = useState<FieldIndex | null>(null);
   const [epoch, setEpoch] = useState(0);
@@ -96,7 +98,13 @@ export function useFieldIndex(farmKey: string, farmSettled = true): { index: Fie
     let alive = true;
     setIndex(null);
     fetchFieldIndex(farmKey)
-      .then((r) => alive && setIndex(r))
+      .then((r) => {
+        if (!alive) return;
+        // The geometry download starts now, not once the map is up: it overlaps the map's
+        // start-up (WebGL context, shader compiles) and the other page requests.
+        prefetchFarmLattice(farmKey, r);
+        setIndex(r);
+      })
       .catch(() => alive && setIndex(null));
     return () => {
       alive = false;

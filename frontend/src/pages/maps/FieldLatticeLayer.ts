@@ -44,7 +44,7 @@ export function fade(zoom: number, z: number): number {
 }
 
 const VS_TRI = `#version 300 es
-in vec2 a_c; in float a_t; in vec4 a_col;
+layout(location = 0) in vec2 a_c; layout(location = 1) in float a_t; layout(location = 2) in vec4 a_col;
 uniform mat4 u_m; uniform mat2 u_lin; uniform vec2 u_o; uniform float u_side; uniform float u_alpha;
 out vec4 v_col;
 void main() {
@@ -57,7 +57,7 @@ void main() {
 
 // Triangle outline: 3 segments = 6 vertices per instance, corners [C, Va, Vb].
 const VS_TRI_LINE = `#version 300 es
-in vec2 a_c; in float a_t;
+layout(location = 0) in vec2 a_c; layout(location = 1) in float a_t;
 uniform mat4 u_m; uniform mat2 u_lin; uniform vec2 u_o; uniform float u_side;
 void main() {
   int seg = gl_VertexID / 2; int end = gl_VertexID - seg * 2;
@@ -69,7 +69,7 @@ void main() {
 
 // Hexa outline: 6 edges = 12 vertices per instance; edge k is drawn when slot k+1 is a full triangle.
 const VS_HEXA = `#version 300 es
-in vec2 a_c; in float a_mask;
+layout(location = 0) in vec2 a_c; layout(location = 1) in float a_mask;
 uniform mat4 u_m; uniform mat2 u_lin; uniform vec2 u_o; uniform float u_side;
 void main() {
   int seg = gl_VertexID / 2; int end = gl_VertexID - seg * 2;
@@ -103,18 +103,48 @@ interface GpuBlock {
   bufs: WebGLBuffer[];
 }
 
-function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
+/** Attribute slots, fixed in the shaders (layout(location)), so binding buffers never has to ask
+ *  a program that may still be compiling. */
+const LOC_C = 0;
+const LOC_T = 1; // a_t (triangles) / a_mask (hexas)
+const LOC_COL = 2;
+
+/** Start compiling and linking; nothing here waits on the GPU. Asking for the result
+ *  (getShaderParameter / getProgramParameter / getUniformLocation) is what blocks the main thread
+ *  until the driver is done, so that is left to programStatus, asked from render. */
+export function startProgram(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const p = gl.createProgram()!;
   for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
     const sh = gl.createShader(type)!;
     gl.shaderSource(sh, src);
     gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) || "shader");
     gl.attachShader(p, sh);
   }
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "link");
   return p;
+}
+
+/** COMPLETION_STATUS_KHR of KHR_parallel_shader_compile. */
+const COMPLETION_STATUS_KHR = 0x91b1;
+
+/** "pending" while the driver is still compiling (only knowable with KHR_parallel_shader_compile;
+ *  without it the answer waits for the compile), else "ok"; throws the log on a failed link. */
+export function programStatus(gl: WebGL2RenderingContext, p: WebGLProgram, parallel: boolean): "pending" | "ok" {
+  if (parallel && !gl.getProgramParameter(p, COMPLETION_STATUS_KHR)) return "pending";
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    const logs = (gl.getAttachedShaders(p) ?? []).map((sh) => gl.getShaderInfoLog(sh)).filter(Boolean);
+    throw new Error([gl.getProgramInfoLog(p), ...logs].filter(Boolean).join("\n") || "link");
+  }
+  return "ok";
+}
+
+interface Uniforms {
+  m: WebGLUniformLocation | null;
+  lin: WebGLUniformLocation | null;
+  o: WebGLUniformLocation | null;
+  side: WebGLUniformLocation | null;
+  alpha: WebGLUniformLocation | null;
+  col: WebGLUniformLocation | null;
 }
 
 export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
@@ -131,6 +161,10 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
   private progTri: WebGLProgram | null = null;
   private progTriLine: WebGLProgram | null = null;
   private progHex: WebGLProgram | null = null;
+  /** null until the programs are linked (checked from render, never waited for in onAdd) */
+  private uni: Map<WebGLProgram, Uniforms> | null = null;
+  private parallel = false;
+  private broken = false;
   private visible = { tri: true, hexa: true };
   /** Last frame's time (ms) and a rolling count, for the measurements. */
   frameMs = 0;
@@ -153,9 +187,13 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
       return;
     }
     this.gl = gl;
-    this.progTri = compile(gl, VS_TRI, FS_VARYING);
-    this.progTriLine = compile(gl, VS_TRI_LINE, FS_UNIFORM);
-    this.progHex = compile(gl, VS_HEXA, FS_UNIFORM);
+    // Compiled in the background where the driver can (KHR_parallel_shader_compile): onAdd used to
+    // wait for three compiles + links here, seconds on a software GL, before the farm's download
+    // even started. Nothing below asks the programs anything until render finds them linked.
+    this.parallel = !!gl.getExtension("KHR_parallel_shader_compile");
+    this.progTri = startProgram(gl, VS_TRI, FS_VARYING);
+    this.progTriLine = startProgram(gl, VS_TRI_LINE, FS_UNIFORM);
+    this.progHex = startProgram(gl, VS_HEXA, FS_UNIFORM);
     for (const b of this.pending) this.upload(b);
     this.blocks.push(...this.pending);
     this.pending = [];
@@ -172,6 +210,7 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
     }
     this.blocks = [];
     this.byHeld.clear();
+    this.uni = null;
     this.gl = null;
     this.map = null;
   }
@@ -257,9 +296,7 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
     const triBuf = mk(tri, gl.STATIC_DRAW);
     b.colorBuf = mk(b.colors, gl.DYNAMIC_DRAW);
     const hexBuf = mk(new Float32Array(hexList), gl.STATIC_DRAW);
-    const attr = (prog: WebGLProgram, name: string, buf: WebGLBuffer, size: number, type: number, norm: boolean, stride: number, off: number) => {
-      const loc = gl.getAttribLocation(prog, name);
-      if (loc < 0) return;
+    const attr = (loc: number, buf: WebGLBuffer, size: number, type: number, norm: boolean, stride: number, off: number) => {
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, size, type, norm, stride, off);
@@ -267,17 +304,17 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
     };
     b.vaoTri = gl.createVertexArray();
     gl.bindVertexArray(b.vaoTri);
-    attr(this.progTri!, "a_c", triBuf, 2, gl.FLOAT, false, 12, 0);
-    attr(this.progTri!, "a_t", triBuf, 1, gl.FLOAT, false, 12, 8);
-    attr(this.progTri!, "a_col", b.colorBuf, 4, gl.UNSIGNED_BYTE, true, 4, 0);
+    attr(LOC_C, triBuf, 2, gl.FLOAT, false, 12, 0);
+    attr(LOC_T, triBuf, 1, gl.FLOAT, false, 12, 8);
+    attr(LOC_COL, b.colorBuf, 4, gl.UNSIGNED_BYTE, true, 4, 0);
     b.vaoTriLine = gl.createVertexArray();
     gl.bindVertexArray(b.vaoTriLine);
-    attr(this.progTriLine!, "a_c", triBuf, 2, gl.FLOAT, false, 12, 0);
-    attr(this.progTriLine!, "a_t", triBuf, 1, gl.FLOAT, false, 12, 8);
+    attr(LOC_C, triBuf, 2, gl.FLOAT, false, 12, 0);
+    attr(LOC_T, triBuf, 1, gl.FLOAT, false, 12, 8);
     b.vaoHex = gl.createVertexArray();
     gl.bindVertexArray(b.vaoHex);
-    attr(this.progHex!, "a_c", hexBuf, 2, gl.FLOAT, false, 12, 0);
-    attr(this.progHex!, "a_mask", hexBuf, 1, gl.FLOAT, false, 12, 8);
+    attr(LOC_C, hexBuf, 2, gl.FLOAT, false, 12, 0);
+    attr(LOC_T, hexBuf, 1, gl.FLOAT, false, 12, 8);
     gl.bindVertexArray(null);
   }
 
@@ -298,8 +335,35 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
   render(gl: WebGLRenderingContext | WebGL2RenderingContext, args: unknown): void {
     const g = this.gl;
     const map = this.map;
-    if (!g || !map || !this.ref || !this.blocks.length) return;
+    if (!g || !map || !this.ref || !this.blocks.length || this.broken) return;
     const t0 = performance.now();
+    if (!this.uni) {
+      const progs = [this.progTri!, this.progTriLine!, this.progHex!];
+      try {
+        if (progs.some((p) => programStatus(g, p, this.parallel) === "pending")) {
+          map.triggerRepaint(); // look again next frame; the rest of the map keeps drawing
+          return;
+        }
+      } catch (e) {
+        this.broken = true;
+        console.warn("[field] lattice shaders failed: Hexas and triangles are not drawn", e);
+        return;
+      }
+      this.uni = new Map(
+        progs.map((p) => [
+          p,
+          {
+            m: g.getUniformLocation(p, "u_m"),
+            lin: g.getUniformLocation(p, "u_lin"),
+            o: g.getUniformLocation(p, "u_o"),
+            side: g.getUniformLocation(p, "u_side"),
+            alpha: g.getUniformLocation(p, "u_alpha"),
+            col: g.getUniformLocation(p, "u_col"),
+          },
+        ]),
+      );
+    }
+    const uni = this.uni;
     const a = args as { defaultProjectionData?: { mainMatrix?: ArrayLike<number> }; matrix?: ArrayLike<number> };
     const M = a?.defaultProjectionData?.mainMatrix ?? a?.matrix ?? (Array.isArray(args) ? (args as number[]) : null);
     if (!M || M.length !== 16) return;
@@ -326,15 +390,16 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
     g.enable(g.BLEND);
     g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
     const uniforms = (p: WebGLProgram, b: GpuBlock) => {
-      g.uniformMatrix4fv(g.getUniformLocation(p, "u_m"), false, m);
-      g.uniformMatrix2fv(g.getUniformLocation(p, "u_lin"), false, b.lin);
-      g.uniform2fv(g.getUniformLocation(p, "u_o"), b.o);
-      g.uniform1f(g.getUniformLocation(p, "u_side"), b.side);
+      const u = uni.get(p)!;
+      g.uniformMatrix4fv(u.m, false, m);
+      g.uniformMatrix2fv(u.lin, false, b.lin);
+      g.uniform2fv(u.o, b.o);
+      g.uniform1f(u.side, b.side);
     };
     const shown = this.blocks.filter(inView);
     if (fTri > 0) {
       g.useProgram(this.progTri);
-      g.uniform1f(g.getUniformLocation(this.progTri!, "u_alpha"), fTri);
+      g.uniform1f(uni.get(this.progTri!)!.alpha, fTri);
       for (const b of shown) {
         if (b.dirty && b.colorBuf) {
           g.bindBuffer(g.ARRAY_BUFFER, b.colorBuf);
@@ -349,7 +414,7 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
     if (fLine > 0) {
       g.useProgram(this.progTriLine);
       const al = TRI_LINE_ALPHA * fLine;
-      g.uniform4f(g.getUniformLocation(this.progTriLine!, "u_col"), (0x2a / 255) * al, (0x2a / 255) * al, (0x26 / 255) * al, al);
+      g.uniform4f(uni.get(this.progTriLine!)!.col, (0x2a / 255) * al, (0x2a / 255) * al, (0x26 / 255) * al, al);
       for (const b of shown) {
         uniforms(this.progTriLine!, b);
         g.bindVertexArray(b.vaoTriLine!);
@@ -359,7 +424,7 @@ export class FieldLatticeLayer implements maplibregl.CustomLayerInterface {
     if (fHex > 0) {
       g.useProgram(this.progHex);
       const al = HEXA_ALPHA * fHex;
-      g.uniform4f(g.getUniformLocation(this.progHex!, "u_col"), (0x2a / 255) * al, (0x2a / 255) * al, (0x26 / 255) * al, al);
+      g.uniform4f(uni.get(this.progHex!)!.col, (0x2a / 255) * al, (0x2a / 255) * al, (0x26 / 255) * al, al);
       for (const b of shown) {
         uniforms(this.progHex!, b);
         g.bindVertexArray(b.vaoHex!);

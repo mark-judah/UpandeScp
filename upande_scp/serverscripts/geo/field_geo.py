@@ -35,8 +35,25 @@ _NAME = "{block} - Hexa {hexa} - Triad {t}"
 _TOL = 1  # template tolerance, in 1e-7 degree units (one quantum)
 
 
+STAMP_GLOBAL = "scp_field_geo_stamp"
+
+
+def _stamp() -> str:
+	"""The regenerate stamp. Kept as a global default (the database), not only in Redis: a stamp
+	held in Redis alone is lost on a cache clear, which changes every version and so throws away
+	the durable payloads (field_store) along with it."""
+	cache = frappe.cache()
+	hit = cache.get_value(K_GEO_STAMP)
+	if hit is None:
+		hit = frappe.db.get_global(STAMP_GLOBAL) or ""
+		cache.set_value(K_GEO_STAMP, hit)
+	return hit
+
+
 def bump_geo_version() -> None:
-	frappe.cache().set_value(K_GEO_STAMP, frappe.generate_hash(length=8))
+	stamp = frappe.generate_hash(length=8)
+	frappe.db.set_global(STAMP_GLOBAL, stamp)
+	frappe.cache().set_value(K_GEO_STAMP, stamp)
 	# Rebuild the per-block lattice cache in the background so the next map load is a cache read.
 	try:
 		frappe.enqueue(
@@ -146,7 +163,7 @@ def _version(farm):
 	farm, so the answer is kept for a short while under the regenerate stamp; a bump (regenerate,
 	seed) changes the stamp and so the key at once."""
 	cache = frappe.cache()
-	key = f"{K_VERSION}:{farm or ''}:{cache.get_value(K_GEO_STAMP) or ''}"
+	key = f"{K_VERSION}:{farm or ''}:{_stamp()}"
 	hit = cache.get_value(key)
 	if hit:
 		return hit
@@ -161,7 +178,7 @@ def _version_uncached(farm):
 		"select count(*), max(modified) from `tabWarehouse` where custom_raw_geojson is not null and custom_raw_geojson != ''"
 		" and (%(f)s = '' or custom_farm = %(f)s)", {"f": farm or ""},
 	)[0]
-	stamp = frappe.cache().get_value(K_GEO_STAMP) or ""
+	stamp = _stamp()
 	return hashlib.sha1(f"{FORMAT_TAG}|{t}|{w}|{stamp}".encode()).hexdigest()[:16]
 
 
@@ -197,6 +214,18 @@ def _counts(farm):
 	return {b: [int(n), int(h)] for b, n, h in rows if b}
 
 
+def _durable_counts(farm, version):
+	"""The index counts from the durable copy (field_store), else counted and stored there: the
+	GROUP BY over every Triad is seconds on a big farm, and Redis forgets it on a cache clear."""
+	from upande_scp.serverscripts.geo import field_store
+
+	counts = field_store.get("index", version, farm or "")
+	if not isinstance(counts, dict):
+		counts = _counts(farm)
+		field_store.put("index", version, farm or "", counts)
+	return counts
+
+
 @frappe.whitelist()
 def get_field_index(farm=None):
 	"""Per block, how many Triads and Hexas it has - no geometry. The browser plans the farm's
@@ -207,7 +236,7 @@ def get_field_index(farm=None):
 	key = f"{K_INDEX}:{farm}:{version}"
 	counts = cache.get_value(key)
 	if counts is None:
-		counts = _counts(farm)
+		counts = _durable_counts(farm, version)
 		cache.set_value(key, counts, expires_in_sec=TTL_LONG)
 	return {
 		"version": version,

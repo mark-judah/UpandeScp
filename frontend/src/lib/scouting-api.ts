@@ -242,10 +242,19 @@ export interface FarmsResult {
 export async function fetchFarmsAndWarehousesResult(
   crop?: string,
 ): Promise<FarmsResult> {
+  // The unscoped list ships inline with the page (scp_app prefetch, user-scoped on the server):
+  // use it rather than asking again on every map boot.
+  if (!crop) {
+    const pre = refCache.get("farms_and_warehouses") as CacheEntry<Record<string, string[]>> | undefined;
+    if (pre && pre.value && Date.now() - pre.ts < REFERENCE_TTL_MS) return { farms: pre.value };
+  }
   try {
-    const r = await call<Record<string, string[]>>(
-      "upande_scp.serverscripts.scouting.scouting_metrics_api.get_farms_and_warehouses",
-      crop ? { crop } : {},
+    // Concurrent callers (the page, its header, the field hooks) share one request.
+    const r = await shareInFlight(`farms_and_warehouses:${crop || ""}`, () =>
+      call<Record<string, string[]>>(
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_farms_and_warehouses",
+        crop ? { crop } : {},
+      ),
     );
     return { farms: r || {} };
   } catch (e) {
@@ -286,6 +295,19 @@ const refCache = new Map<string, CacheEntry<unknown>>();
 /* Dedupe concurrent callers: if two components mount and both ask for the
  * same key before the network responds, share the single in-flight promise. */
 const inFlight = new Map<string, Promise<unknown>>();
+
+/** Callers asking for ``key`` while a request for it is in flight share it; nothing is kept
+ *  after it settles (unlike ``cached``). */
+function shareInFlight<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  const k = `inflight:${key}`;
+  const existing = inFlight.get(k) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = loader().finally(() => {
+    inFlight.delete(k);
+  });
+  inFlight.set(k, p);
+  return p;
+}
 
 async function cached<T>(key: string, loader: () => Promise<T>): Promise<T> {
   const hit = refCache.get(key) as CacheEntry<T> | undefined;

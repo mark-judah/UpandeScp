@@ -135,6 +135,8 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
       } else {
         onToast("ok", `Submitted ${result.submitted.length} for approval.`);
       }
+      // Plans that left the draft list now show under "In progress".
+      window.dispatchEvent(new Event("spray-plan:submitted"));
       refresh();
     } catch (e) {
       onDismiss(tid);

@@ -16,6 +16,7 @@ import { BlockMultiPicker } from "@/components/spray-plan/BlockMultiPicker";
 import { BlockPlanPanel } from "@/components/spray-plan/BlockPlanPanel";
 import { CollapseSidebarHint } from "@/components/spray-plan/CollapseSidebarHint";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
+import { PlansInProgress } from "@/components/spray-plan/PlansInProgress";
 import { useToast } from "@/components/Toast";
 import { fetchCreatorBootstrap, type CreatorBootstrap } from "@/lib/spray-plan-creator-api";
 import {
@@ -237,6 +238,7 @@ export function OpenFieldPlanner({ crop, selected, onSelect, focus, rowExtra, on
       )}
 
       <DraftBatchPanel onToast={(k, t, ms) => toast.show(asStatement(t), k === "loading" ? "loading" : k, { ms })} onDismiss={toast.dismiss} />
+      <PlansInProgress crop={crop} />
     </div>
   );
 }

@@ -9,7 +9,9 @@ describe("route fallback (skeleton spec K5)", () => {
   it("titles a loading page from the sidebar's own nav metadata", () => {
     render(<PageFallback crop="rose" view="procurement" />);
     expect(screen.getByRole("heading", { name: "Procurement" })).toBeInTheDocument();
-    expect(screen.getByText("Crop Protection")).toBeInTheDocument();
+    // Procurement is listed under Stores (first in the sidebar) and Crop Protection;
+    // the heading takes the first section that lists the view.
+    expect(screen.getByText("Stores")).toBeInTheDocument();
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 

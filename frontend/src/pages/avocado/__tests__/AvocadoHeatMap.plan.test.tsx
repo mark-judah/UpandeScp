@@ -134,6 +134,7 @@ vi.mock("@/lib/scouting-api", () => ({
   fetchBlocksGeojson: vi.fn(() => Promise.resolve(BLOCKS)),
   fetchOrchardTreeRows: vi.fn().mockResolvedValue({ names: [], coords: [] }),
   fetchTrapLocations: vi.fn(() => Promise.resolve(TRAPS)),
+  fetchFarmsAndWarehousesResult: vi.fn().mockResolvedValue({ farms: { Mutara: ["P1-B1 - MUT"] } }),
 }));
 vi.mock("@/lib/field-geo", async (orig) => ({
   ...(await orig<any>()),
@@ -155,6 +156,7 @@ vi.mock("@/lib/spray-plan-creator-api", () => ({
   fetchCreatorBootstrap: vi.fn().mockResolvedValue({ spray_teams: [], kits: [], tank_mixes: [], farm_stores: {}, pest_catalog: [], disease_catalog: [], blocks: [] }),
 }));
 vi.mock("@/components/spray-plan/DraftBatchPanel", () => ({ DraftBatchPanel: () => <div data-testid="drafts" /> }));
+vi.mock("@/components/spray-plan/PlansInProgress", () => ({ PlansInProgress: () => <div data-testid="in-progress" /> }));
 vi.mock("@/components/spray-plan/BlockPlanPanel", () => ({
   BlockPlanPanel: (p: any) => (
     <div data-testid="plan-panel">

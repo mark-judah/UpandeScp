@@ -67,12 +67,63 @@ def _build_map_settings():
             "lon": float(row.lon or 0),
             "zoom": float(row.default_zoom or doc.default_zoom or 16),
         }
+    # A farm with no row here starts at the middle of its mapped blocks, so a map never
+    # opens on a hard-coded place far from the farm (an empty Map Settings is the norm).
+    for farm, centre in _farm_block_centres().items():
+        if farm not in farms:
+            farms[farm] = {"lat": centre[1], "lon": centre[0], "zoom": float(doc.default_zoom or 15)}
+    lat, lon = float(doc.lat or 0), float(doc.lon or 0)
+    if not (lat or lon) and farms:
+        first = farms[sorted(farms)[0]]
+        lat, lon = first["lat"], first["lon"]
     return {
-        "lat": float(doc.lat or 0),
-        "lon": float(doc.lon or 0),
+        "lat": lat,
+        "lon": lon,
         "default_zoom": float(doc.default_zoom or 16),
         "farms": farms,
     }
+
+
+def _coords(node):
+    """Every [lng, lat] pair in a GeoJSON geometry / feature / collection."""
+    if isinstance(node, dict):
+        if node.get("type") == "FeatureCollection":
+            for f in node.get("features") or []:
+                yield from _coords(f)
+        elif node.get("type") == "Feature":
+            yield from _coords(node.get("geometry"))
+        else:
+            yield from _coords(node.get("coordinates"))
+    elif isinstance(node, list):
+        if len(node) >= 2 and all(isinstance(v, (int, float)) for v in node[:2]):
+            yield node[0], node[1]
+        else:
+            for n in node:
+                yield from _coords(n)
+
+
+def _farm_block_centres() -> dict:
+    """{farm: (lng, lat)}: the middle of the bounding box of the farm's mapped warehouses."""
+    import json
+
+    boxes: dict = {}
+    for r in frappe.get_all(
+        "Warehouse",
+        filters={"disabled": 0, "custom_farm": ["is", "set"], "custom_location": ["is", "set"]},
+        fields=["custom_farm", "custom_location"],
+        limit_page_length=0,
+    ):
+        try:
+            pts = list(_coords(json.loads(r.custom_location)))
+        except (TypeError, ValueError):
+            continue
+        pts = [(x, y) for x, y in pts if -180 <= x <= 180 and -90 <= y <= 90 and (x or y)]
+        if not pts:
+            continue
+        b = boxes.setdefault(r.custom_farm, [180.0, 90.0, -180.0, -90.0])
+        for x, y in pts:
+            b[0], b[1], b[2], b[3] = min(b[0], x), min(b[1], y), max(b[2], x), max(b[3], y)
+    return {f: ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) for f, b in boxes.items()}
 
 
 @frappe.whitelist()

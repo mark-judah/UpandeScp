@@ -1310,3 +1310,17 @@ export async function fetchTrapLocations(farm?: string): Promise<TrapLocations> 
     return {};
   }
 }
+
+/** Where a map opens before its data arrives, from the Map Settings shipped with the page
+ *  (no request): the farm's own view, else the only farm's, else the site default.
+ *  [lng, lat]; null when nothing is known (the caller keeps its own default). */
+export function mapHomeSync(farm?: string | null): { center: [number, number]; zoom: number } | null {
+  const s = (refCache.get("map_settings") as CacheEntry<MapSettings> | undefined)?.value;
+  if (!s) return null;
+  const farms = s.farms || {};
+  const names = Object.keys(farms);
+  const row = (farm && farms[farm]) || (names.length === 1 ? farms[names[0]] : undefined);
+  if (row && (row.lat || row.lon)) return { center: [Number(row.lon), Number(row.lat)], zoom: Number(row.zoom) || 15 };
+  if (s.lat || s.lon) return { center: [Number(s.lon), Number(s.lat)], zoom: Number(s.default_zoom) || 15 };
+  return null;
+}

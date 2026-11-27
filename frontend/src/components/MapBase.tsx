@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { cn } from "@/lib/utils";
+import { mapHomeSync } from "@/lib/scouting-api";
 
 /**
  * Shared leaflet base map.
@@ -82,8 +83,8 @@ function ensureControlStyles() {
 
 export function MapBase({
   className,
-  initialCenter = DEFAULT_CENTER,
-  initialZoom = DEFAULT_ZOOM,
+  initialCenter,
+  initialZoom,
   onReady,
 }: MapBaseProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -94,9 +95,11 @@ export function MapBase({
     const el = containerRef.current;
     if (!el) return;
     ensureControlStyles();
+    // Open on the farm (Map Settings, or the middle of its blocks), not a fixed place.
+    const home = initialCenter ? null : mapHomeSync();
     const map = L.map(el, {
-      center: initialCenter,
-      zoom: initialZoom,
+      center: initialCenter ?? (home ? [home.center[1], home.center[0]] : DEFAULT_CENTER),
+      zoom: initialZoom ?? (home ? Math.min(home.zoom, 15) : DEFAULT_ZOOM),
       zoomControl: true,
       attributionControl: false,
     });

@@ -1,3 +1,4 @@
+import { mapHomeSync } from "@/lib/scouting-api";
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -38,8 +39,8 @@ export const DEFAULT_ZOOM = 14;
 
 export function Map3D({
   className,
-  initialCenter = DEFAULT_CENTER,
-  initialZoom = DEFAULT_ZOOM,
+  initialCenter,
+  initialZoom,
   initialPitch = 60,
   styleUrl = "https://tiles.openfreemap.org/styles/liberty",
   onReady,
@@ -51,11 +52,13 @@ export function Map3D({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    // Open on the farm (Map Settings, or the middle of its blocks), not a fixed place.
+    const home = initialCenter ? null : mapHomeSync();
     const map = new maplibregl.Map({
       container: el,
       style: styleUrl,
-      center: initialCenter,
-      zoom: initialZoom,
+      center: initialCenter ?? home?.center ?? DEFAULT_CENTER,
+      zoom: initialZoom ?? home?.zoom ?? DEFAULT_ZOOM,
       pitch: initialPitch,
       bearing: 0,
       hash: false,

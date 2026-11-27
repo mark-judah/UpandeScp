@@ -244,6 +244,13 @@ def createScoutingEntry():
                 block           = entry_data.get('block')
                 row             = entry_data.get('row')
                 tree            = entry_data.get('tree')
+                # A phone that cached a block's old row keeps sending it after the
+                # block was regridded (e.g. a placeholder Row replaced by Hexas) and the
+                # row deleted. Drop a row that no longer exists, so the entry is placed
+                # from its GPS point like one sent without a row, instead of refused.
+                if row and not frappe.db.exists("Bed", row):
+                    row = None
+                    entry_data['row'] = None
                 quality_level   = entry_data.get('quality_level', 'unknown')
                 samples_used    = entry_data.get('samples_used', 0)
                 is_stationary   = entry_data.get('is_stationary', False)

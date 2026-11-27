@@ -265,6 +265,16 @@ class TestScoutingUnitMapping(IntegrationTestCase):
 		self.assertEqual(doc.triad, f"{HEXA} - Triad 3")
 		self.assertEqual(doc.mapping_status, "Mapped")
 
+	def test_stale_row_that_no_longer_exists_is_dropped_and_mapped_by_gps(self):
+		# A phone that cached a block's old placeholder row keeps sending it after the
+		# block was regridded into Hexas and the row deleted: the entry must still save,
+		# placed on the triad under its GPS point, not be refused for a missing row.
+		lat, lng = self._triad_point(3)
+		doc = self._send(block=HEXA_BLOCK, row=f"{HEXA_BLOCK} - Row 1", latitude=lat, longitude=lng, accuracy=3)
+		self.assertEqual(doc.triad, f"{HEXA} - Triad 3")
+		self.assertEqual(doc.row, HEXA)
+		self.assertEqual(doc.mapping_status, "Mapped")
+
 	def test_point_on_shared_edge_is_deterministic(self):
 		# The edge centre -> V(90 deg) is shared by triads 1 and 2.
 		lat, lng = self._utm_latlng(0, SIDE / 2)

@@ -171,6 +171,23 @@ class TestRegenerateHexaGrid(unittest.TestCase):
 
 	# ----------------------------------------------------------------- tests
 
+	def test_run_for_farm_dry_run_changes_nothing(self):
+		out = R.run_for_farm(farm=self.farm, blocks=[self.block])
+		self.assertEqual(out["totals"]["ready"], 1, out)
+		self.assertEqual(out["blocks"][0]["status"], "ready")
+		beds, triads = self._counts()
+		self.assertEqual({b.unit_type for b in beds}, {"Row"})
+		self.assertEqual(len(triads), len(self.old))
+
+	def test_run_for_farm_confirm_queues_apply(self):
+		from unittest.mock import patch
+		with patch.object(frappe, "enqueue") as enq:
+			out = R.run_for_farm(farm=self.farm, blocks=[self.block], confirm=1)
+		self.assertTrue(out["queued"])
+		args, kw = enq.call_args
+		self.assertEqual(args[0], "upande_scp.serverscripts.geo.regenerate_hexa_grid.apply")
+		self.assertEqual((kw["farm"], kw["confirm"], kw["queue"]), (self.farm, 1, "long"))
+
 	def test_apply_requires_confirm(self):
 		with self.assertRaises(frappe.ValidationError):
 			R.apply(farm=self.farm, blocks=[self.block])

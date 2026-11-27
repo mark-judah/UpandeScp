@@ -481,3 +481,27 @@ def _write_block(block, payload):
 	)
 	for move in payload["traps"]:
 		frappe.db.set_value("Trap", move["trap"], "unit", move["new"])
+
+
+# --------------------------------------------------------------------------- remote trigger
+
+
+@frappe.whitelist(methods=["POST"])
+def run_for_farm(farm: str = "Mutara", blocks=None, confirm: int = 0) -> dict:
+	"""The same dry run / apply over HTTP, for sites without a bench shell (Frappe Cloud).
+
+	System Manager only (dry_run/apply check it again). confirm=0 returns the dry run's
+	totals and per-block status; confirm=1 queues the apply as a long background job
+	(400k Triads do not fit a web request) and returns its job id."""
+	frappe.only_for("System Manager")
+	if not int(confirm or 0):
+		r = dry_run(farm, blocks)
+		return {
+			"totals": r["totals"],
+			"blocks": [{k: p.get(k) for k in ("block", "status", "hexas", "triads", "reason")} for p in r["blocks"]],
+		}
+	job = frappe.enqueue(
+		"upande_scp.serverscripts.geo.regenerate_hexa_grid.apply",
+		queue="long", timeout=6 * 3600, farm=farm, blocks=blocks, confirm=1,
+	)
+	return {"queued": True, "job": getattr(job, "id", None)}
